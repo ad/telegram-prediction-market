@@ -28,10 +28,10 @@ func (r *EventRepository) CreateEvent(ctx context.Context, event *domain.Event) 
 		}
 
 		result, err := db.ExecContext(ctx,
-			`INSERT INTO events (question, options_json, created_at, deadline, status, event_type, created_by)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO events (question, options_json, created_at, deadline, status, event_type, created_by, poll_id)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			event.Question, optionsJSON, event.CreatedAt, event.Deadline,
-			event.Status, event.EventType, event.CreatedBy,
+			event.Status, event.EventType, event.CreatedBy, event.PollID,
 		)
 		if err != nil {
 			return err
@@ -51,15 +51,16 @@ func (r *EventRepository) GetEvent(ctx context.Context, eventID int64) (*domain.
 	var event domain.Event
 	var optionsJSON string
 	var correctOption sql.NullInt64
+	var pollID sql.NullString
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx,
-			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by
+			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
 			 FROM events WHERE id = ?`,
 			eventID,
 		).Scan(
 			&event.ID, &event.Question, &optionsJSON, &event.CreatedAt,
-			&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy,
+			&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID,
 		)
 	})
 
@@ -76,6 +77,10 @@ func (r *EventRepository) GetEvent(ctx context.Context, eventID int64) (*domain.
 		event.CorrectOption = &val
 	}
 
+	if pollID.Valid {
+		event.PollID = pollID.String
+	}
+
 	return &event, nil
 }
 
@@ -85,7 +90,7 @@ func (r *EventRepository) GetActiveEvents(ctx context.Context) ([]*domain.Event,
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx,
-			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by
+			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
 			 FROM events WHERE status = ? ORDER BY created_at DESC`,
 			domain.EventStatusActive,
 		)
@@ -98,10 +103,11 @@ func (r *EventRepository) GetActiveEvents(ctx context.Context) ([]*domain.Event,
 			var event domain.Event
 			var optionsJSON string
 			var correctOption sql.NullInt64
+			var pollID sql.NullString
 
 			if err := rows.Scan(
 				&event.ID, &event.Question, &optionsJSON, &event.CreatedAt,
-				&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy,
+				&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID,
 			); err != nil {
 				return err
 			}
@@ -113,6 +119,10 @@ func (r *EventRepository) GetActiveEvents(ctx context.Context) ([]*domain.Event,
 			if correctOption.Valid {
 				val := int(correctOption.Int64)
 				event.CorrectOption = &val
+			}
+
+			if pollID.Valid {
+				event.PollID = pollID.String
 			}
 
 			events = append(events, &event)
@@ -142,9 +152,9 @@ func (r *EventRepository) UpdateEvent(ctx context.Context, event *domain.Event) 
 		}
 
 		_, err = db.ExecContext(ctx,
-			`UPDATE events SET question = ?, options_json = ?, deadline = ?, status = ?, correct_option = ?
+			`UPDATE events SET question = ?, options_json = ?, deadline = ?, status = ?, correct_option = ?, poll_id = ?
 			 WHERE id = ?`,
-			event.Question, optionsJSON, event.Deadline, event.Status, correctOption, event.ID,
+			event.Question, optionsJSON, event.Deadline, event.Status, correctOption, event.PollID, event.ID,
 		)
 		return err
 	})
@@ -167,7 +177,7 @@ func (r *EventRepository) GetEventsByDeadlineRange(ctx context.Context, start, e
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx,
-			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by
+			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
 			 FROM events WHERE deadline BETWEEN ? AND ? ORDER BY deadline ASC`,
 			start, end,
 		)
@@ -180,10 +190,11 @@ func (r *EventRepository) GetEventsByDeadlineRange(ctx context.Context, start, e
 			var event domain.Event
 			var optionsJSON string
 			var correctOption sql.NullInt64
+			var pollID sql.NullString
 
 			if err := rows.Scan(
 				&event.ID, &event.Question, &optionsJSON, &event.CreatedAt,
-				&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy,
+				&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID,
 			); err != nil {
 				return err
 			}
@@ -197,6 +208,10 @@ func (r *EventRepository) GetEventsByDeadlineRange(ctx context.Context, start, e
 				event.CorrectOption = &val
 			}
 
+			if pollID.Valid {
+				event.PollID = pollID.String
+			}
+
 			events = append(events, &event)
 		}
 
@@ -208,4 +223,45 @@ func (r *EventRepository) GetEventsByDeadlineRange(ctx context.Context, start, e
 	}
 
 	return events, nil
+}
+
+// GetEventByPollID retrieves an event by its Telegram poll ID
+func (r *EventRepository) GetEventByPollID(ctx context.Context, pollID string) (*domain.Event, error) {
+	var event domain.Event
+	var optionsJSON string
+	var correctOption sql.NullInt64
+	var pollIDNull sql.NullString
+
+	err := r.queue.Execute(func(db *sql.DB) error {
+		return db.QueryRowContext(ctx,
+			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
+			 FROM events WHERE poll_id = ?`,
+			pollID,
+		).Scan(
+			&event.ID, &event.Question, &optionsJSON, &event.CreatedAt,
+			&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollIDNull,
+		)
+	})
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if err := json.Unmarshal([]byte(optionsJSON), &event.Options); err != nil {
+		return nil, err
+	}
+
+	if correctOption.Valid {
+		val := int(correctOption.Int64)
+		event.CorrectOption = &val
+	}
+
+	if pollIDNull.Valid {
+		event.PollID = pollIDNull.String
+	}
+
+	return &event, nil
 }

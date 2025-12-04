@@ -53,6 +53,7 @@ type Event struct {
 	EventType     EventType
 	CorrectOption *int
 	CreatedBy     int64
+	PollID        string // Telegram poll ID for tracking votes
 }
 
 // Prediction represents a user's prediction

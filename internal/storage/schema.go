@@ -12,11 +12,13 @@ CREATE TABLE IF NOT EXISTS events (
     status TEXT NOT NULL,
     event_type TEXT NOT NULL,
     correct_option INTEGER,
-    created_by INTEGER NOT NULL
+    created_by INTEGER NOT NULL,
+    poll_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 CREATE INDEX IF NOT EXISTS idx_events_deadline ON events(deadline);
+CREATE INDEX IF NOT EXISTS idx_events_poll_id ON events(poll_id);
 
 CREATE TABLE IF NOT EXISTS predictions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

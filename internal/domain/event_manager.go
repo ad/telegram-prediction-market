@@ -25,6 +25,7 @@ type Logger interface {
 type EventRepository interface {
 	CreateEvent(ctx context.Context, event *Event) error
 	GetEvent(ctx context.Context, eventID int64) (*Event, error)
+	GetEventByPollID(ctx context.Context, pollID string) (*Event, error)
 	GetActiveEvents(ctx context.Context) ([]*Event, error)
 	UpdateEvent(ctx context.Context, event *Event) error
 	ResolveEvent(ctx context.Context, eventID int64, correctOption int) error
@@ -32,6 +33,8 @@ type EventRepository interface {
 
 // PredictionRepository interface for prediction operations
 type PredictionRepository interface {
+	SavePrediction(ctx context.Context, prediction *Prediction) error
+	UpdatePrediction(ctx context.Context, prediction *Prediction) error
 	GetPredictionsByEvent(ctx context.Context, eventID int64) ([]*Prediction, error)
 	GetPredictionByUserAndEvent(ctx context.Context, userID, eventID int64) (*Prediction, error)
 }
