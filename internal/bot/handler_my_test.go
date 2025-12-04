@@ -26,7 +26,7 @@ func TestPersonalStatsCompleteness(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := storage.NewDBQueue(db)
 			defer queue.Close()

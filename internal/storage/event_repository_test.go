@@ -23,7 +23,7 @@ func TestEventDataRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	queue := NewDBQueue(db)
 	defer queue.Close()

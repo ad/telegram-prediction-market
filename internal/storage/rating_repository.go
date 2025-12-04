@@ -80,7 +80,7 @@ func (r *RatingRepository) GetTopRatings(ctx context.Context, limit int) ([]*dom
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
 			var rating domain.Rating

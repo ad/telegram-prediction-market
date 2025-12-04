@@ -51,7 +51,7 @@ func (r *AchievementRepository) GetUserAchievements(ctx context.Context, userID 
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
 			var achievement domain.Achievement

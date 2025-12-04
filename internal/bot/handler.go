@@ -624,10 +624,11 @@ func (h *BotHandler) handleOptionsInput(ctx context.Context, b *bot.Bot, update 
 	// Validate option count based on event type
 	minOptions := 2
 	maxOptions := 6
-	if state.EventData.EventType == domain.EventTypeBinary {
+	switch state.EventData.EventType {
+	case domain.EventTypeBinary:
 		minOptions = 2
 		maxOptions = 2
-	} else if state.EventData.EventType == domain.EventTypeProbability {
+	case domain.EventTypeProbability:
 		minOptions = 4
 		maxOptions = 4
 	}

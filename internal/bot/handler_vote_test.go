@@ -27,7 +27,7 @@ func TestVotePersistenceCompleteness(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := storage.NewDBQueue(db)
 			defer queue.Close()
@@ -131,7 +131,7 @@ func TestVoteUpdateIdempotence(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := storage.NewDBQueue(db)
 			defer queue.Close()
@@ -250,7 +250,7 @@ func TestDeadlineEnforcement(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := storage.NewDBQueue(db)
 			defer queue.Close()
@@ -349,7 +349,7 @@ func TestTransactionAtomicity(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := storage.NewDBQueue(db)
 			defer queue.Close()

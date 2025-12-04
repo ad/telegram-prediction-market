@@ -64,12 +64,6 @@ func (l *capturingLogger) getEntries() []logEntry {
 	return append([]logEntry{}, l.entries...)
 }
 
-func (l *capturingLogger) clear() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.entries = nil
-}
-
 // Feature: telegram-prediction-bot, Property 29: Admin action logging
 // Validates: Requirements 13.1, 13.2, 13.3
 func TestAdminActionLogging(t *testing.T) {
@@ -117,12 +111,12 @@ func TestAdminActionLogging(t *testing.T) {
 			}
 
 			// Verify required fields are present
-			if adminLogEntry.fields["admin_user_id"] != adminUserID {
+			if _, ok := adminLogEntry.fields["admin_user_id"]; !ok || adminLogEntry.fields["admin_user_id"] != adminUserID {
 				t.Logf("admin_user_id mismatch: expected %d, got %v", adminUserID, adminLogEntry.fields["admin_user_id"])
 				return false
 			}
 
-			if adminLogEntry.fields["action"] != action {
+			if _, ok := adminLogEntry.fields["action"]; !ok || adminLogEntry.fields["action"] != action {
 				t.Logf("action mismatch: expected %s, got %v", action, adminLogEntry.fields["action"])
 				return false
 			}
@@ -196,10 +190,11 @@ func TestAdminActionLoggingAllTypes(t *testing.T) {
 
 			if adminLogEntry == nil {
 				t.Fatalf("Admin action log entry not found for action %s", action)
+				return
 			}
 
 			// Verify action is logged correctly
-			if adminLogEntry.fields["action"] != action {
+			if _, ok := adminLogEntry.fields["action"]; !ok || adminLogEntry.fields["action"] != action {
 				t.Errorf("action mismatch: expected %s, got %v", action, adminLogEntry.fields["action"])
 			}
 		})

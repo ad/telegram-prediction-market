@@ -62,7 +62,7 @@ func (r *PredictionRepository) GetPredictionsByEvent(ctx context.Context, eventI
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
 			var prediction domain.Prediction

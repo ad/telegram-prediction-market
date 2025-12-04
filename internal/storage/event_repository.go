@@ -97,7 +97,7 @@ func (r *EventRepository) GetActiveEvents(ctx context.Context) ([]*domain.Event,
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
 			var event domain.Event
@@ -184,7 +184,7 @@ func (r *EventRepository) GetEventsByDeadlineRange(ctx context.Context, start, e
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
 			var event domain.Event
