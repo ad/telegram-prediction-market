@@ -335,11 +335,24 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 		}
 		sb.WriteString(fmt.Sprintf("Тип: %s\n", typeStr))
 
-		// Options
+		// Get vote distribution for this event
+		predictions, err := h.predictionRepo.GetPredictionsByEvent(ctx, event.ID)
+		if err != nil {
+			h.logger.Error("failed to get predictions for event", "event_id", event.ID, "error", err)
+			predictions = []*domain.Prediction{} // Continue with empty predictions
+		}
+
+		// Calculate vote distribution
+		voteDistribution := h.calculateVoteDistribution(predictions, len(event.Options))
+		totalVotes := len(predictions)
+
+		// Options with vote percentages
 		sb.WriteString("Варианты:\n")
 		for j, opt := range event.Options {
-			sb.WriteString(fmt.Sprintf("  %d) %s\n", j+1, opt))
+			percentage := voteDistribution[j]
+			sb.WriteString(fmt.Sprintf("  %d) %s - %.1f%%\n", j+1, opt, percentage))
 		}
+		sb.WriteString(fmt.Sprintf("👥 Всего проголосовало: %d\n", totalVotes))
 
 		// Deadline
 		timeUntil := time.Until(event.Deadline)
@@ -369,6 +382,36 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 	if err != nil {
 		h.logger.Error("failed to send events message", "error", err)
 	}
+}
+
+// calculateVoteDistribution calculates the percentage of votes for each option
+// Returns a map of option index to percentage
+func (h *BotHandler) calculateVoteDistribution(predictions []*domain.Prediction, numOptions int) map[int]float64 {
+	distribution := make(map[int]float64)
+
+	// Initialize all options to 0%
+	for i := 0; i < numOptions; i++ {
+		distribution[i] = 0.0
+	}
+
+	// If no votes, return all zeros
+	if len(predictions) == 0 {
+		return distribution
+	}
+
+	// Count votes for each option
+	voteCounts := make(map[int]int)
+	for _, pred := range predictions {
+		voteCounts[pred.Option]++
+	}
+
+	// Calculate percentages
+	totalVotes := float64(len(predictions))
+	for option, count := range voteCounts {
+		distribution[option] = (float64(count) / totalVotes) * 100.0
+	}
+
+	return distribution
 }
 
 // HandlePollAnswer handles poll answer updates (when users vote)
