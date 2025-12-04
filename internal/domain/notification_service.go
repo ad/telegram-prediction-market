@@ -105,9 +105,8 @@ func (ns *NotificationService) SendNewEventNotification(ctx context.Context, eve
 
 	// Send notification to group
 	_, err = ns.bot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    ns.groupID,
-		Text:      sb.String(),
-		ParseMode: models.ParseModeMarkdown,
+		ChatID: ns.groupID,
+		Text:   sb.String(),
 	})
 	if err != nil {
 		ns.logger.Error("failed to send new event notification", "event_id", eventID, "error", err)
@@ -206,9 +205,8 @@ func (ns *NotificationService) PublishEventResults(ctx context.Context, eventID 
 
 	// Send results to group
 	_, err = ns.bot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    ns.groupID,
-		Text:      sb.String(),
-		ParseMode: models.ParseModeMarkdown,
+		ChatID: ns.groupID,
+		Text:   sb.String(),
 	})
 	if err != nil {
 		ns.logger.Error("failed to send results to group", "event_id", eventID, "error", err)
@@ -269,9 +267,8 @@ func (ns *NotificationService) SendDeadlineReminder(ctx context.Context, eventID
 	for _, rating := range allRatings {
 		if !votedUsers[rating.UserID] {
 			_, err := ns.bot.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID:    rating.UserID,
-				Text:      reminderText,
-				ParseMode: models.ParseModeMarkdown,
+				ChatID: rating.UserID,
+				Text:   reminderText,
 			})
 			if err != nil {
 				ns.logger.Warn("failed to send reminder to user", "user_id", rating.UserID, "error", err)

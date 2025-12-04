@@ -160,9 +160,8 @@ func (h *BotHandler) HandleHelp(ctx context.Context, b *bot.Bot, update *models.
 Голосуйте до дедлайна! За 24 часа до окончания придёт напоминание. 🔔`
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    update.Message.Chat.ID,
-		Text:      helpText,
-		ParseMode: models.ParseModeMarkdown,
+		ChatID: update.Message.Chat.ID,
+		Text:   helpText,
 	})
 	if err != nil {
 		h.logger.Error("failed to send help message", "error", err)
@@ -216,9 +215,8 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    update.Message.Chat.ID,
-		Text:      sb.String(),
-		ParseMode: models.ParseModeMarkdown,
+		ChatID: update.Message.Chat.ID,
+		Text:   sb.String(),
 	})
 	if err != nil {
 		h.logger.Error("failed to send rating message", "error", err)
@@ -286,9 +284,8 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    update.Message.Chat.ID,
-		Text:      sb.String(),
-		ParseMode: models.ParseModeMarkdown,
+		ChatID: update.Message.Chat.ID,
+		Text:   sb.String(),
 	})
 	if err != nil {
 		h.logger.Error("failed to send my stats message", "error", err)
@@ -368,6 +365,9 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 			} else {
 				deadlineStr = fmt.Sprintf("⏰ Осталось: %d мин.", minutes)
 			}
+			// Show deadline in local timezone
+			localDeadline := event.Deadline.In(h.config.Timezone)
+			deadlineStr += fmt.Sprintf(" (до %s)", localDeadline.Format("02.01 15:04"))
 		} else {
 			deadlineStr = "⏰ Дедлайн истёк"
 		}
@@ -375,9 +375,8 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    update.Message.Chat.ID,
-		Text:      sb.String(),
-		ParseMode: models.ParseModeMarkdown,
+		ChatID: update.Message.Chat.ID,
+		Text:   sb.String(),
 	})
 	if err != nil {
 		h.logger.Error("failed to send events message", "error", err)
@@ -656,8 +655,8 @@ func (h *BotHandler) handleOptionsInput(ctx context.Context, b *bot.Bot, update 
 func (h *BotHandler) handleDeadlineInput(ctx context.Context, b *bot.Bot, update *models.Update, state *ConversationState) {
 	deadlineText := strings.TrimSpace(update.Message.Text)
 
-	// Parse deadline
-	deadline, err := time.Parse("02.01.2006 15:04", deadlineText)
+	// Parse deadline in the configured timezone
+	deadline, err := time.ParseInLocation("02.01.2006 15:04", deadlineText, h.config.Timezone)
 	if err != nil {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
@@ -725,9 +724,10 @@ func (h *BotHandler) handleDeadlineInput(ctx context.Context, b *bot.Bot, update
 	}
 
 	// Send confirmation
+	localDeadline := state.EventData.Deadline.In(h.config.Timezone)
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   fmt.Sprintf("✅ Событие создано!\n\nID: %d\nВопрос: %s\nДедлайн: %s", state.EventData.ID, state.EventData.Question, state.EventData.Deadline.Format("02.01.2006 15:04")),
+		Text:   fmt.Sprintf("✅ Событие создано!\n\nID: %d\nВопрос: %s\nДедлайн: %s", state.EventData.ID, state.EventData.Question, localDeadline.Format("02.01.2006 15:04")),
 	})
 
 	// Clean up conversation state
@@ -874,14 +874,14 @@ func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, call
 	}
 
 	// Check if this is selecting the correct option
-	if len(parts) == 3 && parts[1] == "option" {
-		eventID, err := strconv.ParseInt(parts[0][8:], 10, 64) // Skip "resolve:"
+	if len(parts) == 4 && parts[1] == "option" {
+		eventID, err := strconv.ParseInt(parts[2], 10, 64)
 		if err != nil {
 			h.logger.Error("failed to parse event ID", "error", err)
 			return
 		}
 
-		optionIndex, err := strconv.Atoi(parts[2])
+		optionIndex, err := strconv.Atoi(parts[3])
 		if err != nil {
 			h.logger.Error("failed to parse option index", "error", err)
 			return
@@ -1032,9 +1032,8 @@ func (h *BotHandler) publishEventResults(ctx context.Context, b *bot.Bot, event 
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:    h.config.GroupID,
-		Text:      sb.String(),
-		ParseMode: models.ParseModeMarkdown,
+		ChatID: h.config.GroupID,
+		Text:   sb.String(),
 	})
 	if err != nil {
 		h.logger.Error("failed to send results to group", "error", err)

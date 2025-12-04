@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config holds application configuration
@@ -14,6 +15,7 @@ type Config struct {
 	GroupID       int64
 	DatabasePath  string
 	LogLevel      string
+	Timezone      *time.Location
 }
 
 // Load loads configuration from environment variables
@@ -51,12 +53,23 @@ func Load() (*Config, error) {
 		logLevel = "INFO" // default value
 	}
 
+	// Load timezone (default to UTC)
+	timezoneStr := os.Getenv("TIMEZONE")
+	if timezoneStr == "" {
+		timezoneStr = "UTC" // default value
+	}
+	timezone, err := time.LoadLocation(timezoneStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid TIMEZONE '%s': %w", timezoneStr, err)
+	}
+
 	return &Config{
 		TelegramToken: token,
 		AdminUserIDs:  adminIDs,
 		GroupID:       groupID,
 		DatabasePath:  dbPath,
 		LogLevel:      logLevel,
+		Timezone:      timezone,
 	}, nil
 }
 
