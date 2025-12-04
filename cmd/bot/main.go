@@ -16,10 +16,14 @@ import (
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/joho/godotenv"
 	_ "modernc.org/sqlite"
 )
 
 func main() {
+	// Load .env file (ignore error if file doesn't exist)
+	_ = godotenv.Load()
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
