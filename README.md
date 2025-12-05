@@ -5,6 +5,10 @@ A Telegram bot for prediction markets where users can make forecasts on various 
 ## Features
 
 - **Event Creation**: Admins can create binary, multi-option, and probability-based prediction events
+- FSM-based multi-step creation flow with persistent state
+- Automatic message cleanup for clean chat experience
+- Session recovery after bot restarts
+- Confirmation step before publishing
 - **Voting System**: Non-anonymous polls with real-time vote distribution
 - **Rating System**: Points-based scoring with bonuses for minority predictions and early voting
 - **Achievements**: Badges for streaks, participation, and weekly top performers
@@ -75,9 +79,26 @@ go run ./cmd/bot
 
 ### Admin Commands
 
-- `/create_event` - Create a new prediction event
+- `/create_event` - Create a new prediction event (interactive multi-step flow)
 - `/resolve_event` - Resolve an event and calculate scores
 - `/edit_event` - Edit an event (only if no votes exist)
+
+### Event Creation Flow
+
+The `/create_event` command starts an interactive, multi-step process:
+
+1. **Question**: Enter the prediction question
+2. **Event Type**: Choose between Binary (Yes/No), Multi-option (2-6 choices), or Probability (0-25%, 25-50%, 50-75%, 75-100%)
+3. **Options** (for multi-option only): Enter answer options (one per line)
+4. **Deadline**: Enter deadline in format `DD.MM.YYYY HH:MM` (e.g., `25.12.2024 18:00`)
+5. **Confirmation**: Review all details and confirm or cancel
+
+**Key Features:**
+- **Clean Chat**: All intermediate messages are automatically deleted, leaving only the final result
+- **Persistent Sessions**: Your progress is saved - if the bot restarts, you can continue where you left off
+- **Validation**: Input is validated at each step with helpful error messages
+- **Session Timeout**: Sessions expire after 30 minutes of inactivity
+- **Concurrent Creation**: Multiple admins can create events simultaneously without interference
 
 ## Scoring Rules
 
@@ -122,13 +143,32 @@ go test ./... -v
 .
 ├── cmd/bot/           # Main application entry point
 ├── internal/
-│   ├── bot/          # Telegram bot handlers
+│   ├── bot/          # Telegram bot handlers and FSM
+│   │   ├── handler.go              # Main bot handler
+│   │   ├── event_creation_fsm.go   # FSM-based event creation
+│   │   └── message_deletion.go     # Message cleanup utilities
 │   ├── config/       # Configuration management
 │   ├── domain/       # Business logic and domain models
+│   │   └── event_creation_context.go  # FSM context data
 │   ├── logger/       # Structured logging
 │   └── storage/      # Database repositories and schema
-└─design docs
+│       └── fsm_storage.go          # FSM state persistence
+└── .kiro/specs/      # Feature specifications and design docs
 ```
+
+### Technical Architecture
+
+**Event Creation State Machine:**
+- Uses `github.com/go-telegram/fsm` library for state management
+- States: `ask_question` → `ask_event_type` → `ask_options` (conditional) → `ask_deadline` → `confirm` → `complete`
+- State and context data persisted in SQLite (`fsm_sessions` table)
+- Automatic cleanup of stale sessions (>30 minutes inactive)
+- Message IDs tracked in context for cleanup on completion
+
+**Database Schema:**
+- `fsm_sessions`: Stores FSM state, context JSON, and timestamps per user
+- Indexed on `updated_at` for efficient stale session cleanup
+- Atomic transactions ensure data consistency
 
 ## License
 
