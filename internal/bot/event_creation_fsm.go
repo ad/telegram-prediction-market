@@ -307,12 +307,13 @@ func (f *EventCreationFSM) handleQuestionInput(ctx context.Context, userID int64
 	context.LastBotMessageID = messageID
 
 	// Transition to ask_event_type state
+	f.logger.Info("state transition", "user_id", userID, "old_state", StateAskQuestion, "new_state", StateAskEventType)
 	if err := f.storage.Set(ctx, userID, StateAskEventType, context.ToMap()); err != nil {
 		f.logger.Error("failed to transition to ask_event_type", "user_id", userID, "error", err)
 		return err
 	}
 
-	f.logger.Info("question stored, transitioned to ask_event_type", "user_id", userID, "question", question)
+	f.logger.Debug("question stored", "user_id", userID, "question", question)
 	return nil
 }
 
@@ -368,12 +369,13 @@ func (f *EventCreationFSM) handleEventTypeCallback(ctx context.Context, userID i
 	context.LastBotMessageID = messageID
 
 	// Transition to next state
+	f.logger.Info("state transition", "user_id", userID, "old_state", StateAskEventType, "new_state", nextState)
 	if err := f.storage.Set(ctx, userID, nextState, context.ToMap()); err != nil {
 		f.logger.Error("failed to transition state", "user_id", userID, "next_state", nextState, "error", err)
 		return err
 	}
 
-	f.logger.Info("event type selected, transitioned", "user_id", userID, "event_type", eventType, "next_state", nextState)
+	f.logger.Debug("event type selected", "user_id", userID, "event_type", eventType)
 	return nil
 }
 
@@ -475,12 +477,13 @@ func (f *EventCreationFSM) handleOptionsInput(ctx context.Context, userID int64,
 	context.LastBotMessageID = messageID
 
 	// Transition to ask_deadline state
+	f.logger.Info("state transition", "user_id", userID, "old_state", StateAskOptions, "new_state", StateAskDeadline)
 	if err := f.storage.Set(ctx, userID, StateAskDeadline, context.ToMap()); err != nil {
 		f.logger.Error("failed to transition to ask_deadline", "user_id", userID, "error", err)
 		return err
 	}
 
-	f.logger.Info("options stored, transitioned to ask_deadline", "user_id", userID, "options_count", len(cleanOptions))
+	f.logger.Debug("options stored", "user_id", userID, "options_count", len(cleanOptions))
 	return nil
 }
 
@@ -588,12 +591,13 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 	context.LastBotMessageID = messageID
 
 	// Transition to confirm state
+	f.logger.Info("state transition", "user_id", userID, "old_state", StateAskDeadline, "new_state", StateConfirm)
 	if err := f.storage.Set(ctx, userID, StateConfirm, context.ToMap()); err != nil {
 		f.logger.Error("failed to transition to confirm", "user_id", userID, "error", err)
 		return err
 	}
 
-	f.logger.Info("deadline stored, transitioned to confirm", "user_id", userID, "deadline", deadline)
+	f.logger.Debug("deadline stored", "user_id", userID, "deadline", deadline)
 	return nil
 }
 

@@ -523,6 +523,122 @@ func TestCorruptedSessionCleanup(t *testing.T) {
 	properties.TestingRun(t)
 }
 
+// Feature: event-creation-ux-improvement, Property 17: Stale session cleanup logging
+func TestStaleSessionCleanupLogging(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+
+	properties.Property("stale session deletion creates log entry with user_id and cleanup reason", prop.ForAll(
+		func(userIDs []int64) bool {
+			if len(userIDs) == 0 {
+				return true // Skip empty case
+			}
+
+			// Deduplicate user IDs to avoid overwriting sessions
+			uniqueUserIDs := make(map[int64]bool)
+			var dedupedUserIDs []int64
+			for _, userID := range userIDs {
+				if userID > 0 && !uniqueUserIDs[userID] {
+					uniqueUserIDs[userID] = true
+					dedupedUserIDs = append(dedupedUserIDs, userID)
+				}
+			}
+
+			if len(dedupedUserIDs) == 0 {
+				return true // Skip if no valid user IDs
+			}
+
+			// Setup in-memory database
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				t.Logf("Failed to open database: %v", err)
+				return false
+			}
+			defer db.Close()
+
+			queue := NewDBQueue(db)
+			defer queue.Close()
+
+			// Initialize schema
+			if err := InitSchema(queue); err != nil {
+				t.Logf("Failed to initialize schema: %v", err)
+				return false
+			}
+
+			// Create a logger that captures output
+			logOutput := &captureWriter{}
+			log := logger.NewWithWriter(logger.INFO, logOutput)
+			storage := NewFSMStorage(queue, log)
+			ctx := context.Background()
+
+			// Create stale sessions for all user IDs
+			for _, userID := range dedupedUserIDs {
+				state := "ask_question"
+				context := map[string]interface{}{
+					"question": "Test question?",
+				}
+
+				err = storage.Set(ctx, userID, state, context)
+				if err != nil {
+					t.Logf("Failed to set session: %v", err)
+					return false
+				}
+
+				// Make the session stale
+				staleTime := "datetime('now', '-31 minutes')"
+				err = queue.Execute(func(db *sql.DB) error {
+					_, err := db.ExecContext(ctx,
+						"UPDATE fsm_sessions SET updated_at = "+staleTime+" WHERE user_id = ?",
+						userID)
+					return err
+				})
+				if err != nil {
+					t.Logf("Failed to update timestamp: %v", err)
+					return false
+				}
+			}
+
+			// Clear log output before cleanup
+			logOutput.Reset()
+
+			// Run cleanup
+			err = storage.CleanupStale(ctx)
+			if err != nil {
+				t.Logf("Failed to cleanup stale sessions: %v", err)
+				return false
+			}
+
+			// Verify log output contains entries for each stale session
+			logContent := logOutput.String()
+
+			for _, userID := range dedupedUserIDs {
+				// Check that log contains user_id
+				userIDStr := formatInt64(userID)
+				if !containsString(logContent, userIDStr) {
+					t.Logf("Log does not contain user_id %d", userID)
+					return false
+				}
+
+				// Check that log contains cleanup reason
+				if !containsString(logContent, "session_expired") && !containsString(logContent, "stale") {
+					t.Logf("Log does not contain cleanup reason for user_id %d", userID)
+					return false
+				}
+			}
+
+			// Verify that cleanup completion is logged
+			if !containsString(logContent, "cleanup completed") && !containsString(logContent, "cleaned up") {
+				t.Logf("Log does not contain cleanup completion message")
+				return false
+			}
+
+			return true
+		},
+		gen.SliceOf(gen.Int64Range(1, 1000000)),
+	))
+
+	properties.TestingRun(t)
+}
+
 func TestSessionIsolationByUser(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
@@ -652,4 +768,66 @@ func TestSessionIsolationByUser(t *testing.T) {
 	))
 
 	properties.TestingRun(t)
+}
+
+// captureWriter is a simple writer that captures output for testing
+type captureWriter struct {
+	content string
+}
+
+func (w *captureWriter) Write(p []byte) (n int, err error) {
+	w.content += string(p)
+	return len(p), nil
+}
+
+func (w *captureWriter) String() string {
+	return w.content
+}
+
+func (w *captureWriter) Reset() {
+	w.content = ""
+}
+
+// Helper functions for string operations
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && findSubstringInString(s, substr)
+}
+
+func findSubstringInString(s, substr string) bool {
+	if len(substr) == 0 {
+		return true
+	}
+	if len(s) < len(substr) {
+		return false
+	}
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func formatInt64(n int64) string {
+	// Simple int64 to string conversion
+	if n == 0 {
+		return "0"
+	}
+
+	negative := n < 0
+	if negative {
+		n = -n
+	}
+
+	var digits []byte
+	for n > 0 {
+		digits = append([]byte{byte('0' + n%10)}, digits...)
+		n /= 10
+	}
+
+	if negative {
+		digits = append([]byte{'-'}, digits...)
+	}
+
+	return string(digits)
 }

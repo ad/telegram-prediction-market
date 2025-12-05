@@ -77,6 +77,10 @@ func (s *FSMStorage) Get(ctx context.Context, userID int64) (state string, data 
 
 // Set stores FSM state and context for a user using atomic transaction
 func (s *FSMStorage) Set(ctx context.Context, userID int64, state string, data map[string]interface{}) error {
+	// Get old state for logging (if exists)
+	oldState, _, getErr := s.Get(ctx, userID)
+	isNewSession := getErr == ErrSessionNotFound
+
 	// Serialize context to JSON
 	contextJSON, err := json.Marshal(data)
 	if err != nil {
@@ -114,12 +118,19 @@ func (s *FSMStorage) Set(ctx context.Context, userID int64, state string, data m
 		return err
 	}
 
-	s.logger.Debug("session stored", "user_id", userID, "state", state)
+	// Log session creation or update
+	if isNewSession {
+		s.logger.Info("session created", "user_id", userID, "state", state)
+	} else {
+		s.logger.Info("session updated", "user_id", userID, "old_state", oldState, "new_state", state)
+	}
+
 	return nil
 }
 
 // Delete removes FSM session for a user
 func (s *FSMStorage) Delete(ctx context.Context, userID int64) error {
+	var rowsAffected int64
 	err := s.queue.Execute(func(db *sql.DB) error {
 		// Use transaction for atomic delete
 		tx, err := db.BeginTx(ctx, nil)
@@ -136,7 +147,7 @@ func (s *FSMStorage) Delete(ctx context.Context, userID int64) error {
 			return err
 		}
 
-		rowsAffected, err := result.RowsAffected()
+		rowsAffected, err = result.RowsAffected()
 		if err != nil {
 			return err
 		}
@@ -153,14 +164,49 @@ func (s *FSMStorage) Delete(ctx context.Context, userID int64) error {
 		return err
 	}
 
-	s.logger.Debug("session deleted", "user_id", userID)
+	if rowsAffected > 0 {
+		s.logger.Info("session deleted", "user_id", userID)
+	}
+
 	return nil
 }
 
 // CleanupStale removes sessions older than 30 minutes
 func (s *FSMStorage) CleanupStale(ctx context.Context) error {
-	var deletedCount int64
+	// First, get the list of user IDs that will be deleted for detailed logging
+	var userIDs []int64
 	err := s.queue.Execute(func(db *sql.DB) error {
+		rows, err := db.QueryContext(ctx, `
+			SELECT user_id FROM fsm_sessions
+			WHERE updated_at < datetime('now', '-30 minutes')
+		`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var userID int64
+			if err := rows.Scan(&userID); err != nil {
+				return err
+			}
+			userIDs = append(userIDs, userID)
+		}
+		return rows.Err()
+	})
+
+	if err != nil {
+		s.logger.Error("failed to query stale sessions", "error", err)
+		return err
+	}
+
+	// Log each stale session that will be cleaned up
+	for _, userID := range userIDs {
+		s.logger.Info("cleaning up stale session", "user_id", userID, "reason", "session_expired")
+	}
+
+	var deletedCount int64
+	err = s.queue.Execute(func(db *sql.DB) error {
 		// Use transaction for atomic cleanup
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
@@ -192,7 +238,7 @@ func (s *FSMStorage) CleanupStale(ctx context.Context) error {
 	}
 
 	if deletedCount > 0 {
-		s.logger.Info("cleaned up stale sessions", "count", deletedCount)
+		s.logger.Info("stale session cleanup completed", "count", deletedCount)
 	} else {
 		s.logger.Debug("no stale sessions to cleanup")
 	}
