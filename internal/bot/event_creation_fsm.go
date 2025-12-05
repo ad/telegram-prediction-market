@@ -597,7 +597,7 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 	return nil
 }
 
-// buildEventSummary creates a summary message with all event details
+// buildEventSummary creates a summary message with all event details (for confirmation)
 func (f *EventCreationFSM) buildEventSummary(context *domain.EventCreationContext) string {
 	var sb strings.Builder
 	sb.WriteString("📋 ПОДТВЕРЖДЕНИЕ СОБЫТИЯ\n\n")
@@ -626,6 +626,48 @@ func (f *EventCreationFSM) buildEventSummary(context *domain.EventCreationContex
 	// Deadline
 	localDeadline := context.Deadline.In(f.config.Timezone)
 	sb.WriteString(fmt.Sprintf("⏰ Дедлайн: %s\n\n", localDeadline.Format("02.01.2006 15:04")))
+
+	return sb.String()
+}
+
+// buildFinalEventSummary creates a final summary message with event ID and poll reference
+func (f *EventCreationFSM) buildFinalEventSummary(event *domain.Event, pollReference string) string {
+	var sb strings.Builder
+	sb.WriteString("✅ СОБЫТИЕ СОЗДАНО!\n\n")
+
+	// Event ID
+	sb.WriteString(fmt.Sprintf("🆔 ID: %d\n\n", event.ID))
+
+	// Question
+	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
+
+	// Event type
+	typeStr := ""
+	switch event.EventType {
+	case domain.EventTypeBinary:
+		typeStr = "Бинарное (Да/Нет)"
+	case domain.EventTypeMultiOption:
+		typeStr = "Множественный выбор"
+	case domain.EventTypeProbability:
+		typeStr = "Вероятностное"
+	}
+	sb.WriteString(fmt.Sprintf("🎯 Тип: %s\n\n", typeStr))
+
+	// Options
+	sb.WriteString("📊 Варианты:\n")
+	for i, opt := range event.Options {
+		sb.WriteString(fmt.Sprintf("  %d) %s\n", i+1, opt))
+	}
+	sb.WriteString("\n")
+
+	// Deadline (formatted in configured timezone)
+	localDeadline := event.Deadline.In(f.config.Timezone)
+	sb.WriteString(fmt.Sprintf("⏰ Дедлайн: %s\n\n", localDeadline.Format("02.01.2006 15:04")))
+
+	// Poll reference
+	if pollReference != "" {
+		sb.WriteString(fmt.Sprintf("📊 %s\n", pollReference))
+	}
 
 	return sb.String()
 }
@@ -693,10 +735,9 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 			f.logger.Error("failed to update event with poll ID", "event_id", event.ID, "error", err)
 		}
 
-		// Send final summary to admin
-		localDeadline := event.Deadline.In(f.config.Timezone)
-		summary := fmt.Sprintf("✅ СОБЫТИЕ СОЗДАНО!\n\n▸ ID: %d\n▸ Вопрос: %s\n▸ Дедлайн: %s\n▸ Опрос опубликован в группе",
-			event.ID, event.Question, localDeadline.Format("02.01.2006 15:04"))
+		// Send final summary to admin with poll reference
+		pollReference := "Опрос опубликован в группе"
+		summary := f.buildFinalEventSummary(event, pollReference)
 		_, _ = f.sendMessage(ctx, chatID, summary, nil)
 
 		f.logger.Info("event created and published", "user_id", userID, "event_id", event.ID, "poll_id", event.PollID)

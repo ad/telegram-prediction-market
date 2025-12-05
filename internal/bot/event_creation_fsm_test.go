@@ -1433,3 +1433,118 @@ func TestProperty_CleanChatState(t *testing.T) {
 
 	properties.TestingRun(t)
 }
+
+// Feature: event-creation-ux-improvement, Property 19: Deadline timezone formatting
+// Validates: Requirements 6.2
+func TestProperty_DeadlineTimezoneFormatting(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("deadline in summary is formatted in configured timezone", prop.ForAll(
+		func(question string, options []string, hoursOffset int) bool {
+			// Create a timezone with a specific offset
+			tzOffset := hoursOffset % 24 // Keep offset within reasonable range
+			if tzOffset < -12 {
+				tzOffset = -12
+			}
+			if tzOffset > 14 {
+				tzOffset = 14
+			}
+
+			// Create a fixed timezone with the offset
+			tz := time.FixedZone("TEST", tzOffset*3600)
+
+			// Create FSM with the test timezone
+			cfg := &config.Config{
+				Timezone: tz,
+			}
+			log := logger.New(logger.DEBUG)
+			fsm := &EventCreationFSM{
+				config: cfg,
+				logger: log,
+			}
+
+			// Create a deadline in UTC
+			deadlineUTC := time.Date(2024, 12, 25, 18, 0, 0, 0, time.UTC)
+
+			// Create an event
+			event := &domain.Event{
+				ID:        123,
+				Question:  question,
+				EventType: domain.EventTypeBinary,
+				Options:   options,
+				Deadline:  deadlineUTC,
+			}
+
+			// Build final summary
+			summary := fsm.buildFinalEventSummary(event, "Опрос опубликован в группе")
+
+			// Convert deadline to the configured timezone
+			localDeadline := deadlineUTC.In(tz)
+			expectedDeadlineStr := localDeadline.Format("02.01.2006 15:04")
+
+			// Verify the summary contains the deadline in the configured timezone
+			if !containsString(summary, expectedDeadlineStr) {
+				t.Logf("Summary missing deadline in configured timezone. Expected: %s, Summary: %s", expectedDeadlineStr, summary)
+				return false
+			}
+
+			return true
+		},
+		gen.Identifier(),
+		gen.SliceOfN(2, gen.Identifier()),
+		gen.IntRange(-12, 14),
+	))
+
+	properties.TestingRun(t)
+}
+
+// Feature: event-creation-ux-improvement, Property 20: Poll reference in summary
+// Validates: Requirements 6.4
+func TestProperty_PollReferenceInSummary(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("final summary includes poll reference when provided", prop.ForAll(
+		func(eventID int64, question string, options []string, pollReference string) bool {
+			// Create FSM with test config
+			cfg := &config.Config{
+				Timezone: time.UTC,
+			}
+			log := logger.New(logger.DEBUG)
+			fsm := &EventCreationFSM{
+				config: cfg,
+				logger: log,
+			}
+
+			// Create an event
+			event := &domain.Event{
+				ID:        eventID,
+				Question:  question,
+				EventType: domain.EventTypeBinary,
+				Options:   options,
+				Deadline:  time.Now().Add(24 * time.Hour),
+			}
+
+			// Build final summary with poll reference
+			summary := fsm.buildFinalEventSummary(event, pollReference)
+
+			// Verify the summary contains the poll reference
+			if pollReference != "" && !containsString(summary, pollReference) {
+				t.Logf("Summary missing poll reference. Expected: %s, Summary: %s", pollReference, summary)
+				return false
+			}
+
+			// Verify the summary contains the event ID
+			eventIDStr := fmt.Sprintf("%d", eventID)
+			if !containsString(summary, eventIDStr) {
+				t.Logf("Summary missing event ID. Expected: %s, Summary: %s", eventIDStr, summary)
+				return false
+			}
+
+			return true
+		},
+		gen.Int64Range(1, 1000000),
+		gen.Identifier(),
+		gen.SliceOfN(2, gen.Identifier()),
+		gen.OneConstOf("Опрос опубликован в группе", "Poll published to group", ""),
+	))
+
+	properties.TestingRun(t)
+}
