@@ -145,3 +145,24 @@ func (r *PredictionRepository) GetUserPredictions(ctx context.Context, userID in
 
 	return predictions, nil
 }
+
+// GetUserCompletedEventCount counts distinct completed events user participated in
+func (r *PredictionRepository) GetUserCompletedEventCount(ctx context.Context, userID int64) (int, error) {
+	var count int
+
+	err := r.queue.Execute(func(db *sql.DB) error {
+		return db.QueryRowContext(ctx,
+			`SELECT COUNT(DISTINCT p.event_id)
+			 FROM predictions p
+			 JOIN events e ON p.event_id = e.id
+			 WHERE p.user_id = ? AND e.status = ?`,
+			userID, domain.EventStatusResolved,
+		).Scan(&count)
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}

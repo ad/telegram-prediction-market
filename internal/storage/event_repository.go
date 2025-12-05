@@ -319,3 +319,21 @@ func (r *EventRepository) GetResolvedEvents(ctx context.Context) ([]*domain.Even
 
 	return events, nil
 }
+
+// GetUserCreatedEventsCount counts events created by user
+func (r *EventRepository) GetUserCreatedEventsCount(ctx context.Context, userID int64) (int, error) {
+	var count int
+
+	err := r.queue.Execute(func(db *sql.DB) error {
+		return db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM events WHERE created_by = ?`,
+			userID,
+		).Scan(&count)
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
