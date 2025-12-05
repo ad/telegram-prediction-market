@@ -64,25 +64,30 @@ func (ns *NotificationService) SendNewEventNotification(ctx context.Context, eve
 
 	// Build notification message
 	var sb strings.Builder
-	sb.WriteString("🆕 *Новое событие для прогноза!*\n\n")
-	sb.WriteString(fmt.Sprintf("❓ *Вопрос:* %s\n\n", event.Question))
+	sb.WriteString("🆕 НОВОЕ СОБЫТИЕ ДЛЯ ПРОГНОЗА!\n")
+	sb.WriteString("═══════════════════════════\n\n")
+	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
 
 	// Event type
 	typeStr := ""
+	typeIcon := ""
 	switch event.EventType {
 	case EventTypeBinary:
 		typeStr = "Бинарное"
+		typeIcon = "1️⃣"
 	case EventTypeMultiOption:
 		typeStr = "Множественный выбор"
+		typeIcon = "2️⃣"
 	case EventTypeProbability:
 		typeStr = "Вероятностное"
+		typeIcon = "3️⃣"
 	}
-	sb.WriteString(fmt.Sprintf("📋 *Тип:* %s\n\n", typeStr))
+	sb.WriteString(fmt.Sprintf("%s Тип: %s\n\n", typeIcon, typeStr))
 
 	// Options
-	sb.WriteString("*Варианты:*\n")
+	sb.WriteString("📊 Варианты:\n")
 	for i, opt := range event.Options {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, opt))
+		sb.WriteString(fmt.Sprintf("  %d) %s\n", i+1, opt))
 	}
 	sb.WriteString("\n")
 
@@ -93,14 +98,15 @@ func (ns *NotificationService) SendNewEventNotification(ctx context.Context, eve
 		hours := int(timeUntil.Hours())
 		if hours > 24 {
 			days := hours / 24
-			deadlineStr = fmt.Sprintf("⏰ *Дедлайн:* %d дн. %d ч.", days, hours%24)
+			deadlineStr = fmt.Sprintf("⏰ Дедлайн: %d дн. %d ч.", days, hours%24)
 		} else {
-			deadlineStr = fmt.Sprintf("⏰ *Дедлайн:* %d ч.", hours)
+			deadlineStr = fmt.Sprintf("⏰ Дедлайн: %d ч.", hours)
 		}
 	} else {
-		deadlineStr = "⏰ *Дедлайн:* истёк"
+		deadlineStr = "⏰ Дедлайн: истёк"
 	}
 	sb.WriteString(deadlineStr + "\n\n")
+	sb.WriteString("═══════════════════════════\n")
 	sb.WriteString("Голосуйте в опросе выше! 🗳")
 
 	// Send notification to group
@@ -190,13 +196,16 @@ func (ns *NotificationService) PublishEventResults(ctx context.Context, eventID 
 
 	// Build results message
 	var sb strings.Builder
-	sb.WriteString("🏁 *Событие завершено!*\n\n")
-	sb.WriteString(fmt.Sprintf("❓ *Вопрос:* %s\n\n", event.Question))
-	sb.WriteString(fmt.Sprintf("✅ *Правильный ответ:* %s\n\n", event.Options[correctOption]))
-	sb.WriteString(fmt.Sprintf("📊 *Угадали:* %d из %d участников\n\n", correctCount, len(predictions)))
+	sb.WriteString("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n")
+	sb.WriteString("═══════════════════════════\n\n")
+	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
+	sb.WriteString(fmt.Sprintf("✅ Правильный ответ:\n%s\n\n", event.Options[correctOption]))
+	sb.WriteString(fmt.Sprintf("📊 Угадали: %d из %d участников\n", correctCount, len(predictions)))
 
 	if len(topRatings) > 0 {
-		sb.WriteString("🏆 *Топ-5 участников:*\n")
+		sb.WriteString("\n═══════════════════════════\n")
+		sb.WriteString("🏆 ТОП-5 УЧАСТНИКОВ\n")
+		sb.WriteString("═══════════════════════════\n\n")
 		medals := []string{"🥇", "🥈", "🥉", "4.", "5."}
 		for i, rating := range topRatings {
 			sb.WriteString(fmt.Sprintf("%s %d очков\n", medals[i], rating.Score))
@@ -257,9 +266,11 @@ func (ns *NotificationService) SendDeadlineReminder(ctx context.Context, eventID
 	timeUntil := time.Until(event.Deadline)
 	hours := int(timeUntil.Hours())
 
-	reminderText := fmt.Sprintf("⏰ *Напоминание!*\n\n"+
-		"До дедлайна события осталось ~%d часов:\n\n"+
+	reminderText := fmt.Sprintf("⏰ НАПОМИНАНИЕ!\n"+
+		"═══════════════════════════\n\n"+
+		"До дедлайна события осталось ~%d часов\n\n"+
 		"❓ %s\n\n"+
+		"═══════════════════════════\n"+
 		"Не забудьте проголосовать! 🗳", hours, event.Question)
 
 	// Send reminders to users who haven't voted

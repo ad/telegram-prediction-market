@@ -14,8 +14,6 @@ import (
 	"github.com/leanovate/gopter/prop"
 )
 
-// Feature: telegram-prediction-bot, Property 12: Achievement notification
-// **Validates: Requirements 5.6**
 func TestAchievementNotification(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
@@ -212,8 +210,6 @@ func (m *MockLogger) Debug(msg string, args ...interface{}) {}
 
 func (m *MockLogger) Warn(msg string, args ...interface{}) {}
 
-// Feature: telegram-prediction-bot, Property 26: Results contain correct count
-// **Validates: Requirements 11.2**
 func TestResultsContainCorrectCount(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
@@ -304,8 +300,6 @@ func TestResultsContainCorrectCount(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: telegram-prediction-bot, Property 27: Results contain top 5
-// **Validates: Requirements 11.3**
 func TestResultsContainTop5(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 

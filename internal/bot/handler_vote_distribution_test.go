@@ -11,8 +11,6 @@ import (
 	"github.com/leanovate/gopter/prop"
 )
 
-// Feature: telegram-prediction-bot, Property 30: Vote percentage calculation
-// Validates: Requirements 14.2
 func TestVotePercentageCalculation(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("displayed percentage for each option equals (votes for option / total votes) * 100", prop.ForAll(

@@ -14,8 +14,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Feature: telegram-prediction-bot, Property 6: Personal stats completeness
-// Validates: Requirements 4.2
 func TestPersonalStatsCompleteness(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("personal stats contain score, correct_count, wrong_count, streak, and achievements", prop.ForAll(

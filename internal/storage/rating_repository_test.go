@@ -13,8 +13,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Feature: telegram-prediction-bot, Property 17: Rating data round-trip
-// Validates: Requirements 8.4
 func TestRatingDataRoundTrip(t *testing.T) {
 	// Setup in-memory database
 	db, err := sql.Open("sqlite", ":memory:")

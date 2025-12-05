@@ -64,8 +64,6 @@ func (l *capturingLogger) getEntries() []logEntry {
 	return append([]logEntry{}, l.entries...)
 }
 
-// Feature: telegram-prediction-bot, Property 29: Admin action logging
-// Validates: Requirements 13.1, 13.2, 13.3
 func TestAdminActionLogging(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("admin actions are logged with timestamp, user_id, and details", prop.ForAll(

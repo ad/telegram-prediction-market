@@ -22,8 +22,6 @@ func (m *mockLogger) Info(msg string, args ...interface{})  {}
 func (m *mockLogger) Warn(msg string, args ...interface{})  {}
 func (m *mockLogger) Error(msg string, args ...interface{}) {}
 
-// Feature: telegram-prediction-bot, Property 5: Rating display completeness
-// Validates: Requirements 4.1
 func TestRatingDisplayCompleteness(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("rating display contains exactly top 10 participants ordered by score", prop.ForAll(
@@ -96,8 +94,6 @@ func TestRatingDisplayCompleteness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: telegram-prediction-bot, Property 7: Rating ordering consistency
-// Validates: Requirements 4.3
 func TestRatingOrderingConsistency(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("ratings are ordered by score in descending order", prop.ForAll(

@@ -10,8 +10,6 @@ import (
 	"github.com/leanovate/gopter/prop"
 )
 
-// Feature: telegram-prediction-bot, Property 28: Admin authorization
-// Validates: Requirements 12.3
 func TestAdminAuthorization(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("users not in admin list are rejected with error", prop.ForAll(

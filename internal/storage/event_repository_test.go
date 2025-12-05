@@ -15,8 +15,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Feature: telegram-prediction-bot, Property 15: Event data round-trip
-// Validates: Requirements 8.2
 func TestEventDataRoundTrip(t *testing.T) {
 	// Setup in-memory database
 	db, err := sql.Open("sqlite", ":memory:")

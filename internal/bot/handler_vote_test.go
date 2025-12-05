@@ -15,8 +15,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Feature: telegram-prediction-bot, Property 1: Vote persistence completeness
-// Validates: Requirements 3.1
 func TestVotePersistenceCompleteness(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("vote saves all required fields (user_id, event_id, option, timestamp)", prop.ForAll(
@@ -119,8 +117,6 @@ func TestVotePersistenceCompleteness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: telegram-prediction-bot, Property 2: Vote update idempotence
-// Validates: Requirements 3.2
 func TestVoteUpdateIdempotence(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("changing vote before deadline results in exactly one prediction with latest option", prop.ForAll(
@@ -238,8 +234,6 @@ func TestVoteUpdateIdempotence(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: telegram-prediction-bot, Property 3: Deadline enforcement
-// Validates: Requirements 3.3
 func TestDeadlineEnforcement(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("vote after deadline is rejected and database state remains unchanged", prop.ForAll(
@@ -337,8 +331,6 @@ func TestDeadlineEnforcement(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: telegram-prediction-bot, Property 4: Transaction atomicity
-// Validates: Requirements 3.4
 func TestTransactionAtomicity(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("prediction save is atomic - all fields persisted or none", prop.ForAll(

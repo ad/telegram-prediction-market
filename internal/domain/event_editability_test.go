@@ -46,8 +46,6 @@ func setupTestDB(t *testing.T) (*storage.DBQueue, *domain.EventManager) {
 	return queue, manager
 }
 
-// Feature: telegram-prediction-bot, Property 13: Event editability without votes
-// Validates: Requirements 7.2
 func TestEventEditabilityWithoutVotes(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
@@ -103,8 +101,6 @@ func TestEventEditabilityWithoutVotes(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: telegram-prediction-bot, Property 14: Event immutability with votes
-// Validates: Requirements 7.3
 func TestEventImmutabilityWithVotes(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
