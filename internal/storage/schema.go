@@ -68,6 +68,16 @@ CREATE TABLE IF NOT EXISTS reminder_log (
     sent_at TIMESTAMP NOT NULL,
     FOREIGN KEY (event_id) REFERENCES events(id)
 );
+
+CREATE TABLE IF NOT EXISTS fsm_sessions (
+    user_id INTEGER PRIMARY KEY,
+    state TEXT NOT NULL,
+    context_json TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_fsm_sessions_updated ON fsm_sessions(updated_at);
 `
 
 // InitSchema initializes the database schema

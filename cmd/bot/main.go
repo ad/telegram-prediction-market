@@ -63,6 +63,13 @@ func main() {
 	}
 	log.Info("Database schema initialized")
 
+	// Run database migrations
+	if err := storage.RunMigrations(dbQueue); err != nil {
+		log.Error("Failed to run database migrations", "error", err)
+		os.Exit(1)
+	}
+	log.Info("Database migrations completed")
+
 	// Create repositories
 	eventRepo := storage.NewEventRepository(dbQueue)
 	predictionRepo := storage.NewPredictionRepository(dbQueue)
