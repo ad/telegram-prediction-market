@@ -79,11 +79,14 @@ type Rating struct {
 type AchievementCode string
 
 const (
-	AchievementSharpshooter  AchievementCode = "sharpshooter"
-	AchievementWeeklyAnalyst AchievementCode = "weekly_analyst"
-	AchievementProphet       AchievementCode = "prophet"
-	AchievementRiskTaker     AchievementCode = "risk_taker"
-	AchievementVeteran       AchievementCode = "veteran"
+	AchievementSharpshooter    AchievementCode = "sharpshooter"
+	AchievementWeeklyAnalyst   AchievementCode = "weekly_analyst"
+	AchievementProphet         AchievementCode = "prophet"
+	AchievementRiskTaker       AchievementCode = "risk_taker"
+	AchievementVeteran         AchievementCode = "veteran"
+	AchievementEventOrganizer  AchievementCode = "event_organizer"
+	AchievementActiveOrganizer AchievementCode = "active_organizer"
+	AchievementMasterOrganizer AchievementCode = "master_organizer"
 )
 
 // Achievement represents a user achievement
@@ -174,7 +177,8 @@ func (a *Achievement) Validate() error {
 
 	// Validate achievement code is one of the known codes
 	switch a.Code {
-	case AchievementSharpshooter, AchievementWeeklyAnalyst, AchievementProphet, AchievementRiskTaker, AchievementVeteran:
+	case AchievementSharpshooter, AchievementWeeklyAnalyst, AchievementProphet, AchievementRiskTaker, AchievementVeteran,
+		AchievementEventOrganizer, AchievementActiveOrganizer, AchievementMasterOrganizer:
 		return nil
 	default:
 		return ErrInvalidAchievementCode
