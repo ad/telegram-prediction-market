@@ -450,3 +450,87 @@ func TestStartupStaleSessionCleanup(t *testing.T) {
 
 	properties.TestingRun(t)
 }
+
+// Feature: event-creation-ux-improvement, Property 24: Corrupted session cleanup
+// Validates: Requirements 8.3
+func TestCorruptedSessionCleanup(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+
+	properties.Property("corrupted JSON data causes session deletion and error logging", prop.ForAll(
+		func(userID int64) bool {
+			// Setup in-memory database
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				t.Logf("Failed to open database: %v", err)
+				return false
+			}
+			defer db.Close()
+
+			queue := NewDBQueue(db)
+			defer queue.Close()
+
+			// Initialize schema
+			if err := InitSchema(queue); err != nil {
+				t.Logf("Failed to initialize schema: %v", err)
+				return false
+			}
+
+			log := logger.New(logger.ERROR)
+			storage := NewFSMStorage(queue, log)
+			ctx := context.Background()
+
+			// Insert a session with corrupted JSON directly into the database
+			corruptedJSON := "{invalid json data: this is not valid JSON"
+			err = queue.Execute(func(db *sql.DB) error {
+				_, err := db.ExecContext(ctx, `
+					INSERT INTO fsm_sessions (user_id, state, context_json, created_at, updated_at)
+					VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+				`, userID, "ask_question", corruptedJSON)
+				return err
+			})
+			if err != nil {
+				t.Logf("Failed to insert corrupted session: %v", err)
+				return false
+			}
+
+			// Verify session exists in database
+			var count int
+			err = queue.Execute(func(db *sql.DB) error {
+				return db.QueryRowContext(ctx, "SELECT COUNT(*) FROM fsm_sessions WHERE user_id = ?", userID).Scan(&count)
+			})
+			if err != nil {
+				t.Logf("Failed to query database: %v", err)
+				return false
+			}
+			if count != 1 {
+				t.Logf("Expected 1 session before Get, got %d", count)
+				return false
+			}
+
+			// Try to get the session - should fail and delete the corrupted session
+			_, _, err = storage.Get(ctx, userID)
+			if err == nil {
+				t.Logf("Expected error when getting corrupted session, got nil")
+				return false
+			}
+
+			// Verify session was deleted
+			err = queue.Execute(func(db *sql.DB) error {
+				return db.QueryRowContext(ctx, "SELECT COUNT(*) FROM fsm_sessions WHERE user_id = ?", userID).Scan(&count)
+			})
+			if err != nil {
+				t.Logf("Failed to query database after cleanup: %v", err)
+				return false
+			}
+			if count != 0 {
+				t.Logf("Expected 0 sessions after cleanup, got %d", count)
+				return false
+			}
+
+			return true
+		},
+		gen.Int64Range(1, 1000000),
+	))
+
+	properties.TestingRun(t)
+}
