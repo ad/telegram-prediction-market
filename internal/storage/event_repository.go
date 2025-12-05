@@ -265,3 +265,57 @@ func (r *EventRepository) GetEventByPollID(ctx context.Context, pollID string) (
 
 	return &event, nil
 }
+
+// GetResolvedEvents retrieves all resolved events
+func (r *EventRepository) GetResolvedEvents(ctx context.Context) ([]*domain.Event, error) {
+	var events []*domain.Event
+
+	err := r.queue.Execute(func(db *sql.DB) error {
+		rows, err := db.QueryContext(ctx,
+			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
+			 FROM events WHERE status = ? ORDER BY created_at DESC`,
+			domain.EventStatusResolved,
+		)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+
+		for rows.Next() {
+			var event domain.Event
+			var optionsJSON string
+			var correctOption sql.NullInt64
+			var pollID sql.NullString
+
+			if err := rows.Scan(
+				&event.ID, &event.Question, &optionsJSON, &event.CreatedAt,
+				&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID,
+			); err != nil {
+				return err
+			}
+
+			if err := json.Unmarshal([]byte(optionsJSON), &event.Options); err != nil {
+				return err
+			}
+
+			if correctOption.Valid {
+				val := int(correctOption.Int64)
+				event.CorrectOption = &val
+			}
+
+			if pollID.Valid {
+				event.PollID = pollID.String
+			}
+
+			events = append(events, &event)
+		}
+
+		return rows.Err()
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return events, nil
+}

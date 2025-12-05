@@ -27,6 +27,7 @@ type EventRepository interface {
 	GetEvent(ctx context.Context, eventID int64) (*Event, error)
 	GetEventByPollID(ctx context.Context, pollID string) (*Event, error)
 	GetActiveEvents(ctx context.Context) ([]*Event, error)
+	GetResolvedEvents(ctx context.Context) ([]*Event, error)
 	UpdateEvent(ctx context.Context, event *Event) error
 	ResolveEvent(ctx context.Context, eventID int64, correctOption int) error
 }
@@ -37,6 +38,7 @@ type PredictionRepository interface {
 	UpdatePrediction(ctx context.Context, prediction *Prediction) error
 	GetPredictionsByEvent(ctx context.Context, eventID int64) ([]*Prediction, error)
 	GetPredictionByUserAndEvent(ctx context.Context, userID, eventID int64) (*Prediction, error)
+	GetUserPredictions(ctx context.Context, userID int64) ([]*Prediction, error)
 }
 
 // EventManager manages event operations and business logic

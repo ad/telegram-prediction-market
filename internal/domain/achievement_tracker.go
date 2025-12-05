@@ -138,22 +138,88 @@ func (at *AchievementTracker) awardAchievementIfNew(ctx context.Context, userID 
 
 // checkRiskTakerAchievement checks if user has 3 minority correct predictions in a row
 func (at *AchievementTracker) checkRiskTakerAchievement(ctx context.Context, userID int64) (bool, error) {
-	// This is a simplified implementation
-	// In a full implementation, we would need to:
-	// 1. Get the user's recent resolved event predictions
-	// 2. For each prediction, check if it was:
-	//    a) Correct
-	//    b) In the minority (<40% of votes)
-	// 3. Check if there are 3 consecutive such predictions
+	// Get all user's predictions
+	userPredictions, err := at.predictionRepo.GetUserPredictions(ctx, userID)
+	if err != nil {
+		return false, err
+	}
 
-	// For now, we'll return false as this requires more complex logic
-	// that would need additional repository methods to efficiently query
-	// the necessary data (resolved events with vote distributions)
+	if len(userPredictions) < RiskTakerStreak {
+		return false, nil
+	}
 
-	// TODO: Implement full risk taker check with:
-	// - GetRecentResolvedPredictions(userID, limit)
-	// - For each prediction, calculate if it was minority
-	// - Check for streak of 3
+	// Get all resolved events
+	resolvedEvents, err := at.eventRepo.GetResolvedEvents(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	// Create a map of resolved events for quick lookup
+	eventMap := make(map[int64]*Event)
+	for _, event := range resolvedEvents {
+		eventMap[event.ID] = event
+	}
+
+	// Track consecutive minority correct predictions
+	consecutiveCount := 0
+
+	// Process predictions in reverse order (most recent first)
+	for i := len(userPredictions) - 1; i >= 0; i-- {
+		pred := userPredictions[i]
+		event, exists := eventMap[pred.EventID]
+
+		// Skip if event is not resolved
+		if !exists || event.CorrectOption == nil {
+			continue
+		}
+
+		// Check if prediction was correct
+		isCorrect := pred.Option == *event.CorrectOption
+		if !isCorrect {
+			// Reset streak on incorrect prediction
+			consecutiveCount = 0
+			continue
+		}
+
+		// Get all predictions for this event to calculate vote distribution
+		allPredictions, err := at.predictionRepo.GetPredictionsByEvent(ctx, event.ID)
+		if err != nil {
+			at.logger.Error("failed to get predictions for event", "event_id", event.ID, "error", err)
+			continue
+		}
+
+		// Calculate vote distribution
+		voteDistribution := make(map[int]int)
+		for _, p := range allPredictions {
+			voteDistribution[p.Option]++
+		}
+
+		totalVotes := len(allPredictions)
+		if totalVotes == 0 {
+			continue
+		}
+
+		// Check if this was a minority vote (<40%)
+		optionVotes := voteDistribution[pred.Option]
+		percentage := float64(optionVotes) / float64(totalVotes)
+
+		if percentage < 0.4 { // MinorityThreshold
+			consecutiveCount++
+			at.logger.Debug("minority correct prediction found",
+				"user_id", userID,
+				"event_id", event.ID,
+				"consecutive", consecutiveCount,
+				"percentage", percentage,
+			)
+
+			if consecutiveCount >= RiskTakerStreak {
+				return true, nil
+			}
+		} else {
+			// Reset streak if not minority
+			consecutiveCount = 0
+		}
+	}
 
 	return false, nil
 }

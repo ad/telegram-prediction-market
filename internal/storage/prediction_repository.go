@@ -109,3 +109,39 @@ func (r *PredictionRepository) GetPredictionByUserAndEvent(ctx context.Context, 
 
 	return &prediction, nil
 }
+
+// GetUserPredictions retrieves all predictions for a specific user
+func (r *PredictionRepository) GetUserPredictions(ctx context.Context, userID int64) ([]*domain.Prediction, error) {
+	var predictions []*domain.Prediction
+
+	err := r.queue.Execute(func(db *sql.DB) error {
+		rows, err := db.QueryContext(ctx,
+			`SELECT id, event_id, user_id, option, timestamp
+			 FROM predictions WHERE user_id = ? ORDER BY timestamp ASC`,
+			userID,
+		)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+
+		for rows.Next() {
+			var prediction domain.Prediction
+			if err := rows.Scan(
+				&prediction.ID, &prediction.EventID, &prediction.UserID,
+				&prediction.Option, &prediction.Timestamp,
+			); err != nil {
+				return err
+			}
+			predictions = append(predictions, &prediction)
+		}
+
+		return rows.Err()
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return predictions, nil
+}
