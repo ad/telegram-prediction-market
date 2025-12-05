@@ -65,7 +65,7 @@ func (ns *NotificationService) SendNewEventNotification(ctx context.Context, eve
 	// Build notification message
 	var sb strings.Builder
 	sb.WriteString("🆕 НОВОЕ СОБЫТИЕ ДЛЯ ПРОГНОЗА!\n")
-	sb.WriteString("═══════════════════════════\n\n")
+	sb.WriteString("════════════════════\n\n")
 	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
 
 	// Event type
@@ -106,7 +106,7 @@ func (ns *NotificationService) SendNewEventNotification(ctx context.Context, eve
 		deadlineStr = "⏰ Дедлайн: истёк"
 	}
 	sb.WriteString(deadlineStr + "\n\n")
-	sb.WriteString("═══════════════════════════\n")
+	sb.WriteString("════════════════════\n")
 	sb.WriteString("Голосуйте в опросе выше! 🗳")
 
 	// Send notification to group
@@ -197,15 +197,15 @@ func (ns *NotificationService) PublishEventResults(ctx context.Context, eventID 
 	// Build results message
 	var sb strings.Builder
 	sb.WriteString("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n")
-	sb.WriteString("═══════════════════════════\n\n")
+	sb.WriteString("════════════════════\n\n")
 	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
 	sb.WriteString(fmt.Sprintf("✅ Правильный ответ:\n%s\n\n", event.Options[correctOption]))
 	sb.WriteString(fmt.Sprintf("📊 Угадали: %d из %d участников\n", correctCount, len(predictions)))
 
 	if len(topRatings) > 0 {
-		sb.WriteString("\n═══════════════════════════\n")
+		sb.WriteString("\n════════════════════\n")
 		sb.WriteString("🏆 ТОП-5 УЧАСТНИКОВ\n")
-		sb.WriteString("═══════════════════════════\n\n")
+		sb.WriteString("════════════════════\n\n")
 		medals := []string{"🥇", "🥈", "🥉", "4.", "5."}
 		for i, rating := range topRatings {
 			sb.WriteString(fmt.Sprintf("%s %d очков\n", medals[i], rating.Score))
@@ -267,10 +267,10 @@ func (ns *NotificationService) SendDeadlineReminder(ctx context.Context, eventID
 	hours := int(timeUntil.Hours())
 
 	reminderText := fmt.Sprintf("⏰ НАПОМИНАНИЕ!\n"+
-		"═══════════════════════════\n\n"+
+		"════════════════════\n\n"+
 		"До дедлайна события осталось ~%d часов\n\n"+
 		"❓ %s\n\n"+
-		"═══════════════════════════\n"+
+		"════════════════════\n"+
 		"Не забудьте проголосовать! 🗳", hours, event.Question)
 
 	// Send reminders to users who haven't voted
