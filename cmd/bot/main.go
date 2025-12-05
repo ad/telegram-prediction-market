@@ -86,6 +86,19 @@ func main() {
 
 	log.Info("Domain managers created")
 
+	// Create FSM storage
+	fsmStorage := storage.NewFSMStorage(dbQueue, log)
+	log.Info("FSM storage created")
+
+	// Cleanup stale FSM sessions on startup
+	cleanupCtx := context.Background()
+	if err := fsmStorage.CleanupStale(cleanupCtx); err != nil {
+		log.Error("Failed to cleanup stale FSM sessions", "error", err)
+		// Don't exit, just log the error
+	} else {
+		log.Info("Stale FSM sessions cleaned up")
+	}
+
 	// Create context for graceful shutdown
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -126,6 +139,16 @@ func main() {
 
 	log.Info("Notification service created")
 
+	// Create event creation FSM
+	eventCreationFSM := bot.NewEventCreationFSM(
+		fsmStorage,
+		b,
+		eventManager,
+		cfg,
+		log,
+	)
+	log.Info("Event creation FSM created")
+
 	// Create bot handler
 	handler = bot.NewBotHandler(
 		b,
@@ -135,6 +158,7 @@ func main() {
 		predictionRepo,
 		cfg,
 		log,
+		eventCreationFSM,
 	)
 
 	log.Info("Bot handler created")

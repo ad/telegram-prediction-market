@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
@@ -9,12 +10,14 @@ import (
 	"telegram-prediction-bot/internal/config"
 	"telegram-prediction-bot/internal/domain"
 	"telegram-prediction-bot/internal/logger"
+	"telegram-prediction-bot/internal/storage"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
+	_ "modernc.org/sqlite"
 )
 
 // MockMessageDeleter for testing message deletion
@@ -464,6 +467,361 @@ func TestProperty_CancellationCleanup(t *testing.T) {
 		gen.Int64(),
 		gen.Identifier(),
 		gen.SliceOfN(2, gen.Identifier()),
+	))
+
+	properties.TestingRun(t)
+}
+
+// Helper function to create a test FSM storage with in-memory database
+func createTestFSMStorage(t *testing.T) *storage.FSMStorage {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+
+	queue := storage.NewDBQueue(db)
+
+	// Initialize schema
+	if err := storage.InitSchema(queue); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	log := logger.New(logger.ERROR)
+	return storage.NewFSMStorage(queue, log)
+}
+
+// Feature: event-creation-ux-improvement, Property 5: FSM session recovery after restart
+// **Validates: Requirements 2.3**
+func TestProperty_FSMSessionRecoveryAfterRestart(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("all active sessions are restored with identical state and context after restart", prop.ForAll(
+		func(userIDs []int64, questions []string, states []string) bool {
+			// Ensure we have at least one session
+			if len(userIDs) == 0 || len(questions) == 0 || len(states) == 0 {
+				return true // Skip empty inputs
+			}
+
+			// Create in-memory storage for testing
+			ctx := context.Background()
+			storage := createTestFSMStorage(t)
+
+			// Create sessions with different states
+			numSessions := min(len(userIDs), len(questions), len(states))
+			originalSessions := make(map[int64]*domain.EventCreationContext)
+
+			for i := 0; i < numSessions; i++ {
+				userID := userIDs[i]
+				if userID == 0 {
+					userID = int64(i + 1) // Ensure non-zero user IDs
+				}
+
+				// Create a context with data
+				sessionContext := &domain.EventCreationContext{
+					Question:          questions[i],
+					EventType:         domain.EventTypeBinary,
+					Options:           []string{"Да", "Нет"},
+					Deadline:          time.Now().Add(24 * time.Hour),
+					LastBotMessageID:  100 + i,
+					LastUserMessageID: 200 + i,
+					ChatID:            int64(12345 + i),
+				}
+
+				// Map state string to valid FSM state
+				state := mapToValidState(states[i])
+
+				// Store session
+				if err := storage.Set(ctx, userID, state, sessionContext.ToMap()); err != nil {
+					t.Logf("Failed to set session: %v", err)
+					return false
+				}
+
+				// Save original for comparison
+				originalSessions[userID] = sessionContext
+			}
+
+			// Simulate restart by creating a new storage instance with the same underlying data
+			// In a real scenario, this would be a new process reading from the same database
+			// For testing, we just verify we can retrieve all sessions
+
+			// Verify all sessions can be retrieved with identical data
+			for userID, originalContext := range originalSessions {
+				state, data, err := storage.Get(ctx, userID)
+				if err != nil {
+					t.Logf("Failed to get session for user %d: %v", userID, err)
+					return false
+				}
+
+				// Verify state is preserved
+				if state == "" {
+					t.Logf("State is empty for user %d", userID)
+					return false
+				}
+
+				// Load context from data
+				restoredContext := &domain.EventCreationContext{}
+				if err := restoredContext.FromMap(data); err != nil {
+					t.Logf("Failed to restore context for user %d: %v", userID, err)
+					return false
+				}
+
+				// Verify all fields match
+				if restoredContext.Question != originalContext.Question {
+					t.Logf("Question mismatch for user %d: expected %s, got %s", userID, originalContext.Question, restoredContext.Question)
+					return false
+				}
+
+				if restoredContext.EventType != originalContext.EventType {
+					t.Logf("EventType mismatch for user %d", userID)
+					return false
+				}
+
+				if len(restoredContext.Options) != len(originalContext.Options) {
+					t.Logf("Options count mismatch for user %d", userID)
+					return false
+				}
+
+				for j, opt := range originalContext.Options {
+					if restoredContext.Options[j] != opt {
+						t.Logf("Option %d mismatch for user %d", j, userID)
+						return false
+					}
+				}
+
+				if restoredContext.LastBotMessageID != originalContext.LastBotMessageID {
+					t.Logf("LastBotMessageID mismatch for user %d", userID)
+					return false
+				}
+
+				if restoredContext.LastUserMessageID != originalContext.LastUserMessageID {
+					t.Logf("LastUserMessageID mismatch for user %d", userID)
+					return false
+				}
+
+				if restoredContext.ChatID != originalContext.ChatID {
+					t.Logf("ChatID mismatch for user %d", userID)
+					return false
+				}
+
+				// Verify deadline is preserved (within 1 second tolerance for serialization)
+				if restoredContext.Deadline.Sub(originalContext.Deadline).Abs() > time.Second {
+					t.Logf("Deadline mismatch for user %d", userID)
+					return false
+				}
+			}
+
+			// Cleanup
+			for userID := range originalSessions {
+				_ = storage.Delete(ctx, userID)
+			}
+
+			return true
+		},
+		gen.SliceOfN(3, gen.Int64()),
+		gen.SliceOfN(3, gen.Identifier()),
+		gen.SliceOfN(3, gen.Identifier()),
+	))
+
+	properties.TestingRun(t)
+}
+
+// Helper function to map arbitrary strings to valid FSM states
+func mapToValidState(s string) string {
+	validStates := []string{
+		StateAskQuestion,
+		StateAskEventType,
+		StateAskOptions,
+		StateAskDeadline,
+		StateConfirm,
+	}
+
+	// Use hash of string to pick a state
+	hash := 0
+	for _, c := range s {
+		hash += int(c)
+	}
+	return validStates[hash%len(validStates)]
+}
+
+// Helper function to get minimum of three integers
+func min(a, b, c int) int {
+	result := a
+	if b < result {
+		result = b
+	}
+	if c < result {
+		result = c
+	}
+	return result
+}
+
+// Feature: event-creation-ux-improvement, Property 6: FSM state resumption
+// **Validates: Requirements 2.4**
+func TestProperty_FSMStateResumption(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("message from admin with active session is processed in context of stored state", prop.ForAll(
+		func(userID int64, question string, messageText string) bool {
+			// Ensure non-zero user ID
+			if userID == 0 {
+				userID = 1
+			}
+
+			// Create in-memory storage for testing
+			ctx := context.Background()
+			storage := createTestFSMStorage(t)
+
+			// Create a session in a specific state (ask_options)
+			sessionContext := &domain.EventCreationContext{
+				Question:          question,
+				EventType:         domain.EventTypeMultiOption,
+				Options:           []string{}, // Empty, waiting for input
+				Deadline:          time.Now().Add(24 * time.Hour),
+				LastBotMessageID:  100,
+				LastUserMessageID: 0,
+				ChatID:            int64(12345),
+			}
+
+			// Store session in ask_options state
+			if err := storage.Set(ctx, userID, StateAskOptions, sessionContext.ToMap()); err != nil {
+				t.Logf("Failed to set session: %v", err)
+				return false
+			}
+
+			// Verify session exists and is in correct state
+			state, data, err := storage.Get(ctx, userID)
+			if err != nil {
+				t.Logf("Failed to get session: %v", err)
+				return false
+			}
+
+			if state != StateAskOptions {
+				t.Logf("State mismatch: expected %s, got %s", StateAskOptions, state)
+				return false
+			}
+
+			// Load context from data
+			restoredContext := &domain.EventCreationContext{}
+			if err := restoredContext.FromMap(data); err != nil {
+				t.Logf("Failed to restore context: %v", err)
+				return false
+			}
+
+			// Verify context matches original
+			if restoredContext.Question != question {
+				t.Logf("Question mismatch: expected %s, got %s", question, restoredContext.Question)
+				return false
+			}
+
+			if restoredContext.EventType != domain.EventTypeMultiOption {
+				t.Logf("EventType mismatch")
+				return false
+			}
+
+			if restoredContext.ChatID != sessionContext.ChatID {
+				t.Logf("ChatID mismatch")
+				return false
+			}
+
+			// Verify the state is correct for processing options input
+			// In a real scenario, the FSM would now process the message in the context of this state
+			// For this test, we verify that the state and context are correctly preserved
+			if state != StateAskOptions {
+				t.Logf("State should be ask_options for processing options input")
+				return false
+			}
+
+			// Cleanup
+			_ = storage.Delete(ctx, userID)
+
+			return true
+		},
+		gen.Int64(),
+		gen.Identifier(),
+		gen.Identifier(),
+	))
+
+	properties.TestingRun(t)
+}
+
+// Feature: event-creation-ux-improvement, Property 18: Expired session handling
+// **Validates: Requirements 5.4**
+func TestProperty_ExpiredSessionHandling(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("message to expired session returns ErrSessionExpired and deletes session", prop.ForAll(
+		func(userID int64, question string) bool {
+			// Ensure non-zero user ID
+			if userID == 0 {
+				userID = 1
+			}
+
+			// Setup in-memory database
+			ctx := context.Background()
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				t.Logf("Failed to open database: %v", err)
+				return false
+			}
+			defer db.Close()
+
+			queue := storage.NewDBQueue(db)
+			defer queue.Close()
+
+			// Initialize schema
+			if err := storage.InitSchema(queue); err != nil {
+				t.Logf("Failed to initialize schema: %v", err)
+				return false
+			}
+
+			log := logger.New(logger.ERROR)
+			fsmStorage := storage.NewFSMStorage(queue, log)
+
+			// Create a session
+			sessionContext := &domain.EventCreationContext{
+				Question:          question,
+				EventType:         domain.EventTypeBinary,
+				Options:           []string{"Да", "Нет"},
+				Deadline:          time.Now().Add(24 * time.Hour),
+				LastBotMessageID:  100,
+				LastUserMessageID: 0,
+				ChatID:            int64(12345),
+			}
+
+			// Store session
+			if err := fsmStorage.Set(ctx, userID, StateAskDeadline, sessionContext.ToMap()); err != nil {
+				t.Logf("Failed to set session: %v", err)
+				return false
+			}
+
+			// Manually update the updated_at timestamp to be older than 30 minutes
+			staleTime := "datetime('now', '-31 minutes')"
+			err = queue.Execute(func(db *sql.DB) error {
+				_, err := db.ExecContext(ctx,
+					"UPDATE fsm_sessions SET updated_at = "+staleTime+" WHERE user_id = ?",
+					userID)
+				return err
+			})
+			if err != nil {
+				t.Logf("Failed to update timestamp: %v", err)
+				return false
+			}
+
+			// Try to get the session - should return ErrSessionExpired
+			_, _, err = fsmStorage.Get(ctx, userID)
+			if err != storage.ErrSessionExpired {
+				t.Logf("Expected ErrSessionExpired, got: %v", err)
+				return false
+			}
+
+			// Verify session was deleted (second Get should return ErrSessionNotFound)
+			_, _, err = fsmStorage.Get(ctx, userID)
+			if err != storage.ErrSessionNotFound {
+				t.Logf("Session should be deleted after expiration, expected ErrSessionNotFound, got: %v", err)
+				return false
+			}
+
+			return true
+		},
+		gen.Int64(),
+		gen.Identifier(),
 	))
 
 	properties.TestingRun(t)

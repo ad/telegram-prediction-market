@@ -13,6 +13,8 @@ import (
 var (
 	// ErrSessionNotFound is returned when a session is not found
 	ErrSessionNotFound = errors.New("session not found")
+	// ErrSessionExpired is returned when a session has expired (older than 30 minutes)
+	ErrSessionExpired = errors.New("session expired")
 )
 
 // FSMStorage implements persistent storage for FSM sessions
@@ -51,6 +53,14 @@ func (s *FSMStorage) Get(ctx context.Context, userID int64) (state string, data 
 		}
 		s.logger.Error("failed to get session", "user_id", userID, "error", err)
 		return "", nil, err
+	}
+
+	// Check if session is expired (older than 30 minutes)
+	if time.Since(updatedAt) > 30*time.Minute {
+		s.logger.Info("session expired", "user_id", userID, "updated_at", updatedAt)
+		// Delete expired session
+		_ = s.Delete(ctx, userID)
+		return "", nil, ErrSessionExpired
 	}
 
 	// Deserialize context JSON

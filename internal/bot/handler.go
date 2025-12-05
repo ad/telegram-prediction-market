@@ -24,6 +24,7 @@ type BotHandler struct {
 	config             *config.Config
 	logger             domain.Logger
 	conversationStates map[int64]*ConversationState
+	eventCreationFSM   *EventCreationFSM
 }
 
 // ConversationState tracks multi-step conversation state for event creation/editing
@@ -44,6 +45,7 @@ func NewBotHandler(
 	predictionRepo domain.PredictionRepository,
 	cfg *config.Config,
 	logger domain.Logger,
+	eventCreationFSM *EventCreationFSM,
 ) *BotHandler {
 	return &BotHandler{
 		bot:                b,
@@ -54,6 +56,7 @@ func NewBotHandler(
 		config:             cfg,
 		logger:             logger,
 		conversationStates: make(map[int64]*ConversationState),
+		eventCreationFSM:   eventCreationFSM,
 	}
 }
 
@@ -581,21 +584,19 @@ func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *
 	}
 
 	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
 
-	// Initialize conversation state
-	h.conversationStates[userID] = &ConversationState{
-		Step:         "ask_question",
-		EventData:    &domain.Event{CreatedBy: userID},
-		LastUpdateAt: time.Now(),
+	// Start FSM session for user
+	if err := h.eventCreationFSM.Start(ctx, userID, chatID); err != nil {
+		h.logger.Error("failed to start FSM session", "user_id", userID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при создании события. Попробуйте позже.",
+		})
+		return
 	}
 
-	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   "📝 СОЗДАНИЕ НОВОГО СОБЫТИЯ\n\nВведите вопрос для прогноза:",
-	})
-	if err != nil {
-		h.logger.Error("failed to send create event message", "error", err)
-	}
+	h.logger.Info("event creation started via FSM", "user_id", userID, "chat_id", chatID)
 }
 
 // HandleMessage handles regular text messages (for conversation flows)
@@ -605,6 +606,29 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 	}
 
 	userID := update.Message.From.ID
+
+	// Check if user has active FSM session
+	hasSession, err := h.eventCreationFSM.HasSession(ctx, userID)
+	if err != nil {
+		h.logger.Error("failed to check FSM session", "user_id", userID, "error", err)
+		return
+	}
+
+	if hasSession {
+		// Route to FSM
+		if err := h.eventCreationFSM.HandleMessage(ctx, update); err != nil {
+			h.logger.Error("FSM message handling failed", "user_id", userID, "error", err)
+
+			// Inform user to restart
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: update.Message.Chat.ID,
+				Text:   "❌ Произошла ошибка. Пожалуйста, начните заново с /create_event",
+			})
+		}
+		return
+	}
+
+	// Fall back to old conversation state handling for edit flows
 	state, exists := h.conversationStates[userID]
 
 	if !exists {
@@ -624,14 +648,6 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 	state.LastUpdateAt = time.Now()
 
 	switch state.Step {
-	case "ask_question":
-		h.handleQuestionInput(ctx, b, update, state)
-	case "ask_options":
-		h.handleOptionsInput(ctx, b, update, state)
-	case "ask_deadline":
-		h.handleDeadlineInput(ctx, b, update, state)
-	case "ask_event_type":
-		h.handleEventTypeInput(ctx, b, update, state)
 	case "edit_ask_question":
 		h.handleEditQuestionInput(ctx, b, update, state)
 	case "edit_ask_options":
@@ -824,16 +840,32 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 	userID := callback.From.ID
 	data := callback.Data
 
-	// Answer callback query to remove loading state
+	// Check if this is an FSM callback (event_type selection or confirmation)
+	if strings.HasPrefix(data, "event_type:") || strings.HasPrefix(data, "confirm:") {
+		// Check if user has active FSM session
+		hasSession, err := h.eventCreationFSM.HasSession(ctx, userID)
+		if err != nil {
+			h.logger.Error("failed to check FSM session for callback", "user_id", userID, "error", err)
+			// Answer callback query to remove loading state
+			_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+				CallbackQueryID: callback.ID,
+			})
+			return
+		}
+
+		if hasSession {
+			// Route to FSM
+			if err := h.eventCreationFSM.HandleCallback(ctx, callback); err != nil {
+				h.logger.Error("FSM callback handling failed", "user_id", userID, "error", err)
+			}
+			return
+		}
+	}
+
+	// Answer callback query to remove loading state (for non-FSM callbacks)
 	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 		CallbackQueryID: callback.ID,
 	})
-
-	// Handle event type selection
-	if strings.HasPrefix(data, "event_type:") {
-		h.handleEventTypeCallback(ctx, b, callback, userID, data)
-		return
-	}
 
 	// Handle resolve event callbacks
 	if strings.HasPrefix(data, "resolve:") {

@@ -97,6 +97,15 @@ func (f *EventCreationFSM) HandleMessage(ctx context.Context, update *models.Upd
 			f.logger.Debug("no active session for user", "user_id", userID)
 			return nil
 		}
+		if err == storage.ErrSessionExpired {
+			f.logger.Info("session expired for user", "user_id", userID)
+			// Send expiration message
+			_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "⏱ Время сессии истекло. Начните заново с /create_event",
+			})
+			return nil
+		}
 		f.logger.Error("failed to get session", "user_id", userID, "error", err)
 		return err
 	}
@@ -134,6 +143,21 @@ func (f *EventCreationFSM) HandleCallback(ctx context.Context, callback *models.
 	if err != nil {
 		if err == storage.ErrSessionNotFound {
 			f.logger.Debug("no active session for callback", "user_id", userID)
+			return nil
+		}
+		if err == storage.ErrSessionExpired {
+			f.logger.Info("session expired for callback", "user_id", userID)
+			// Answer callback query and send expiration message
+			_, _ = f.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+				CallbackQueryID: callback.ID,
+				Text:            "⏱ Время сессии истекло",
+			})
+			if callback.Message.Message != nil {
+				_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID: callback.Message.Message.Chat.ID,
+					Text:   "⏱ Время сессии истекло. Начните заново с /create_event",
+				})
+			}
 			return nil
 		}
 		f.logger.Error("failed to get session for callback", "user_id", userID, "error", err)
@@ -430,8 +454,7 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 // buildEventSummary creates a summary message with all event details
 func (f *EventCreationFSM) buildEventSummary(context *domain.EventCreationContext) string {
 	var sb strings.Builder
-	sb.WriteString("📋 ПОДТВЕРЖДЕНИЕ СОБЫТИЯ\n")
-	sb.WriteString("════════════════════\n\n")
+	sb.WriteString("📋 ПОДТВЕРЖДЕНИЕ СОБЫТИЯ\n\n")
 
 	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", context.Question))
 
@@ -457,9 +480,6 @@ func (f *EventCreationFSM) buildEventSummary(context *domain.EventCreationContex
 	// Deadline
 	localDeadline := context.Deadline.In(f.config.Timezone)
 	sb.WriteString(fmt.Sprintf("⏰ Дедлайн: %s\n\n", localDeadline.Format("02.01.2006 15:04")))
-
-	sb.WriteString("════════════════════\n")
-	sb.WriteString("Подтвердите создание события:")
 
 	return sb.String()
 }
