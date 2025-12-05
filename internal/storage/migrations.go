@@ -36,10 +36,13 @@ CREATE INDEX IF NOT EXISTS idx_fsm_sessions_updated ON fsm_sessions(updated_at);
 		SQL: `
 CREATE TABLE IF NOT EXISTS groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_chat_id INTEGER NOT NULL UNIQUE,
     name TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by INTEGER NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_groups_telegram_chat_id ON groups(telegram_chat_id);
 
 CREATE TABLE IF NOT EXISTS group_memberships (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -212,9 +215,11 @@ func MigrateExistingDataToDefaultGroup(queue *DBQueue, defaultGroupName string, 
 			return tx.Commit()
 		}
 
-		// Create default group
+		// Create default group with a special telegram_chat_id for migrated data
+		// Using a special negative ID that won't conflict with real Telegram chat IDs
 		result, err := tx.Exec(
-			"INSERT INTO groups (name, created_at, created_by) VALUES (?, ?, ?)",
+			"INSERT INTO groups (telegram_chat_id, name, created_at, created_by) VALUES (?, ?, ?, ?)",
+			-1, // Special ID for default migrated group
 			defaultGroupName,
 			time.Now(),
 			createdBy,

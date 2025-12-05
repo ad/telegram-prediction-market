@@ -22,6 +22,10 @@ var (
 	ErrInvalidCorrectCount       = errors.New("correct count cannot be negative")
 	ErrInvalidWrongCount         = errors.New("wrong count cannot be negative")
 	ErrInvalidAchievementCode    = errors.New("invalid achievement code")
+	ErrEmptyGroupName            = errors.New("group name cannot be empty")
+	ErrInvalidGroupID            = errors.New("group ID must be set")
+	ErrInvalidTelegramChatID     = errors.New("telegram chat ID must be set")
+	ErrInvalidMembershipStatus   = errors.New("invalid membership status")
 )
 
 // EventStatus represents the status of an event
@@ -95,6 +99,32 @@ type Achievement struct {
 	UserID    int64
 	Code      AchievementCode
 	Timestamp time.Time
+}
+
+// Group represents an independent prediction market community
+type Group struct {
+	ID             int64
+	TelegramChatID int64  // Unique Telegram chat ID
+	Name           string
+	CreatedAt      time.Time
+	CreatedBy      int64
+}
+
+// MembershipStatus represents the status of a group membership
+type MembershipStatus string
+
+const (
+	MembershipStatusActive  MembershipStatus = "active"
+	MembershipStatusRemoved MembershipStatus = "removed"
+)
+
+// GroupMembership represents a user's membership in a group
+type GroupMembership struct {
+	ID       int64
+	GroupID  int64
+	UserID   int64
+	JoinedAt time.Time
+	Status   MembershipStatus
 }
 
 // Validation methods
@@ -182,5 +212,40 @@ func (a *Achievement) Validate() error {
 		return nil
 	default:
 		return ErrInvalidAchievementCode
+	}
+}
+
+// Validate validates a Group
+func (g *Group) Validate() error {
+	if g.TelegramChatID == 0 {
+		return ErrInvalidTelegramChatID
+	}
+	if g.Name == "" {
+		return ErrEmptyGroupName
+	}
+	if g.CreatedBy == 0 {
+		return ErrInvalidCreator
+	}
+	return nil
+}
+
+// Validate validates a GroupMembership
+func (gm *GroupMembership) Validate() error {
+	if gm.GroupID == 0 {
+		return ErrInvalidGroupID
+	}
+	if gm.UserID == 0 {
+		return ErrInvalidUserID
+	}
+	if gm.Status == "" {
+		return ErrInvalidMembershipStatus
+	}
+
+	// Validate membership status is one of the known statuses
+	switch gm.Status {
+	case MembershipStatusActive, MembershipStatusRemoved:
+		return nil
+	default:
+		return ErrInvalidMembershipStatus
 	}
 }

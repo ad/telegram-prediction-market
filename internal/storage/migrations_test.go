@@ -190,7 +190,8 @@ func TestUniqueGroupIdentifiers(t *testing.T) {
 			var groupID int64
 			err := queue.Execute(func(db *sql.DB) error {
 				result, err := db.Exec(
-					"INSERT INTO groups (name, created_at, created_by) VALUES (?, ?, ?)",
+					"INSERT INTO groups (telegram_chat_id, name, created_at, created_by) VALUES (?, ?, ?, ?)",
+					int64(-1000000000000-i), // Unique telegram chat ID for each group
 					uniqueName,
 					time.Now(),
 					createdBy,

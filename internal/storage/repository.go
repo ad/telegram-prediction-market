@@ -39,3 +39,12 @@ type AchievementRepositoryInterface interface {
 	GetUserAchievements(ctx context.Context, userID int64) ([]*domain.Achievement, error)
 	CheckAchievementExists(ctx context.Context, userID int64, code domain.AchievementCode) (bool, error)
 }
+
+// GroupRepositoryInterface defines the interface for group operations
+type GroupRepositoryInterface interface {
+	CreateGroup(ctx context.Context, group *domain.Group) error
+	GetGroup(ctx context.Context, groupID int64) (*domain.Group, error)
+	GetAllGroups(ctx context.Context) ([]*domain.Group, error)
+	GetUserGroups(ctx context.Context, userID int64) ([]*domain.Group, error)
+	DeleteGroup(ctx context.Context, groupID int64) error
+}
