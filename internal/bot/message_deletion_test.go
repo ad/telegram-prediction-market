@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"telegram-prediction-bot/internal/logger"
 
@@ -105,12 +106,31 @@ func TestRateLimitRetryBehavior(t *testing.T) {
 				},
 			}
 
-			// Call deleteMessages with a single message
-			deleteMessages(ctx, mock, log, chatID, messageID)
+			// Mock sleep function that doesn't actually sleep
+			sleepCalled := false
+			var sleepDuration time.Duration
+			mockSleep := func(d time.Duration) {
+				sleepCalled = true
+				sleepDuration = d
+			}
+
+			// Call deleteMessagesWithSleep with mock sleep
+			deleteMessagesWithSleep(ctx, mock, log, chatID, mockSleep, messageID)
 
 			// Verify exactly 2 calls were made (original + 1 retry)
 			if callCount != 2 {
 				t.Logf("Expected exactly 2 calls (1 original + 1 retry), got %d", callCount)
+				return false
+			}
+
+			// Verify sleep was called with 1 second duration
+			if !sleepCalled {
+				t.Logf("Expected sleep to be called")
+				return false
+			}
+
+			if sleepDuration != 1*time.Second {
+				t.Logf("Expected sleep duration of 1 second, got %v", sleepDuration)
 				return false
 			}
 

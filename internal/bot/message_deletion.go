@@ -24,8 +24,13 @@ type MessageDeleter interface {
 //
 // This function never returns an error to avoid interrupting the event creation flow.
 func deleteMessages(ctx context.Context, b MessageDeleter, logger domain.Logger, chatID int64, messageIDs ...int) {
+	deleteMessagesWithSleep(ctx, b, logger, chatID, defaultSleep, messageIDs...)
+}
+
+// deleteMessagesWithSleep is the internal implementation that accepts a sleep function (for testing)
+func deleteMessagesWithSleep(ctx context.Context, b MessageDeleter, logger domain.Logger, chatID int64, sleep sleepFunc, messageIDs ...int) {
 	for _, messageID := range messageIDs {
-		err := deleteMessageWithRetry(ctx, b, logger, chatID, messageID)
+		err := deleteMessageWithRetryAndSleep(ctx, b, logger, chatID, messageID, sleep)
 		if err != nil {
 			// Log the error but continue with other deletions
 			logger.Warn("message deletion failed",
@@ -40,8 +45,19 @@ func deleteMessages(ctx context.Context, b MessageDeleter, logger domain.Logger,
 	}
 }
 
+// sleepFunc is a function type for sleeping (allows mocking in tests)
+type sleepFunc func(time.Duration)
+
+// defaultSleep is the default sleep function
+var defaultSleep sleepFunc = time.Sleep
+
 // deleteMessageWithRetry attempts to delete a single message with retry logic for rate limits
 func deleteMessageWithRetry(ctx context.Context, b MessageDeleter, logger domain.Logger, chatID int64, messageID int) error {
+	return deleteMessageWithRetryAndSleep(ctx, b, logger, chatID, messageID, defaultSleep)
+}
+
+// deleteMessageWithRetryAndSleep is the internal implementation that accepts a sleep function
+func deleteMessageWithRetryAndSleep(ctx context.Context, b MessageDeleter, logger domain.Logger, chatID int64, messageID int, sleep sleepFunc) error {
 	_, err := b.DeleteMessage(ctx, &bot.DeleteMessageParams{
 		ChatID:    chatID,
 		MessageID: messageID,
@@ -58,7 +74,7 @@ func deleteMessageWithRetry(ctx context.Context, b MessageDeleter, logger domain
 			"message_id", messageID)
 
 		// Wait 1 second and retry once
-		time.Sleep(1 * time.Second)
+		sleep(1 * time.Second)
 
 		_, retryErr := b.DeleteMessage(ctx, &bot.DeleteMessageParams{
 			ChatID:    chatID,

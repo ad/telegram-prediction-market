@@ -1548,3 +1548,519 @@ func TestProperty_PollReferenceInSummary(t *testing.T) {
 
 	properties.TestingRun(t)
 }
+
+// Feature: event-creation-ux-improvement, Property 8: Message ID storage in context
+// Validates: Requirements 3.1
+func TestProperty_MessageIDStorageInContext(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("message IDs are stored in FSM context when bot sends messages", prop.ForAll(
+		func(userID int64, chatID int64, botMsgID int, userMsgID int, errorMsgID int, confirmMsgID int) bool {
+			// Ensure non-zero IDs
+			if userID == 0 {
+				userID = 1
+			}
+			if chatID == 0 {
+				chatID = 12345
+			}
+			if botMsgID == 0 {
+				botMsgID = 100
+			}
+			if userMsgID == 0 {
+				userMsgID = 200
+			}
+
+			// Create in-memory storage for testing
+			ctx := context.Background()
+			fsmStorage := createTestFSMStorage(t)
+
+			// Create a context with various message IDs
+			eventContext := &domain.EventCreationContext{
+				Question:              "Test question",
+				EventType:             domain.EventTypeBinary,
+				Options:               []string{"Да", "Нет"},
+				Deadline:              time.Now().Add(24 * time.Hour),
+				LastBotMessageID:      botMsgID,
+				LastUserMessageID:     userMsgID,
+				LastErrorMessageID:    errorMsgID,
+				ConfirmationMessageID: confirmMsgID,
+				ChatID:                chatID,
+			}
+
+			// Store the context in FSM storage
+			if err := fsmStorage.Set(ctx, userID, StateAskDeadline, eventContext.ToMap()); err != nil {
+				t.Logf("Failed to set session: %v", err)
+				return false
+			}
+
+			// Retrieve the context from storage
+			_, data, err := fsmStorage.Get(ctx, userID)
+			if err != nil {
+				t.Logf("Failed to get session: %v", err)
+				return false
+			}
+
+			// Load context from data
+			restoredContext := &domain.EventCreationContext{}
+			if err := restoredContext.FromMap(data); err != nil {
+				t.Logf("Failed to restore context: %v", err)
+				return false
+			}
+
+			// Verify all message IDs are stored correctly
+			if restoredContext.LastBotMessageID != botMsgID {
+				t.Logf("LastBotMessageID mismatch: expected %d, got %d", botMsgID, restoredContext.LastBotMessageID)
+				return false
+			}
+
+			if restoredContext.LastUserMessageID != userMsgID {
+				t.Logf("LastUserMessageID mismatch: expected %d, got %d", userMsgID, restoredContext.LastUserMessageID)
+				return false
+			}
+
+			if restoredContext.LastErrorMessageID != errorMsgID {
+				t.Logf("LastErrorMessageID mismatch: expected %d, got %d", errorMsgID, restoredContext.LastErrorMessageID)
+				return false
+			}
+
+			if restoredContext.ConfirmationMessageID != confirmMsgID {
+				t.Logf("ConfirmationMessageID mismatch: expected %d, got %d", confirmMsgID, restoredContext.ConfirmationMessageID)
+				return false
+			}
+
+			// Cleanup
+			_ = fsmStorage.Delete(ctx, userID)
+
+			return true
+		},
+		gen.Int64(),
+		gen.Int64(),
+		gen.IntRange(1, 1000000),
+		gen.IntRange(1, 1000000),
+		gen.IntRange(0, 1000000), // Error message ID can be 0 (no error)
+		gen.IntRange(0, 1000000), // Confirmation message ID can be 0 (not yet shown)
+	))
+
+	properties.TestingRun(t)
+}
+
+// Feature: event-creation-ux-improvement, Property 9: Message ID retrieval for deletion
+// Validates: Requirements 3.2
+func TestProperty_MessageIDRetrievalForDeletion(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("message IDs are retrieved from FSM context for deletion operations", prop.ForAll(
+		func(userID int64, chatID int64, botMsgID int, userMsgID int, errorMsgID int) bool {
+			// Ensure non-zero IDs
+			if userID == 0 {
+				userID = 1
+			}
+			if chatID == 0 {
+				chatID = 12345
+			}
+			if botMsgID == 0 {
+				botMsgID = 100
+			}
+			if userMsgID == 0 {
+				userMsgID = 200
+			}
+
+			// Create in-memory storage and mock deleter
+			ctx := context.Background()
+			fsmStorage := createTestFSMStorage(t)
+			mockDeleter := NewMockMessageDeleter()
+			log := logger.New(logger.ERROR)
+
+			// Create a context with message IDs that need to be deleted
+			eventContext := &domain.EventCreationContext{
+				Question:           "Test question",
+				EventType:          domain.EventTypeBinary,
+				Options:            []string{"Да", "Нет"},
+				Deadline:           time.Now().Add(24 * time.Hour),
+				LastBotMessageID:   botMsgID,
+				LastUserMessageID:  userMsgID,
+				LastErrorMessageID: errorMsgID,
+				ChatID:             chatID,
+			}
+
+			// Store the context in FSM storage
+			if err := fsmStorage.Set(ctx, userID, StateAskDeadline, eventContext.ToMap()); err != nil {
+				t.Logf("Failed to set session: %v", err)
+				return false
+			}
+
+			// Retrieve the context from storage (simulating what the FSM handler does)
+			_, data, err := fsmStorage.Get(ctx, userID)
+			if err != nil {
+				t.Logf("Failed to get session: %v", err)
+				return false
+			}
+
+			// Load context from data
+			restoredContext := &domain.EventCreationContext{}
+			if err := restoredContext.FromMap(data); err != nil {
+				t.Logf("Failed to restore context: %v", err)
+				return false
+			}
+
+			// Simulate deletion operations using the retrieved message IDs
+			// This is what happens in the actual FSM handlers
+
+			// Delete error message if it exists
+			if restoredContext.LastErrorMessageID != 0 {
+				deleteMessages(ctx, mockDeleter, log, chatID, restoredContext.LastErrorMessageID)
+			}
+
+			// Delete bot and user messages
+			deleteMessages(ctx, mockDeleter, log, chatID, restoredContext.LastBotMessageID, restoredContext.LastUserMessageID)
+
+			// Verify the correct messages were deleted
+			deletedMsgs := mockDeleter.GetDeletedMessages(chatID)
+
+			// Build expected list of deleted messages
+			expectedDeleted := []int{restoredContext.LastBotMessageID, restoredContext.LastUserMessageID}
+			if restoredContext.LastErrorMessageID != 0 {
+				expectedDeleted = append([]int{restoredContext.LastErrorMessageID}, expectedDeleted...)
+			}
+
+			// Verify all expected messages were deleted
+			if len(deletedMsgs) != len(expectedDeleted) {
+				t.Logf("Expected %d messages deleted, got %d", len(expectedDeleted), len(deletedMsgs))
+				return false
+			}
+
+			for _, expectedMsgID := range expectedDeleted {
+				found := false
+				for _, deletedMsgID := range deletedMsgs {
+					if deletedMsgID == expectedMsgID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Logf("Expected message %d to be deleted", expectedMsgID)
+					return false
+				}
+			}
+
+			// Verify the message IDs used for deletion match what was stored
+			for _, deletedMsgID := range deletedMsgs {
+				if deletedMsgID != botMsgID && deletedMsgID != userMsgID && deletedMsgID != errorMsgID {
+					t.Logf("Unexpected message ID deleted: %d", deletedMsgID)
+					return false
+				}
+			}
+
+			// Cleanup
+			_ = fsmStorage.Delete(ctx, userID)
+
+			return true
+		},
+		gen.Int64(),
+		gen.Int64(),
+		gen.IntRange(1, 1000000),
+		gen.IntRange(1, 1000000),
+		gen.IntRange(0, 1000000), // Error message ID can be 0 (no error)
+	))
+
+	properties.TestingRun(t)
+}
+
+// Feature: event-creation-ux-improvement, Property 11: Message ID persistence across restarts
+// Validates: Requirements 3.4
+func TestProperty_MessageIDPersistenceAcrossRestarts(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("message IDs are preserved in database and available after bot restart", prop.ForAll(
+		func(userID int64, botMsgID int, userMsgID int, errorMsgID int, confirmMsgID int) bool {
+			// Ensure non-zero user ID
+			if userID == 0 {
+				userID = 1
+			}
+			if botMsgID == 0 {
+				botMsgID = 100
+			}
+			if userMsgID == 0 {
+				userMsgID = 200
+			}
+
+			// Create in-memory database for testing
+			ctx := context.Background()
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				t.Logf("Failed to open database: %v", err)
+				return false
+			}
+			defer db.Close()
+
+			queue := storage.NewDBQueue(db)
+			defer queue.Close()
+
+			// Initialize schema
+			if err := storage.InitSchema(queue); err != nil {
+				t.Logf("Failed to initialize schema: %v", err)
+				return false
+			}
+
+			log := logger.New(logger.ERROR)
+
+			// Create first storage instance (before "restart")
+			fsmStorage1 := storage.NewFSMStorage(queue, log)
+
+			// Create a context with message IDs
+			originalContext := &domain.EventCreationContext{
+				Question:              "Test question",
+				EventType:             domain.EventTypeBinary,
+				Options:               []string{"Да", "Нет"},
+				Deadline:              time.Now().Add(24 * time.Hour),
+				LastBotMessageID:      botMsgID,
+				LastUserMessageID:     userMsgID,
+				LastErrorMessageID:    errorMsgID,
+				ConfirmationMessageID: confirmMsgID,
+				ChatID:                int64(12345),
+			}
+
+			// Store the session
+			if err := fsmStorage1.Set(ctx, userID, StateAskDeadline, originalContext.ToMap()); err != nil {
+				t.Logf("Failed to set session: %v", err)
+				return false
+			}
+
+			// Simulate bot restart by creating a new storage instance
+			// The database connection remains the same, simulating persistence
+			fsmStorage2 := storage.NewFSMStorage(queue, log)
+
+			// Retrieve session using the new storage instance (after "restart")
+			_, data, err := fsmStorage2.Get(ctx, userID)
+			if err != nil {
+				t.Logf("Failed to get session after restart: %v", err)
+				return false
+			}
+
+			// Load context from data
+			restoredContext := &domain.EventCreationContext{}
+			if err := restoredContext.FromMap(data); err != nil {
+				t.Logf("Failed to restore context: %v", err)
+				return false
+			}
+
+			// Verify all message IDs are preserved
+			if restoredContext.LastBotMessageID != originalContext.LastBotMessageID {
+				t.Logf("LastBotMessageID mismatch: expected %d, got %d",
+					originalContext.LastBotMessageID, restoredContext.LastBotMessageID)
+				return false
+			}
+
+			if restoredContext.LastUserMessageID != originalContext.LastUserMessageID {
+				t.Logf("LastUserMessageID mismatch: expected %d, got %d",
+					originalContext.LastUserMessageID, restoredContext.LastUserMessageID)
+				return false
+			}
+
+			if restoredContext.LastErrorMessageID != originalContext.LastErrorMessageID {
+				t.Logf("LastErrorMessageID mismatch: expected %d, got %d",
+					originalContext.LastErrorMessageID, restoredContext.LastErrorMessageID)
+				return false
+			}
+
+			if restoredContext.ConfirmationMessageID != originalContext.ConfirmationMessageID {
+				t.Logf("ConfirmationMessageID mismatch: expected %d, got %d",
+					originalContext.ConfirmationMessageID, restoredContext.ConfirmationMessageID)
+				return false
+			}
+
+			// Verify other fields are also preserved
+			if restoredContext.Question != originalContext.Question {
+				t.Logf("Question mismatch")
+				return false
+			}
+
+			if restoredContext.ChatID != originalContext.ChatID {
+				t.Logf("ChatID mismatch")
+				return false
+			}
+
+			// Cleanup
+			_ = fsmStorage2.Delete(ctx, userID)
+
+			return true
+		},
+		gen.Int64Range(1, 1000000),
+		gen.IntRange(1, 1000000),
+		gen.IntRange(1, 1000000),
+		gen.IntRange(0, 1000000),
+		gen.IntRange(0, 1000000),
+	))
+
+	properties.TestingRun(t)
+}
+
+// Feature: event-creation-ux-improvement, Property 25: Atomic session updates
+// Validates: Requirements 8.4
+func TestProperty_AtomicSessionUpdates(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("session updates are atomic - all fields updated or none", prop.ForAll(
+		func(userID int64, question1 string, question2 string, state1 string, state2 string) bool {
+			// Ensure non-zero user ID
+			if userID == 0 {
+				userID = 1
+			}
+
+			// Map state strings to valid FSM states
+			validState1 := mapToValidState(state1)
+			validState2 := mapToValidState(state2)
+
+			// Create in-memory database for testing
+			ctx := context.Background()
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				t.Logf("Failed to open database: %v", err)
+				return false
+			}
+			defer db.Close()
+
+			queue := storage.NewDBQueue(db)
+			defer queue.Close()
+
+			// Initialize schema
+			if err := storage.InitSchema(queue); err != nil {
+				t.Logf("Failed to initialize schema: %v", err)
+				return false
+			}
+
+			log := logger.New(logger.ERROR)
+			fsmStorage := storage.NewFSMStorage(queue, log)
+
+			// Create initial context
+			context1 := &domain.EventCreationContext{
+				Question:          question1,
+				EventType:         domain.EventTypeBinary,
+				Options:           []string{"Да", "Нет"},
+				Deadline:          time.Now().Add(24 * time.Hour),
+				LastBotMessageID:  100,
+				LastUserMessageID: 200,
+				ChatID:            int64(12345),
+			}
+
+			// Store initial session
+			if err := fsmStorage.Set(ctx, userID, validState1, context1.ToMap()); err != nil {
+				t.Logf("Failed to set initial session: %v", err)
+				return false
+			}
+
+			// Small delay to ensure updated_at will be different
+			time.Sleep(10 * time.Millisecond)
+
+			// Update the session with new data
+			context2 := &domain.EventCreationContext{
+				Question:          question2,
+				EventType:         domain.EventTypeMultiOption,
+				Options:           []string{"Option 1", "Option 2", "Option 3"},
+				Deadline:          time.Now().Add(48 * time.Hour),
+				LastBotMessageID:  300,
+				LastUserMessageID: 400,
+				ChatID:            int64(12345),
+			}
+
+			if err := fsmStorage.Set(ctx, userID, validState2, context2.ToMap()); err != nil {
+				t.Logf("Failed to update session: %v", err)
+				return false
+			}
+
+			// Retrieve the session
+			retrievedState, data, err := fsmStorage.Get(ctx, userID)
+			if err != nil {
+				t.Logf("Failed to get session: %v", err)
+				return false
+			}
+
+			// Load context from data
+			retrievedContext := &domain.EventCreationContext{}
+			if err := retrievedContext.FromMap(data); err != nil {
+				t.Logf("Failed to restore context: %v", err)
+				return false
+			}
+
+			// Verify atomicity: all fields should be from context2, not a mix of context1 and context2
+			// Check state
+			if retrievedState != validState2 {
+				t.Logf("State should be updated to %s, got %s", validState2, retrievedState)
+				return false
+			}
+
+			// Check context fields - they should all be from context2
+			if retrievedContext.Question != question2 {
+				t.Logf("Question should be updated to %s, got %s", question2, retrievedContext.Question)
+				return false
+			}
+
+			if retrievedContext.EventType != domain.EventTypeMultiOption {
+				t.Logf("EventType should be updated to MultiOption, got %s", retrievedContext.EventType)
+				return false
+			}
+
+			if len(retrievedContext.Options) != 3 {
+				t.Logf("Options should have 3 items, got %d", len(retrievedContext.Options))
+				return false
+			}
+
+			if retrievedContext.LastBotMessageID != 300 {
+				t.Logf("LastBotMessageID should be updated to 300, got %d", retrievedContext.LastBotMessageID)
+				return false
+			}
+
+			if retrievedContext.LastUserMessageID != 400 {
+				t.Logf("LastUserMessageID should be updated to 400, got %d", retrievedContext.LastUserMessageID)
+				return false
+			}
+
+			// Verify updated_at was updated (should be after timeBefore)
+			// We can't directly check updated_at from the context, but we can verify
+			// that the session was updated by checking that all fields are consistent
+			// with the second update (context2)
+
+			// Additional check: verify no partial update occurred
+			// If there was a partial update, we might see some fields from context1
+			// and some from context2, which would violate atomicity
+
+			// For example, if Question is from context2 but EventType is from context1,
+			// that would be a partial update
+			if retrievedContext.Question == question2 && retrievedContext.EventType == domain.EventTypeBinary {
+				t.Logf("Partial update detected: Question updated but EventType not updated")
+				return false
+			}
+
+			// Verify that if any field is from context2, all fields are from context2
+			isContext2 := retrievedContext.Question == question2 ||
+				retrievedContext.EventType == domain.EventTypeMultiOption ||
+				retrievedContext.LastBotMessageID == 300
+
+			if isContext2 {
+				// All fields should be from context2
+				if retrievedContext.Question != question2 ||
+					retrievedContext.EventType != domain.EventTypeMultiOption ||
+					retrievedContext.LastBotMessageID != 300 ||
+					retrievedContext.LastUserMessageID != 400 ||
+					len(retrievedContext.Options) != 3 {
+					t.Logf("Partial update detected: some fields from context2, some not")
+					return false
+				}
+			}
+
+			// Final verification: ensure the update was complete
+			if retrievedContext.Question != question2 {
+				t.Logf("Update should have occurred, but got old data")
+				return false
+			}
+
+			// Cleanup
+			_ = fsmStorage.Delete(ctx, userID)
+
+			return true
+		},
+		gen.Int64Range(1, 1000000),
+		gen.Identifier(),
+		gen.Identifier(),
+		gen.Identifier(),
+		gen.Identifier(),
+	))
+
+	properties.TestingRun(t)
+}
