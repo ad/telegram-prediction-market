@@ -1,4 +1,4 @@
-module telegram-prediction-bot
+module github.com/ad/gitelegram-prediction-market
 
 go 1.25.5
 

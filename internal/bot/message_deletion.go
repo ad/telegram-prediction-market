@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"telegram-prediction-bot/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/domain"
 
 	"github.com/go-telegram/bot"
 )

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"telegram-prediction-bot/internal/config"
-	"telegram-prediction-bot/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/config"
+	"github.com/ad/gitelegram-prediction-market/internal/domain"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"

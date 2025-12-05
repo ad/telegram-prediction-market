@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"telegram-prediction-bot/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/domain"
 )
 
 // EventRepository handles event data operations

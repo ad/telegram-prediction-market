@@ -3,7 +3,7 @@ package bot
 import (
 	"testing"
 
-	"telegram-prediction-bot/internal/config"
+	"github.com/ad/gitelegram-prediction-market/internal/config"
 
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"

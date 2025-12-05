@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"telegram-prediction-bot/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/domain"
 )
 
 // EventRepositoryInterface defines the interface for event operations

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"telegram-prediction-bot/internal/logger"
+	"github.com/ad/gitelegram-prediction-market/internal/logger"
 
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"

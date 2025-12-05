@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"telegram-prediction-bot/internal/domain"
-	"telegram-prediction-bot/internal/storage"
+	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"

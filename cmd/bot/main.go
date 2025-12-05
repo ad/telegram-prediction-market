@@ -8,11 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"telegram-prediction-bot/internal/bot"
-	"telegram-prediction-bot/internal/config"
-	"telegram-prediction-bot/internal/domain"
-	"telegram-prediction-bot/internal/logger"
-	"telegram-prediction-bot/internal/storage"
+	"github.com/ad/gitelegram-prediction-market/internal/bot"
+	"github.com/ad/gitelegram-prediction-market/internal/config"
+	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/logger"
+	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"

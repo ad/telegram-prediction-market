@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"telegram-prediction-bot/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/domain"
 
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"

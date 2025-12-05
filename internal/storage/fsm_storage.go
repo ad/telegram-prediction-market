@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"telegram-prediction-bot/internal/logger"
+	"github.com/ad/gitelegram-prediction-market/internal/logger"
 )
 
 var (

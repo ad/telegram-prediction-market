@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"telegram-prediction-bot/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/domain"
 )
 
 // RatingRepository handles rating data operations
