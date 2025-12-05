@@ -816,3 +816,160 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 		}
 	})
 }
+
+// Integration test for event resolution permissions
+func TestIntegration_EventResolutionPermissions(t *testing.T) {
+	// Setup in-memory database
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	queue := storage.NewDBQueue(db)
+	defer queue.Close()
+
+	// Initialize schema
+	if err := storage.InitSchema(queue); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to ensure all tables exist
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	// Create dependencies
+	log := logger.New(logger.ERROR)
+
+	// Create repositories
+	eventRepo := storage.NewEventRepository(queue)
+	predictionRepo := storage.NewPredictionRepository(queue)
+
+	// Create event manager
+	eventManager := domain.NewEventManager(eventRepo, predictionRepo, log)
+
+	// Create event permission validator
+	eventPermissionValidator := domain.NewEventPermissionValidator(
+		eventRepo,
+		predictionRepo,
+		3,
+		log,
+	)
+
+	// Test data
+	creatorUserID := int64(11111)
+	adminUserID := int64(99999)
+	otherUserID := int64(22222)
+	adminIDs := []int64{adminUserID}
+
+	// Create an event by the creator
+	event := &domain.Event{
+		Question:  "Test event for resolution permissions",
+		EventType: domain.EventTypeBinary,
+		Options:   []string{"Да", "Нет"},
+		Deadline:  time.Now().Add(24 * time.Hour),
+		CreatedAt: time.Now(),
+		Status:    domain.EventStatusActive,
+		CreatedBy: creatorUserID,
+	}
+	if err := eventManager.CreateEvent(ctx, event); err != nil {
+		t.Fatalf("Failed to create test event: %v", err)
+	}
+
+	// Test 1: Creator can resolve their own event
+	t.Run("Creator can resolve", func(t *testing.T) {
+		canManage, err := eventPermissionValidator.CanManageEvent(ctx, creatorUserID, event.ID, adminIDs)
+		if err != nil {
+			t.Fatalf("Failed to check if creator can manage event: %v", err)
+		}
+		if !canManage {
+			t.Error("Expected creator to be able to manage their own event")
+		}
+	})
+
+	// Test 2: Admin can resolve any event
+	t.Run("Admin can resolve", func(t *testing.T) {
+		canManage, err := eventPermissionValidator.CanManageEvent(ctx, adminUserID, event.ID, adminIDs)
+		if err != nil {
+			t.Fatalf("Failed to check if admin can manage event: %v", err)
+		}
+		if !canManage {
+			t.Error("Expected admin to be able to manage any event")
+		}
+	})
+
+	// Test 3: Non-authorized user cannot resolve
+	t.Run("Non-authorized user cannot resolve", func(t *testing.T) {
+		canManage, err := eventPermissionValidator.CanManageEvent(ctx, otherUserID, event.ID, adminIDs)
+		if err != nil {
+			t.Fatalf("Failed to check if other user can manage event: %v", err)
+		}
+		if canManage {
+			t.Error("Expected non-authorized user to NOT be able to manage event")
+		}
+	})
+
+	// Test 4: Creator who is also admin can resolve
+	t.Run("Creator who is also admin can resolve", func(t *testing.T) {
+		// Create an event by an admin
+		adminEvent := &domain.Event{
+			Question:  "Event created by admin",
+			EventType: domain.EventTypeBinary,
+			Options:   []string{"Да", "Нет"},
+			Deadline:  time.Now().Add(24 * time.Hour),
+			CreatedAt: time.Now(),
+			Status:    domain.EventStatusActive,
+			CreatedBy: adminUserID,
+		}
+		if err := eventManager.CreateEvent(ctx, adminEvent); err != nil {
+			t.Fatalf("Failed to create admin event: %v", err)
+		}
+
+		canManage, err := eventPermissionValidator.CanManageEvent(ctx, adminUserID, adminEvent.ID, adminIDs)
+		if err != nil {
+			t.Fatalf("Failed to check if admin-creator can manage event: %v", err)
+		}
+		if !canManage {
+			t.Error("Expected admin-creator to be able to manage their own event")
+		}
+	})
+
+	// Test 5: Multiple non-authorized users cannot resolve
+	t.Run("Multiple non-authorized users cannot resolve", func(t *testing.T) {
+		unauthorizedUsers := []int64{33333, 44444, 55555}
+		for _, userID := range unauthorizedUsers {
+			canManage, err := eventPermissionValidator.CanManageEvent(ctx, userID, event.ID, adminIDs)
+			if err != nil {
+				t.Fatalf("Failed to check if user %d can manage event: %v", userID, err)
+			}
+			if canManage {
+				t.Errorf("Expected user %d to NOT be able to manage event", userID)
+			}
+		}
+	})
+
+	// Test 6: Permission check for non-existent event
+	t.Run("Permission check for non-existent event", func(t *testing.T) {
+		nonExistentEventID := int64(999999)
+		_, err := eventPermissionValidator.CanManageEvent(ctx, creatorUserID, nonExistentEventID, adminIDs)
+		if err == nil {
+			t.Error("Expected error when checking permissions for non-existent event")
+		}
+	})
+
+	// Test 7: Multiple admins can all resolve
+	t.Run("Multiple admins can all resolve", func(t *testing.T) {
+		multipleAdminIDs := []int64{adminUserID, 88888, 77777}
+		for _, adminID := range multipleAdminIDs {
+			canManage, err := eventPermissionValidator.CanManageEvent(ctx, adminID, event.ID, multipleAdminIDs)
+			if err != nil {
+				t.Fatalf("Failed to check if admin %d can manage event: %v", adminID, err)
+			}
+			if !canManage {
+				t.Errorf("Expected admin %d to be able to manage event", adminID)
+			}
+		}
+	})
+}

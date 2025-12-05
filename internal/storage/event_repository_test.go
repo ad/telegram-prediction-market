@@ -149,6 +149,93 @@ func min(a, b int) int {
 	return b
 }
 
+// TestCreatorIDPersistence tests: Creator ID persistence
+func TestCreatorIDPersistence(t *testing.T) {
+	// Setup in-memory database
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	queue := NewDBQueue(db)
+	defer queue.Close()
+
+	// Initialize schema
+	if err := InitSchema(queue); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	repo := NewEventRepository(queue)
+
+	parameters := gopter.DefaultTestParameters()
+	parameters.MinSuccessfulTests = 100
+	properties := gopter.NewProperties(parameters)
+
+	properties.Property("creator ID persists after event creation and retrieval", prop.ForAll(
+		func(creatorID int64, question string, eventType domain.EventType) bool {
+			// Generate valid options based on event type
+			var options []string
+			switch eventType {
+			case domain.EventTypeBinary:
+				options = []string{"Yes", "No"}
+			case domain.EventTypeProbability:
+				options = []string{"0-25%", "25-50%", "50-75%", "75-100%"}
+			case domain.EventTypeMultiOption:
+				options = []string{"Option 1", "Option 2", "Option 3"}
+			}
+
+			// Create event with valid data
+			now := time.Now().Truncate(time.Second)
+			deadline := now.Add(24 * time.Hour)
+
+			event := &domain.Event{
+				Question:  question,
+				Options:   options,
+				CreatedAt: now,
+				Deadline:  deadline,
+				Status:    domain.EventStatusActive,
+				EventType: eventType,
+				CreatedBy: creatorID,
+				PollID:    fmt.Sprintf("poll_%d_%s", creatorID, time.Now().Format(time.RFC3339Nano)),
+			}
+
+			// Skip invalid events
+			if err := event.Validate(); err != nil {
+				return true // Skip invalid inputs
+			}
+
+			ctx := context.Background()
+
+			// Save event
+			if err := repo.CreateEvent(ctx, event); err != nil {
+				t.Logf("Failed to create event: %v", err)
+				return false
+			}
+
+			// Retrieve event
+			retrieved, err := repo.GetEvent(ctx, event.ID)
+			if err != nil {
+				t.Logf("Failed to get event: %v", err)
+				return false
+			}
+
+			// Verify CreatedBy field matches
+			if retrieved.CreatedBy != creatorID {
+				t.Logf("CreatedBy mismatch: expected %d, got %d", creatorID, retrieved.CreatedBy)
+				return false
+			}
+
+			return true
+		},
+		gen.Int64Range(1, 1000000),
+		gen.AlphaString().SuchThat(func(s string) bool { return len(s) > 0 && len(s) < 500 }),
+		gen.OneConstOf(domain.EventTypeBinary, domain.EventTypeMultiOption, domain.EventTypeProbability),
+	))
+
+	properties.TestingRun(t)
+}
+
 func TestCreatorEventCounting(t *testing.T) {
 	// Setup in-memory database
 	db, err := sql.Open("sqlite", ":memory:")

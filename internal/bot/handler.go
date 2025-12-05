@@ -686,10 +686,7 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 
 // HandleResolveEvent handles the /resolve_event command
 func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update *models.Update) {
-	// Check admin authorization
-	if !h.requireAdmin(ctx, update) {
-		return
-	}
+	userID := update.Message.From.ID
 
 	// Get all active events
 	events, err := h.eventManager.GetActiveEvents(ctx)
@@ -710,9 +707,30 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 		return
 	}
 
-	// Build inline keyboard with events
-	var buttons [][]models.InlineKeyboardButton
+	// Filter events that user can manage
+	var manageableEvents []*domain.Event
 	for _, event := range events {
+		canManage, err := h.eventPermissionValidator.CanManageEvent(ctx, userID, event.ID, h.config.AdminUserIDs)
+		if err != nil {
+			h.logger.Error("failed to check event management permission", "user_id", userID, "event_id", event.ID, "error", err)
+			continue
+		}
+		if canManage {
+			manageableEvents = append(manageableEvents, event)
+		}
+	}
+
+	if len(manageableEvents) == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "❌ У вас нет прав для управления активными событиями.",
+		})
+		return
+	}
+
+	// Build inline keyboard with manageable events
+	var buttons [][]models.InlineKeyboardButton
+	for _, event := range manageableEvents {
 		buttons = append(buttons, []models.InlineKeyboardButton{
 			{
 				Text:         fmt.Sprintf("%s (ID: %d)", event.Question, event.ID),
@@ -727,7 +745,7 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      update.Message.Chat.ID,
-		Text:        "🏁 ЗАВЕРШЕНИЕ СОБЫТИЯ\n════════════════════\n\nВыберите событие для завершения:",
+		Text:        "🏁 ЗАВЕРШЕНИЕ СОБЫТИЯ\n\nВыберите событие для завершения:",
 		ReplyMarkup: kb,
 	})
 	if err != nil {
@@ -736,11 +754,6 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 }
 
 func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
-	// Check admin authorization
-	if !h.isAdmin(userID) {
-		return
-	}
-
 	// Parse event ID
 	parts := strings.Split(data, ":")
 	if len(parts) < 2 {
@@ -761,6 +774,26 @@ func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, call
 			return
 		}
 
+		// Check if user can manage this event
+		canManage, err := h.eventPermissionValidator.CanManageEvent(ctx, userID, eventID, h.config.AdminUserIDs)
+		if err != nil {
+			h.logger.Error("failed to check event management permission", "user_id", userID, "event_id", eventID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при проверке прав доступа.",
+			})
+			return
+		}
+
+		if !canManage {
+			h.logger.Warn("unauthorized event resolution attempt", "user_id", userID, "event_id", eventID)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ У вас нет прав для управления этим событием.",
+			})
+			return
+		}
+
 		// Resolve the event
 		if err := h.eventManager.ResolveEvent(ctx, eventID, optionIndex); err != nil {
 			h.logger.Error("failed to resolve event", "event_id", eventID, "error", err)
@@ -778,8 +811,12 @@ func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, call
 			return
 		}
 
-		// Log admin action
-		h.logAdminAction(userID, "resolve_event", eventID, fmt.Sprintf("Correct option: %d (%s)", optionIndex, event.Options[optionIndex]))
+		// Log the action (admin or creator)
+		if h.isAdmin(userID) {
+			h.logAdminAction(userID, "resolve_event", eventID, fmt.Sprintf("Correct option: %d (%s)", optionIndex, event.Options[optionIndex]))
+		} else {
+			h.logger.Info("creator resolved event", "user_id", userID, "event_id", eventID, "correct_option", optionIndex)
+		}
 
 		// Calculate scores
 		if err := h.ratingCalculator.CalculateScores(ctx, eventID, optionIndex); err != nil {
@@ -814,7 +851,7 @@ func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, call
 		// Publish results to group
 		h.publishEventResults(ctx, b, event, optionIndex)
 
-		// Send confirmation to admin
+		// Send confirmation to user
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
 			Text:   fmt.Sprintf("✅ Событие завершено!\n\nПравильный ответ: %s", event.Options[optionIndex]),
@@ -828,6 +865,26 @@ func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, call
 	eventID, err := strconv.ParseInt(eventIDStr, 10, 64)
 	if err != nil {
 		h.logger.Error("failed to parse event ID", "error", err)
+		return
+	}
+
+	// Check if user can manage this event
+	canManage, err := h.eventPermissionValidator.CanManageEvent(ctx, userID, eventID, h.config.AdminUserIDs)
+	if err != nil {
+		h.logger.Error("failed to check event management permission", "user_id", userID, "event_id", eventID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   "❌ Ошибка при проверке прав доступа.",
+		})
+		return
+	}
+
+	if !canManage {
+		h.logger.Warn("unauthorized event management attempt", "user_id", userID, "event_id", eventID)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   "❌ У вас нет прав для управления этим событием.",
+		})
 		return
 	}
 
