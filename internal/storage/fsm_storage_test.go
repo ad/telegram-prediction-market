@@ -523,7 +523,6 @@ func TestCorruptedSessionCleanup(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 17: Stale session cleanup logging
 func TestStaleSessionCleanupLogging(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 

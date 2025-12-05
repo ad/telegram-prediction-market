@@ -1434,8 +1434,6 @@ func TestProperty_CleanChatState(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 19: Deadline timezone formatting
-// Validates: Requirements 6.2
 func TestProperty_DeadlineTimezoneFormatting(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("deadline in summary is formatted in configured timezone", prop.ForAll(
@@ -1497,8 +1495,6 @@ func TestProperty_DeadlineTimezoneFormatting(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 20: Poll reference in summary
-// Validates: Requirements 6.4
 func TestProperty_PollReferenceInSummary(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("final summary includes poll reference when provided", prop.ForAll(
@@ -1549,8 +1545,6 @@ func TestProperty_PollReferenceInSummary(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 8: Message ID storage in context
-// Validates: Requirements 3.1
 func TestProperty_MessageIDStorageInContext(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("message IDs are stored in FSM context when bot sends messages", prop.ForAll(
@@ -1643,8 +1637,6 @@ func TestProperty_MessageIDStorageInContext(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 9: Message ID retrieval for deletion
-// Validates: Requirements 3.2
 func TestProperty_MessageIDRetrievalForDeletion(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("message IDs are retrieved from FSM context for deletion operations", prop.ForAll(
@@ -1764,8 +1756,6 @@ func TestProperty_MessageIDRetrievalForDeletion(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 11: Message ID persistence across restarts
-// Validates: Requirements 3.4
 func TestProperty_MessageIDPersistenceAcrossRestarts(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("message IDs are preserved in database and available after bot restart", prop.ForAll(
@@ -1892,8 +1882,6 @@ func TestProperty_MessageIDPersistenceAcrossRestarts(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 25: Atomic session updates
-// Validates: Requirements 8.4
 func TestProperty_AtomicSessionUpdates(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("session updates are atomic - all fields updated or none", prop.ForAll(

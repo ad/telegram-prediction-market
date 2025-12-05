@@ -23,17 +23,7 @@ type BotHandler struct {
 	predictionRepo     domain.PredictionRepository
 	config             *config.Config
 	logger             domain.Logger
-	conversationStates map[int64]*ConversationState
 	eventCreationFSM   *EventCreationFSM
-}
-
-// ConversationState tracks multi-step conversation state for event creation/editing
-type ConversationState struct {
-	Step         string
-	EventData    *domain.Event
-	EventID      int64
-	Options      []string
-	LastUpdateAt time.Time
 }
 
 // NewBotHandler creates a new BotHandler with all dependencies
@@ -55,7 +45,6 @@ func NewBotHandler(
 		predictionRepo:     predictionRepo,
 		config:             cfg,
 		logger:             logger,
-		conversationStates: make(map[int64]*ConversationState),
 		eventCreationFSM:   eventCreationFSM,
 	}
 }
@@ -628,31 +617,7 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 		return
 	}
 
-	// Fall back to old conversation state handling for edit flows
-	state, exists := h.conversationStates[userID]
-
-	if !exists {
-		return // No active conversation
-	}
-
-	// Check if conversation is stale (older than 10 minutes)
-	if time.Since(state.LastUpdateAt) > 10*time.Minute {
-		delete(h.conversationStates, userID)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "⏱ Время сессии истекло. Начните заново с /create_event",
-		})
-		return
-	}
-
-	state.LastUpdateAt = time.Now()
-
-	switch state.Step {
-	case "edit_ask_question":
-		h.handleEditQuestionInput(ctx, b, update, state)
-	case "edit_ask_options":
-		h.handleEditOptionsInput(ctx, b, update, state)
-	}
+	// No active conversation - ignore message
 }
 
 // HandleCallback handles callback queries (button clicks)
@@ -695,12 +660,6 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 	// Handle resolve event callbacks
 	if strings.HasPrefix(data, "resolve:") {
 		h.handleResolveCallback(ctx, b, callback, userID, data)
-		return
-	}
-
-	// Handle edit event callbacks
-	if strings.HasPrefix(data, "edit:") {
-		h.handleEditCallback(ctx, b, callback, userID, data)
 		return
 	}
 }
@@ -972,234 +931,16 @@ func (h *BotHandler) sendAchievementNotification(ctx context.Context, b *bot.Bot
 }
 
 // HandleEditEvent handles the /edit_event command
+// Note: Edit functionality has been removed in favor of FSM-based event creation.
+// Events can no longer be edited after creation to maintain data integrity.
 func (h *BotHandler) HandleEditEvent(ctx context.Context, b *bot.Bot, update *models.Update) {
 	// Check admin authorization
 	if !h.requireAdmin(ctx, update) {
 		return
 	}
 
-	// Get all active events
-	events, err := h.eventManager.GetActiveEvents(ctx)
-	if err != nil {
-		h.logger.Error("failed to get active events", "error", err)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Ошибка при получении списка событий.",
-		})
-		return
-	}
-
-	if len(events) == 0 {
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "📋 Нет активных событий для редактирования.",
-		})
-		return
-	}
-
-	// Build inline keyboard with events
-	var buttons [][]models.InlineKeyboardButton
-	for _, event := range events {
-		buttons = append(buttons, []models.InlineKeyboardButton{
-			{
-				Text:         fmt.Sprintf("%s (ID: %d)", event.Question, event.ID),
-				CallbackData: fmt.Sprintf("edit:%d", event.ID),
-			},
-		})
-	}
-
-	kb := &models.InlineKeyboardMarkup{
-		InlineKeyboard: buttons,
-	}
-
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      update.Message.Chat.ID,
-		Text:        "✏️ РЕДАКТИРОВАНИЕ СОБЫТИЯ\n════════════════════\n\nВыберите событие для редактирования:",
-		ReplyMarkup: kb,
-	})
-	if err != nil {
-		h.logger.Error("failed to send edit event selection", "error", err)
-	}
-}
-
-func (h *BotHandler) handleEditCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
-	// Check admin authorization
-	if !h.isAdmin(userID) {
-		return
-	}
-
-	// Parse event ID
-	parts := strings.Split(data, ":")
-	if len(parts) < 2 {
-		return
-	}
-
-	eventIDStr := parts[1]
-	eventID, err := strconv.ParseInt(eventIDStr, 10, 64)
-	if err != nil {
-		h.logger.Error("failed to parse event ID", "error", err)
-		return
-	}
-
-	// Check if event can be edited
-	canEdit, err := h.eventManager.CanEditEvent(ctx, eventID)
-	if err != nil {
-		h.logger.Error("failed to check if event can be edited", "event_id", eventID, "error", err)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: callback.Message.Message.Chat.ID,
-			Text:   "❌ Ошибка при проверке возможности редактирования.",
-		})
-		return
-	}
-
-	if !canEdit {
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: callback.Message.Message.Chat.ID,
-			Text:   "❌ Это событие нельзя редактировать, так как уже есть голоса.",
-		})
-		return
-	}
-
-	// Get the event
-	event, err := h.eventManager.GetEvent(ctx, eventID)
-	if err != nil {
-		h.logger.Error("failed to get event", "event_id", eventID, "error", err)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: callback.Message.Message.Chat.ID,
-			Text:   "❌ Ошибка при получении события.",
-		})
-		return
-	}
-
-	// Initialize edit conversation state
-	h.conversationStates[userID] = &ConversationState{
-		Step:         "edit_ask_question",
-		EventData:    event,
-		EventID:      eventID,
-		LastUpdateAt: time.Now(),
-	}
-
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: callback.Message.Message.Chat.ID,
-		Text:   fmt.Sprintf("✏️ РЕДАКТИРОВАНИЕ СОБЫТИЯ\n════════════════════\n\n▸ Текущий вопрос:\n%s\n\nВведите новый вопрос или отправьте /cancel для отмены:", event.Question),
-	})
-	if err != nil {
-		h.logger.Error("failed to send edit question prompt", "error", err)
-	}
-}
-
-func (h *BotHandler) handleEditQuestionInput(ctx context.Context, b *bot.Bot, update *models.Update, state *ConversationState) {
-	question := strings.TrimSpace(update.Message.Text)
-
-	if question == "/cancel" {
-		delete(h.conversationStates, update.Message.From.ID)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Редактирование отменено.",
-		})
-		return
-	}
-
-	if question == "" {
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Вопрос не может быть пустым. Попробуйте снова:",
-		})
-		return
-	}
-
-	state.EventData.Question = question
-
-	// If it's a binary or probability event, skip options (they're fixed)
-	if state.EventData.EventType == domain.EventTypeBinary || state.EventData.EventType == domain.EventTypeProbability {
-		// Save the event
-		if err := h.eventManager.UpdateEvent(ctx, state.EventData); err != nil {
-			h.logger.Error("failed to update event", "error", err)
-			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: update.Message.Chat.ID,
-				Text:   "❌ Ошибка при обновлении события.",
-			})
-			delete(h.conversationStates, update.Message.From.ID)
-			return
-		}
-
-		// Log admin action
-		h.logAdminAction(update.Message.From.ID, "edit_event", state.EventData.ID, fmt.Sprintf("Updated question to: %s", question))
-
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "✅ Событие обновлено!",
-		})
-		delete(h.conversationStates, update.Message.From.ID)
-		return
-	}
-
-	// For multi-option events, ask for new options
-	state.Step = "edit_ask_options"
-	optionsText := strings.Join(state.EventData.Options, "\n")
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   fmt.Sprintf("▸ Текущие варианты:\n%s\n\nВведите новые варианты (каждый с новой строки) или отправьте /cancel:", optionsText),
+		Text:   "ℹ️ Редактирование событий временно недоступно. Пожалуйста, создайте новое событие с /create_event",
 	})
-}
-
-func (h *BotHandler) handleEditOptionsInput(ctx context.Context, b *bot.Bot, update *models.Update, state *ConversationState) {
-	optionsText := strings.TrimSpace(update.Message.Text)
-
-	if optionsText == "/cancel" {
-		delete(h.conversationStates, update.Message.From.ID)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Редактирование отменено.",
-		})
-		return
-	}
-
-	if optionsText == "" {
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Варианты не могут быть пустыми. Попробуйте снова:",
-		})
-		return
-	}
-
-	// Parse options
-	options := strings.Split(optionsText, "\n")
-	var cleanOptions []string
-	for _, opt := range options {
-		opt = strings.TrimSpace(opt)
-		if opt != "" {
-			cleanOptions = append(cleanOptions, opt)
-		}
-	}
-
-	if len(cleanOptions) < 2 || len(cleanOptions) > 6 {
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Нужно 2-6 вариантов. Попробуйте снова:",
-		})
-		return
-	}
-
-	state.EventData.Options = cleanOptions
-
-	// Save the event
-	if err := h.eventManager.UpdateEvent(ctx, state.EventData); err != nil {
-		h.logger.Error("failed to update event", "error", err)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Ошибка при обновлении события.",
-		})
-		delete(h.conversationStates, update.Message.From.ID)
-		return
-	}
-
-	// Log admin action
-	h.logAdminAction(update.Message.From.ID, "edit_event", state.EventData.ID, fmt.Sprintf("Updated options to: %v", cleanOptions))
-
-	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   "✅ Событие обновлено!",
-	})
-	delete(h.conversationStates, update.Message.From.ID)
 }
