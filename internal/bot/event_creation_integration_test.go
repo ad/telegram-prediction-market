@@ -572,3 +572,247 @@ func TestIntegration_CancellationFlow(t *testing.T) {
 		t.Errorf("Expected 0 events after cancellation, got %d", len(events))
 	}
 }
+
+// Integration test for event creation permission flow
+func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
+	// Setup in-memory database
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	queue := storage.NewDBQueue(db)
+	defer queue.Close()
+
+	// Initialize schema
+	if err := storage.InitSchema(queue); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to ensure all tables exist
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	// Create dependencies
+	log := logger.New(logger.ERROR)
+
+	// Create repositories
+	eventRepo := storage.NewEventRepository(queue)
+	predictionRepo := storage.NewPredictionRepository(queue)
+
+	// Create event manager
+	eventManager := domain.NewEventManager(eventRepo, predictionRepo, log)
+
+	// Create event permission validator with min events = 3
+	minEventsToCreate := 3
+	eventPermissionValidator := domain.NewEventPermissionValidator(
+		eventRepo,
+		predictionRepo,
+		minEventsToCreate,
+		log,
+	)
+
+	// Test data
+	regularUserID := int64(11111)
+	adminUserID := int64(99999)
+	adminIDs := []int64{adminUserID}
+
+	// Test 1: Regular user with insufficient participation (0 events)
+	t.Run("Rejection with insufficient participation", func(t *testing.T) {
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, regularUserID, adminIDs)
+		if err != nil {
+			t.Fatalf("Failed to check event creation permission: %v", err)
+		}
+		if canCreate {
+			t.Error("Expected user with 0 participation to be rejected")
+		}
+		if count != 0 {
+			t.Errorf("Expected participation count 0, got %d", count)
+		}
+	})
+
+	// Test 2: Create some events and have user participate
+	// Create 3 events
+	for i := 0; i < 3; i++ {
+		event := &domain.Event{
+			Question:  fmt.Sprintf("Test event %d", i+1),
+			EventType: domain.EventTypeBinary,
+			Options:   []string{"Да", "Нет"},
+			Deadline:  time.Now().Add(24 * time.Hour),
+			CreatedAt: time.Now(),
+			Status:    domain.EventStatusActive,
+			CreatedBy: adminUserID,
+		}
+		if err := eventManager.CreateEvent(ctx, event); err != nil {
+			t.Fatalf("Failed to create test event %d: %v", i+1, err)
+		}
+
+		// User makes a prediction
+		prediction := &domain.Prediction{
+			EventID:   event.ID,
+			UserID:    regularUserID,
+			Option:    0,
+			Timestamp: time.Now(),
+		}
+		if err := predictionRepo.SavePrediction(ctx, prediction); err != nil {
+			t.Fatalf("Failed to save prediction for event %d: %v", i+1, err)
+		}
+	}
+
+	// Test 3: User still can't create events (events not resolved yet)
+	t.Run("Rejection when events not resolved", func(t *testing.T) {
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, regularUserID, adminIDs)
+		if err != nil {
+			t.Fatalf("Failed to check event creation permission: %v", err)
+		}
+		if canCreate {
+			t.Error("Expected user to be rejected when events not resolved")
+		}
+		if count != 0 {
+			t.Errorf("Expected participation count 0 (no resolved events), got %d", count)
+		}
+	})
+
+	// Test 4: Resolve the events
+	events, err := eventManager.GetActiveEvents(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get active events: %v", err)
+	}
+	for _, event := range events {
+		if err := eventManager.ResolveEvent(ctx, event.ID, 0); err != nil {
+			t.Fatalf("Failed to resolve event %d: %v", event.ID, err)
+		}
+	}
+
+	// Test 5: User now has sufficient participation
+	t.Run("Success with sufficient participation", func(t *testing.T) {
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, regularUserID, adminIDs)
+		if err != nil {
+			t.Fatalf("Failed to check event creation permission: %v", err)
+		}
+		if !canCreate {
+			t.Errorf("Expected user with %d participation to be allowed to create events", count)
+		}
+		if count != 3 {
+			t.Errorf("Expected participation count 3, got %d", count)
+		}
+	})
+
+	// Test 6: Admin exemption (admin can create without participation)
+	t.Run("Admin exemption", func(t *testing.T) {
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, adminUserID, adminIDs)
+		if err != nil {
+			t.Fatalf("Failed to check event creation permission for admin: %v", err)
+		}
+		if !canCreate {
+			t.Error("Expected admin to be allowed to create events without participation")
+		}
+		// Count should be 0 for admin (they are exempt, so count is not checked)
+		if count != 0 {
+			t.Logf("Admin participation count: %d (not used for permission check)", count)
+		}
+	})
+
+	// Test 7: User with exactly minimum participation
+	t.Run("Success with exactly minimum participation", func(t *testing.T) {
+		// Create a new user
+		newUserID := int64(22222)
+
+		// Create exactly 3 resolved events with this user's participation
+		for i := 0; i < 3; i++ {
+			event := &domain.Event{
+				Question:  fmt.Sprintf("Exact test event %d", i+1),
+				EventType: domain.EventTypeBinary,
+				Options:   []string{"Да", "Нет"},
+				Deadline:  time.Now().Add(24 * time.Hour),
+				CreatedAt: time.Now(),
+				Status:    domain.EventStatusActive,
+				CreatedBy: adminUserID,
+			}
+			if err := eventManager.CreateEvent(ctx, event); err != nil {
+				t.Fatalf("Failed to create exact test event %d: %v", i+1, err)
+			}
+
+			// User makes a prediction
+			prediction := &domain.Prediction{
+				EventID:   event.ID,
+				UserID:    newUserID,
+				Option:    0,
+				Timestamp: time.Now(),
+			}
+			if err := predictionRepo.SavePrediction(ctx, prediction); err != nil {
+				t.Fatalf("Failed to save prediction for exact test event %d: %v", i+1, err)
+			}
+
+			// Resolve the event
+			if err := eventManager.ResolveEvent(ctx, event.ID, 0); err != nil {
+				t.Fatalf("Failed to resolve exact test event %d: %v", i+1, err)
+			}
+		}
+
+		// Check permission
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, newUserID, adminIDs)
+		if err != nil {
+			t.Fatalf("Failed to check event creation permission: %v", err)
+		}
+		if !canCreate {
+			t.Errorf("Expected user with exactly %d participation to be allowed", minEventsToCreate)
+		}
+		if count != 3 {
+			t.Errorf("Expected participation count 3, got %d", count)
+		}
+	})
+
+	// Test 8: User with one less than minimum participation
+	t.Run("Rejection with one less than minimum", func(t *testing.T) {
+		// Create a new user
+		almostUserID := int64(33333)
+
+		// Create exactly 2 resolved events with this user's participation
+		for i := 0; i < 2; i++ {
+			event := &domain.Event{
+				Question:  fmt.Sprintf("Almost test event %d", i+1),
+				EventType: domain.EventTypeBinary,
+				Options:   []string{"Да", "Нет"},
+				Deadline:  time.Now().Add(24 * time.Hour),
+				CreatedAt: time.Now(),
+				Status:    domain.EventStatusActive,
+				CreatedBy: adminUserID,
+			}
+			if err := eventManager.CreateEvent(ctx, event); err != nil {
+				t.Fatalf("Failed to create almost test event %d: %v", i+1, err)
+			}
+
+			// User makes a prediction
+			prediction := &domain.Prediction{
+				EventID:   event.ID,
+				UserID:    almostUserID,
+				Option:    0,
+				Timestamp: time.Now(),
+			}
+			if err := predictionRepo.SavePrediction(ctx, prediction); err != nil {
+				t.Fatalf("Failed to save prediction for almost test event %d: %v", i+1, err)
+			}
+
+			// Resolve the event
+			if err := eventManager.ResolveEvent(ctx, event.ID, 0); err != nil {
+				t.Fatalf("Failed to resolve almost test event %d: %v", i+1, err)
+			}
+		}
+
+		// Check permission
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, almostUserID, adminIDs)
+		if err != nil {
+			t.Fatalf("Failed to check event creation permission: %v", err)
+		}
+		if canCreate {
+			t.Error("Expected user with 2 participation to be rejected (minimum is 3)")
+		}
+		if count != 2 {
+			t.Errorf("Expected participation count 2, got %d", count)
+		}
+	})
+}

@@ -16,14 +16,15 @@ import (
 
 // BotHandler handles all Telegram bot interactions
 type BotHandler struct {
-	bot                *bot.Bot
-	eventManager       *domain.EventManager
-	ratingCalculator   *domain.RatingCalculator
-	achievementTracker *domain.AchievementTracker
-	predictionRepo     domain.PredictionRepository
-	config             *config.Config
-	logger             domain.Logger
-	eventCreationFSM   *EventCreationFSM
+	bot                      *bot.Bot
+	eventManager             *domain.EventManager
+	ratingCalculator         *domain.RatingCalculator
+	achievementTracker       *domain.AchievementTracker
+	predictionRepo           domain.PredictionRepository
+	config                   *config.Config
+	logger                   domain.Logger
+	eventCreationFSM         *EventCreationFSM
+	eventPermissionValidator *domain.EventPermissionValidator
 }
 
 // NewBotHandler creates a new BotHandler with all dependencies
@@ -36,16 +37,18 @@ func NewBotHandler(
 	cfg *config.Config,
 	logger domain.Logger,
 	eventCreationFSM *EventCreationFSM,
+	eventPermissionValidator *domain.EventPermissionValidator,
 ) *BotHandler {
 	return &BotHandler{
-		bot:                b,
-		eventManager:       eventManager,
-		ratingCalculator:   ratingCalculator,
-		achievementTracker: achievementTracker,
-		predictionRepo:     predictionRepo,
-		config:             cfg,
-		logger:             logger,
-		eventCreationFSM:   eventCreationFSM,
+		bot:                      b,
+		eventManager:             eventManager,
+		ratingCalculator:         ratingCalculator,
+		achievementTracker:       achievementTracker,
+		predictionRepo:           predictionRepo,
+		config:                   cfg,
+		logger:                   logger,
+		eventCreationFSM:         eventCreationFSM,
+		eventPermissionValidator: eventPermissionValidator,
 	}
 }
 
@@ -567,13 +570,30 @@ func (h *BotHandler) HandlePollAnswer(ctx context.Context, b *bot.Bot, update *m
 
 // HandleCreateEvent handles the /create_event command (multi-step conversation)
 func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *models.Update) {
-	// Check admin authorization
-	if !h.requireAdmin(ctx, update) {
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+
+	// Check if user has permission to create events
+	// Admins are exempt from participation requirement
+	canCreate, participationCount, err := h.eventPermissionValidator.CanCreateEvent(ctx, userID, h.config.AdminUserIDs)
+	if err != nil {
+		h.logger.Error("failed to check event creation permission", "user_id", userID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при проверке прав доступа. Попробуйте позже.",
+		})
 		return
 	}
 
-	userID := update.Message.From.ID
-	chatID := update.Message.Chat.ID
+	if !canCreate {
+		// User doesn't have enough participation
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   fmt.Sprintf("❌ Для создания событий нужно участвовать минимум в %d завершенных событиях. У вас: %d.", h.config.MinEventsToCreate, participationCount),
+		})
+		h.logger.Info("event creation denied due to insufficient participation", "user_id", userID, "participation_count", participationCount, "required", h.config.MinEventsToCreate)
+		return
+	}
 
 	// Start FSM session for user
 	if err := h.eventCreationFSM.Start(ctx, userID, chatID); err != nil {

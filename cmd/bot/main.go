@@ -149,6 +149,15 @@ func main() {
 	)
 	log.Info("Event creation FSM created")
 
+	// Create event permission validator
+	eventPermissionValidator := domain.NewEventPermissionValidator(
+		eventRepo,
+		predictionRepo,
+		cfg.MinEventsToCreate,
+		log,
+	)
+	log.Info("Event permission validator created")
+
 	// Create bot handler
 	handler = bot.NewBotHandler(
 		b,
@@ -159,6 +168,7 @@ func main() {
 		cfg,
 		log,
 		eventCreationFSM,
+		eventPermissionValidator,
 	)
 
 	log.Info("Bot handler created")
