@@ -26,11 +26,12 @@ const (
 
 // EventCreationFSM manages the event creation state machine
 type EventCreationFSM struct {
-	storage      *storage.FSMStorage
-	bot          *bot.Bot
-	eventManager *domain.EventManager
-	config       *config.Config
-	logger       domain.Logger
+	storage            *storage.FSMStorage
+	bot                *bot.Bot
+	eventManager       *domain.EventManager
+	achievementTracker *domain.AchievementTracker
+	config             *config.Config
+	logger             domain.Logger
 }
 
 // NewEventCreationFSM creates a new FSM for event creation
@@ -38,15 +39,17 @@ func NewEventCreationFSM(
 	storage *storage.FSMStorage,
 	b *bot.Bot,
 	eventManager *domain.EventManager,
+	achievementTracker *domain.AchievementTracker,
 	cfg *config.Config,
 	logger domain.Logger,
 ) *EventCreationFSM {
 	return &EventCreationFSM{
-		storage:      storage,
-		bot:          b,
-		eventManager: eventManager,
-		config:       cfg,
-		logger:       logger,
+		storage:            storage,
+		bot:                b,
+		eventManager:       eventManager,
+		achievementTracker: achievementTracker,
+		config:             cfg,
+		logger:             logger,
 	}
 }
 
@@ -746,6 +749,22 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 
 		f.logger.Info("event created and published", "user_id", userID, "event_id", event.ID, "poll_id", event.PollID)
 
+		// Check and award creator achievements (non-blocking)
+		// Handle errors gracefully - don't block event creation
+		achievements, err := f.achievementTracker.CheckCreatorAchievements(ctx, userID)
+		if err != nil {
+			f.logger.Error("failed to check creator achievements", "user_id", userID, "error", err)
+			// Continue - achievement check failure should not block event creation
+		} else if len(achievements) > 0 {
+			// Send achievement notifications
+			for _, ach := range achievements {
+				if err := f.sendAchievementNotification(ctx, userID, ach); err != nil {
+					f.logger.Error("failed to send achievement notification", "user_id", userID, "achievement", ach.Code, "error", err)
+					// Continue - notification failure should not block event creation
+				}
+			}
+		}
+
 		// Delete session
 		if err := f.storage.Delete(ctx, userID); err != nil {
 			f.logger.Error("failed to delete session after completion", "user_id", userID, "error", err)
@@ -770,5 +789,51 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 	}
 
 	f.logger.Warn("unknown confirmation action", "user_id", userID, "action", action)
+	return nil
+}
+
+// sendAchievementNotification sends achievement notification to user and group
+func (f *EventCreationFSM) sendAchievementNotification(ctx context.Context, userID int64, achievement *domain.Achievement) error {
+	achievementNames := map[domain.AchievementCode]string{
+		domain.AchievementSharpshooter:     "🎯 Меткий стрелок",
+		domain.AchievementProphet:          "🔮 Провидец",
+		domain.AchievementRiskTaker:        "🎲 Риск-мейкер",
+		domain.AchievementWeeklyAnalyst:    "📊 Аналитик недели",
+		domain.AchievementVeteran:          "🏆 Старожил",
+		domain.AchievementEventOrganizer:   "🎪 Организатор событий",
+		domain.AchievementActiveOrganizer:  "🎭 Активный организатор",
+		domain.AchievementMasterOrganizer:  "🎬 Мастер организатор",
+	}
+
+	name := achievementNames[achievement.Code]
+	if name == "" {
+		name = string(achievement.Code)
+	}
+
+	// Send to user
+	_, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: userID,
+		Text:   fmt.Sprintf("🎉 Поздравляем! Вы получили ачивку:\n\n%s", name),
+	})
+	if err != nil {
+		f.logger.Error("failed to send achievement notification to user", "user_id", userID, "error", err)
+		return err
+	}
+
+	// Get user display name for group announcement
+	// We'll use a simple approach here - just use user ID
+	// In a full implementation, we'd fetch the username from the rating repository
+	displayName := fmt.Sprintf("User id%d", userID)
+
+	// Announce in group
+	_, err = f.bot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: f.config.GroupID,
+		Text:   fmt.Sprintf("🎉 %s получил ачивку: %s!", displayName, name),
+	})
+	if err != nil {
+		f.logger.Error("failed to send achievement announcement to group", "error", err)
+		return err
+	}
+
 	return nil
 }

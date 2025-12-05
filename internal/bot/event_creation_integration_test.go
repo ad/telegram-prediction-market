@@ -973,3 +973,266 @@ func TestIntegration_EventResolutionPermissions(t *testing.T) {
 		}
 	})
 }
+
+// Integration test for creator achievement flow
+func TestIntegration_CreatorAchievementFlow(t *testing.T) {
+	// Setup in-memory database
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	queue := storage.NewDBQueue(db)
+	defer queue.Close()
+
+	// Initialize schema
+	if err := storage.InitSchema(queue); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to ensure all tables exist
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	// Create dependencies
+	log := logger.New(logger.ERROR)
+
+	// Create repositories
+	eventRepo := storage.NewEventRepository(queue)
+	predictionRepo := storage.NewPredictionRepository(queue)
+	ratingRepo := storage.NewRatingRepository(queue)
+	achievementRepo := storage.NewAchievementRepository(queue)
+
+	// Create event manager
+	eventManager := domain.NewEventManager(eventRepo, predictionRepo, log)
+
+	// Create achievement tracker
+	achievementTracker := domain.NewAchievementTracker(
+		achievementRepo,
+		ratingRepo,
+		predictionRepo,
+		eventRepo,
+		log,
+	)
+
+	// Test data
+	creatorUserID := int64(11111)
+
+	// Test 1: Achievement awarded after first event
+	t.Run("Achievement awarded after first event", func(t *testing.T) {
+		// Create first event
+		event1 := &domain.Event{
+			Question:  "First event by creator",
+			EventType: domain.EventTypeBinary,
+			Options:   []string{"Да", "Нет"},
+			Deadline:  time.Now().Add(24 * time.Hour),
+			CreatedAt: time.Now(),
+			Status:    domain.EventStatusActive,
+			CreatedBy: creatorUserID,
+		}
+		if err := eventManager.CreateEvent(ctx, event1); err != nil {
+			t.Fatalf("Failed to create first event: %v", err)
+		}
+
+		// Check and award creator achievements
+		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID)
+		if err != nil {
+			t.Fatalf("Failed to check creator achievements: %v", err)
+		}
+
+		// Should have Event Organizer achievement
+		if len(achievements) != 1 {
+			t.Fatalf("Expected 1 achievement after first event, got %d", len(achievements))
+		}
+		if achievements[0].Code != domain.AchievementEventOrganizer {
+			t.Errorf("Expected Event Organizer achievement, got %s", achievements[0].Code)
+		}
+
+		// Verify achievement is persisted
+		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID)
+		if err != nil {
+			t.Fatalf("Failed to get user achievements: %v", err)
+		}
+		if len(userAchievements) != 1 {
+			t.Errorf("Expected 1 persisted achievement, got %d", len(userAchievements))
+		}
+	})
+
+	// Test 2: Achievement awarded after 5th event
+	t.Run("Achievement awarded after 5th event", func(t *testing.T) {
+		// Create 4 more events (total 5)
+		for i := 2; i <= 5; i++ {
+			event := &domain.Event{
+				Question:  fmt.Sprintf("Event %d by creator", i),
+				EventType: domain.EventTypeBinary,
+				Options:   []string{"Да", "Нет"},
+				Deadline:  time.Now().Add(24 * time.Hour),
+				CreatedAt: time.Now(),
+				Status:    domain.EventStatusActive,
+				CreatedBy: creatorUserID,
+			}
+			if err := eventManager.CreateEvent(ctx, event); err != nil {
+				t.Fatalf("Failed to create event %d: %v", i, err)
+			}
+		}
+
+		// Check and award creator achievements
+		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID)
+		if err != nil {
+			t.Fatalf("Failed to check creator achievements: %v", err)
+		}
+
+		// Should have Active Organizer achievement (Event Organizer already exists)
+		if len(achievements) != 1 {
+			t.Fatalf("Expected 1 new achievement after 5th event, got %d", len(achievements))
+		}
+		if achievements[0].Code != domain.AchievementActiveOrganizer {
+			t.Errorf("Expected Active Organizer achievement, got %s", achievements[0].Code)
+		}
+
+		// Verify both achievements are persisted
+		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID)
+		if err != nil {
+			t.Fatalf("Failed to get user achievements: %v", err)
+		}
+		if len(userAchievements) != 2 {
+			t.Errorf("Expected 2 persisted achievements, got %d", len(userAchievements))
+		}
+
+		// Verify we have both Event Organizer and Active Organizer
+		achievementCodes := make(map[domain.AchievementCode]bool)
+		for _, ach := range userAchievements {
+			achievementCodes[ach.Code] = true
+		}
+		if !achievementCodes[domain.AchievementEventOrganizer] {
+			t.Error("Expected Event Organizer achievement to be persisted")
+		}
+		if !achievementCodes[domain.AchievementActiveOrganizer] {
+			t.Error("Expected Active Organizer achievement to be persisted")
+		}
+	})
+
+	// Test 3: Achievement awarded after 25th event
+	t.Run("Achievement awarded after 25th event", func(t *testing.T) {
+		// Create 20 more events (total 25)
+		for i := 6; i <= 25; i++ {
+			event := &domain.Event{
+				Question:  fmt.Sprintf("Event %d by creator", i),
+				EventType: domain.EventTypeBinary,
+				Options:   []string{"Да", "Нет"},
+				Deadline:  time.Now().Add(24 * time.Hour),
+				CreatedAt: time.Now(),
+				Status:    domain.EventStatusActive,
+				CreatedBy: creatorUserID,
+			}
+			if err := eventManager.CreateEvent(ctx, event); err != nil {
+				t.Fatalf("Failed to create event %d: %v", i, err)
+			}
+		}
+
+		// Check and award creator achievements
+		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID)
+		if err != nil {
+			t.Fatalf("Failed to check creator achievements: %v", err)
+		}
+
+		// Should have Master Organizer achievement (others already exist)
+		if len(achievements) != 1 {
+			t.Fatalf("Expected 1 new achievement after 25th event, got %d", len(achievements))
+		}
+		if achievements[0].Code != domain.AchievementMasterOrganizer {
+			t.Errorf("Expected Master Organizer achievement, got %s", achievements[0].Code)
+		}
+
+		// Verify all three achievements are persisted
+		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID)
+		if err != nil {
+			t.Fatalf("Failed to get user achievements: %v", err)
+		}
+		if len(userAchievements) != 3 {
+			t.Errorf("Expected 3 persisted achievements, got %d", len(userAchievements))
+		}
+
+		// Verify we have all three creator achievements
+		achievementCodes := make(map[domain.AchievementCode]bool)
+		for _, ach := range userAchievements {
+			achievementCodes[ach.Code] = true
+		}
+		if !achievementCodes[domain.AchievementEventOrganizer] {
+			t.Error("Expected Event Organizer achievement to be persisted")
+		}
+		if !achievementCodes[domain.AchievementActiveOrganizer] {
+			t.Error("Expected Active Organizer achievement to be persisted")
+		}
+		if !achievementCodes[domain.AchievementMasterOrganizer] {
+			t.Error("Expected Master Organizer achievement to be persisted")
+		}
+	})
+
+	// Test 4: No duplicate achievements
+	t.Run("No duplicate achievements", func(t *testing.T) {
+		// Check achievements again - should return empty list (no new achievements)
+		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID)
+		if err != nil {
+			t.Fatalf("Failed to check creator achievements: %v", err)
+		}
+
+		if len(achievements) != 0 {
+			t.Errorf("Expected 0 new achievements (all already awarded), got %d", len(achievements))
+		}
+
+		// Verify still only 3 achievements in database
+		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID)
+		if err != nil {
+			t.Fatalf("Failed to get user achievements: %v", err)
+		}
+		if len(userAchievements) != 3 {
+			t.Errorf("Expected 3 persisted achievements (no duplicates), got %d", len(userAchievements))
+		}
+	})
+
+	// Test 5: Different user gets separate achievements
+	t.Run("Different user gets separate achievements", func(t *testing.T) {
+		anotherUserID := int64(22222)
+
+		// Create first event by another user
+		event := &domain.Event{
+			Question:  "First event by another creator",
+			EventType: domain.EventTypeBinary,
+			Options:   []string{"Да", "Нет"},
+			Deadline:  time.Now().Add(24 * time.Hour),
+			CreatedAt: time.Now(),
+			Status:    domain.EventStatusActive,
+			CreatedBy: anotherUserID,
+		}
+		if err := eventManager.CreateEvent(ctx, event); err != nil {
+			t.Fatalf("Failed to create event by another user: %v", err)
+		}
+
+		// Check achievements for another user
+		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, anotherUserID)
+		if err != nil {
+			t.Fatalf("Failed to check creator achievements for another user: %v", err)
+		}
+
+		// Should have Event Organizer achievement
+		if len(achievements) != 1 {
+			t.Fatalf("Expected 1 achievement for another user, got %d", len(achievements))
+		}
+		if achievements[0].Code != domain.AchievementEventOrganizer {
+			t.Errorf("Expected Event Organizer achievement for another user, got %s", achievements[0].Code)
+		}
+
+		// Verify original user still has 3 achievements
+		originalUserAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID)
+		if err != nil {
+			t.Fatalf("Failed to get original user achievements: %v", err)
+		}
+		if len(originalUserAchievements) != 3 {
+			t.Errorf("Expected original user to still have 3 achievements, got %d", len(originalUserAchievements))
+		}
+	})
+}

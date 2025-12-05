@@ -37,3 +37,4 @@ data/
 
 # Binary
 bin/bot
+/bot

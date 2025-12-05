@@ -144,6 +144,7 @@ func main() {
 		fsmStorage,
 		b,
 		eventManager,
+		achievementTracker,
 		cfg,
 		log,
 	)
