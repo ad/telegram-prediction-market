@@ -10,12 +10,13 @@ import (
 
 // Config holds application configuration
 type Config struct {
-	TelegramToken string
-	AdminUserIDs  []int64
-	GroupID       int64
-	DatabasePath  string
-	LogLevel      string
-	Timezone      *time.Location
+	TelegramToken     string
+	AdminUserIDs      []int64
+	GroupID           int64
+	DatabasePath      string
+	LogLevel          string
+	Timezone          *time.Location
+	MinEventsToCreate int // Minimum completed events to create new events
 }
 
 // Load loads configuration from environment variables
@@ -63,13 +64,28 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid TIMEZONE '%s': %w", timezoneStr, err)
 	}
 
+	// Load minimum events to create (default to 3)
+	minEventsToCreate := 3 // default value
+	minEventsStr := os.Getenv("MIN_EVENTS_TO_CREATE")
+	if minEventsStr != "" {
+		minEvents, err := strconv.Atoi(minEventsStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid MIN_EVENTS_TO_CREATE '%s': must be a valid integer", minEventsStr)
+		}
+		if minEvents < 0 {
+			return nil, fmt.Errorf("invalid MIN_EVENTS_TO_CREATE '%d': must be non-negative", minEvents)
+		}
+		minEventsToCreate = minEvents
+	}
+
 	return &Config{
-		TelegramToken: token,
-		AdminUserIDs:  adminIDs,
-		GroupID:       groupID,
-		DatabasePath:  dbPath,
-		LogLevel:      logLevel,
-		Timezone:      timezone,
+		TelegramToken:     token,
+		AdminUserIDs:      adminIDs,
+		GroupID:           groupID,
+		DatabasePath:      dbPath,
+		LogLevel:          logLevel,
+		Timezone:          timezone,
+		MinEventsToCreate: minEventsToCreate,
 	}, nil
 }
 
