@@ -7,10 +7,15 @@ import (
 
 const (
 	// Achievement thresholds based on requirements
-	SharpshooterStreak = 3  // Requirement 5.1
-	ProphetStreak      = 10 // Requirement 5.3
-	RiskTakerStreak    = 3  // Requirement 5.4
-	VeteranCount       = 50 // Requirement 5.5
+	SharpshooterStreak = 3
+	ProphetStreak      = 10
+	RiskTakerStreak    = 3
+	VeteranCount       = 50
+
+	// Creator achievement thresholds
+	EventOrganizerThreshold  = 1
+	ActiveOrganizerThreshold = 5
+	MasterOrganizerThreshold = 25
 )
 
 // AchievementRepository interface for achievement operations
@@ -57,7 +62,7 @@ func (at *AchievementTracker) CheckAndAwardAchievements(ctx context.Context, use
 		return nil, err
 	}
 
-	// Check Sharpshooter (3 correct in a row) - Requirement 5.1
+	// Check Sharpshooter (3 correct in a row)
 	if rating.Streak >= SharpshooterStreak {
 		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementSharpshooter)
 		if err != nil {
@@ -67,7 +72,7 @@ func (at *AchievementTracker) CheckAndAwardAchievements(ctx context.Context, use
 		}
 	}
 
-	// Check Prophet (10 correct in a row) - Requirement 5.3
+	// Check Prophet (10 correct in a row)
 	if rating.Streak >= ProphetStreak {
 		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementProphet)
 		if err != nil {
@@ -102,7 +107,7 @@ func (at *AchievementTracker) CheckAndAwardAchievements(ctx context.Context, use
 		}
 	}
 
-	// Note: Weekly Analyst (Requirement 5.2) would be checked by a separate scheduled job
+	// Note: Weekly Analyst would be checked by a separate scheduled job
 	// that runs weekly and compares all users' scores for the week
 
 	return newAchievements, nil
@@ -249,4 +254,48 @@ func (at *AchievementTracker) AwardWeeklyAnalyst(ctx context.Context, userID int
 	}
 
 	return nil
+}
+
+// CheckCreatorAchievements checks and awards creator-specific achievements
+func (at *AchievementTracker) CheckCreatorAchievements(ctx context.Context, userID int64) ([]*Achievement, error) {
+	var newAchievements []*Achievement
+
+	// Get count of events created by user
+	createdCount, err := at.eventRepo.GetUserCreatedEventsCount(ctx, userID)
+	if err != nil {
+		at.logger.Error("failed to get created events count", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	// Check Event Organizer (1 event created)
+	if createdCount >= EventOrganizerThreshold {
+		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementEventOrganizer)
+		if err != nil {
+			at.logger.Error("failed to award event organizer", "user_id", userID, "error", err)
+		} else if achievement != nil {
+			newAchievements = append(newAchievements, achievement)
+		}
+	}
+
+	// Check Active Organizer (5 events created)
+	if createdCount >= ActiveOrganizerThreshold {
+		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementActiveOrganizer)
+		if err != nil {
+			at.logger.Error("failed to award active organizer", "user_id", userID, "error", err)
+		} else if achievement != nil {
+			newAchievements = append(newAchievements, achievement)
+		}
+	}
+
+	// Check Master Organizer (25 events created)
+	if createdCount >= MasterOrganizerThreshold {
+		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementMasterOrganizer)
+		if err != nil {
+			at.logger.Error("failed to award master organizer", "user_id", userID, "error", err)
+		} else if achievement != nil {
+			newAchievements = append(newAchievements, achievement)
+		}
+	}
+
+	return newAchievements, nil
 }

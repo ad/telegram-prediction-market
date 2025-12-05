@@ -51,8 +51,8 @@ func TestRatingDisplayCompleteness(t *testing.T) {
 
 			ctx := context.Background()
 
-			// Create ratings (between 1 and 20 to test both < 10 and > 10 cases)
-			actualCount := 1 + (ratingCount % 20)
+			// Create ratings (between 1 and 25 to test both < 10 and > 10 cases)
+			actualCount := 1 + (ratingCount % 25)
 			expectedCount := actualCount
 			if expectedCount > 10 {
 				expectedCount = 10

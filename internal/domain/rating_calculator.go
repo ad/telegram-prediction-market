@@ -7,12 +7,12 @@ import (
 
 const (
 	// Scoring constants based on requirements
-	BinaryCorrectPoints      = 10             // Requirement 9.1
-	MultiOptionCorrectPoints = 15             // Requirement 9.2
-	MinorityBonusPoints      = 5              // Requirement 9.3
-	EarlyVotingBonusPoints   = 3              // Requirement 9.4
-	ParticipationPoints      = 1              // Requirement 9.5
-	IncorrectPenalty         = -3             // Requirement 9.6
+	BinaryCorrectPoints      = 10
+	MultiOptionCorrectPoints = 15
+	MinorityBonusPoints      = 5
+	EarlyVotingBonusPoints   = 3
+	ParticipationPoints      = 1
+	IncorrectPenalty         = -3
 	MinorityThreshold        = 0.4            // 40% threshold for minority bonus
 	EarlyVotingWindow        = 12 * time.Hour // 12 hours for early voting bonus
 )
@@ -126,10 +126,10 @@ func (rc *RatingCalculator) calculatePoints(
 	voteDistribution map[int]int,
 	totalVotes int,
 ) int {
-	points := ParticipationPoints // Everyone gets participation point (Requirement 9.5)
+	points := ParticipationPoints // Everyone gets participation point
 
 	if !isCorrect {
-		// Incorrect prediction penalty (Requirement 9.6)
+		// Incorrect prediction penalty
 		points += IncorrectPenalty
 		return points
 	}
@@ -137,12 +137,12 @@ func (rc *RatingCalculator) calculatePoints(
 	// Base points for correct prediction
 	switch event.EventType {
 	case EventTypeBinary:
-		points += BinaryCorrectPoints // Requirement 9.1
+		points += BinaryCorrectPoints
 	case EventTypeMultiOption, EventTypeProbability:
-		points += MultiOptionCorrectPoints // Requirement 9.2
+		points += MultiOptionCorrectPoints
 	}
 
-	// Minority bonus (Requirement 9.3)
+	// Minority bonus
 	optionVotes := voteDistribution[prediction.Option]
 	if totalVotes > 0 {
 		percentage := float64(optionVotes) / float64(totalVotes)
@@ -155,7 +155,7 @@ func (rc *RatingCalculator) calculatePoints(
 		}
 	}
 
-	// Early voting bonus (Requirement 9.4)
+	// Early voting bonus
 	timeSinceCreation := prediction.Timestamp.Sub(event.CreatedAt)
 	if timeSinceCreation <= EarlyVotingWindow {
 		points += EarlyVotingBonusPoints

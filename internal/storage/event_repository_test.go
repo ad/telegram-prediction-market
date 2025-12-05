@@ -149,8 +149,6 @@ func min(a, b int) int {
 	return b
 }
 
-// Feature: event-creator-permissions-and-achievements, Property 14: Creator event counting
-// **Validates: Requirements 5.5**
 func TestCreatorEventCounting(t *testing.T) {
 	// Setup in-memory database
 	db, err := sql.Open("sqlite", ":memory:")

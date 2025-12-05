@@ -10,9 +10,7 @@ import (
 	"github.com/leanovate/gopter/prop"
 )
 
-// TestInvalidConfigRejection tests Property 11: Invalid config rejection
-// Feature: event-creator-permissions-and-achievements, Property 11: Invalid config rejection
-// Validates: Requirements 4.3
+// TestInvalidConfigRejection tests: Invalid config rejection
 func TestInvalidConfigRejection(t *testing.T) {
 	// Save original env vars
 	origToken := os.Getenv("TELEGRAM_TOKEN")
@@ -67,7 +65,6 @@ func TestInvalidConfigRejection(t *testing.T) {
 }
 
 // TestMinEventsToCreateDefault tests that default value is used when not set
-// Requirements: 4.2
 func TestMinEventsToCreateDefault(t *testing.T) {
 	// Save original env vars
 	origToken := os.Getenv("TELEGRAM_TOKEN")
@@ -102,7 +99,6 @@ func TestMinEventsToCreateDefault(t *testing.T) {
 }
 
 // TestMinEventsToCreateValidValues tests that valid integer values are accepted
-// Requirements: 4.2, 4.4
 func TestMinEventsToCreateValidValues(t *testing.T) {
 	// Save original env vars
 	origToken := os.Getenv("TELEGRAM_TOKEN")
@@ -152,7 +148,6 @@ func TestMinEventsToCreateValidValues(t *testing.T) {
 }
 
 // TestMinEventsToCreateInvalidValues tests that invalid values are rejected
-// Requirements: 4.3
 func TestMinEventsToCreateInvalidValues(t *testing.T) {
 	// Save original env vars
 	origToken := os.Getenv("TELEGRAM_TOKEN")

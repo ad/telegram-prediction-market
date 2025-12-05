@@ -120,8 +120,6 @@ func TestPredictionDataRoundTrip(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creator-permissions-and-achievements, Property 10: Resolved events only counting
-// **Validates: Requirements 3.4**
 func TestResolvedEventsOnlyCounting(t *testing.T) {
 	// Setup in-memory database
 	db, err := sql.Open("sqlite", ":memory:")

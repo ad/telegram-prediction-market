@@ -86,9 +86,7 @@ func (m *mockEventRepo) GetUserCreatedEventsCount(ctx context.Context, userID in
 	return 0, nil
 }
 
-// TestParticipationRequirementCheck tests Property 7: Participation requirement check
-// Feature: event-creator-permissions-and-achievements, Property 7: Participation requirement check
-// Validates: Requirements 3.1
+// TestParticipationRequirementCheck tests: Participation requirement check
 func TestParticipationRequirementCheck(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -133,14 +131,13 @@ func TestParticipationRequirementCheck(t *testing.T) {
 		},
 		gen.Int64Range(1, 1000000), // userID
 		gen.IntRange(0, 100),       // completedCount
-		gen.IntRange(0, 20),        // minRequired
+		gen.IntRange(0, 25),        // minRequired
 	))
 
 	properties.TestingRun(t)
 }
 
 // TestCountCompletedEventParticipation_Success tests successful participation counting
-// Requirements: 3.1, 3.4
 func TestCountCompletedEventParticipation_Success(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -173,7 +170,6 @@ func TestCountCompletedEventParticipation_Success(t *testing.T) {
 }
 
 // TestCountCompletedEventParticipation_Error tests error handling
-// Requirements: 3.1, 3.4
 func TestCountCompletedEventParticipation_Error(t *testing.T) {
 	expectedErr := errors.New("database error")
 	mockRepo := &mockPredictionRepo{
