@@ -33,12 +33,13 @@ func TestRatingDataRoundTrip(t *testing.T) {
 
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("rating round-trip preserves all fields", prop.ForAll(
-		func(userID int64, score int, correctCount int, wrongCount int, streak int) bool {
+		func(groupID int64, userID int64, score int, correctCount int, wrongCount int, streak int) bool {
 			ctx := context.Background()
 
 			// Create rating with valid data
 			rating := &domain.Rating{
 				UserID:       userID,
+				GroupID:      groupID,
 				Score:        score,
 				CorrectCount: correctCount,
 				WrongCount:   wrongCount,
@@ -57,7 +58,7 @@ func TestRatingDataRoundTrip(t *testing.T) {
 			}
 
 			// Retrieve rating
-			retrieved, err := repo.GetRating(ctx, userID)
+			retrieved, err := repo.GetRating(ctx, userID, groupID)
 			if err != nil {
 				t.Logf("Failed to get rating: %v", err)
 				return false
@@ -92,6 +93,7 @@ func TestRatingDataRoundTrip(t *testing.T) {
 
 			return true
 		},
+		gen.Int64Range(1, 1000),
 		gen.Int64Range(1, 1000000),
 		gen.IntRange(-1000, 1000),
 		gen.IntRange(0, 100),

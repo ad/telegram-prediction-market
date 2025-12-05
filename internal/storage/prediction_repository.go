@@ -146,8 +146,8 @@ func (r *PredictionRepository) GetUserPredictions(ctx context.Context, userID in
 	return predictions, nil
 }
 
-// GetUserCompletedEventCount counts distinct completed events user participated in
-func (r *PredictionRepository) GetUserCompletedEventCount(ctx context.Context, userID int64) (int, error) {
+// GetUserCompletedEventCount counts distinct completed events user participated in for a specific group
+func (r *PredictionRepository) GetUserCompletedEventCount(ctx context.Context, userID int64, groupID int64) (int, error) {
 	var count int
 
 	err := r.queue.Execute(func(db *sql.DB) error {
@@ -155,8 +155,8 @@ func (r *PredictionRepository) GetUserCompletedEventCount(ctx context.Context, u
 			`SELECT COUNT(DISTINCT p.event_id)
 			 FROM predictions p
 			 JOIN events e ON p.event_id = e.id
-			 WHERE p.user_id = ? AND e.status = ?`,
-			userID, domain.EventStatusResolved,
+			 WHERE p.user_id = ? AND e.status = ? AND e.group_id = ?`,
+			userID, domain.EventStatusResolved, groupID,
 		).Scan(&count)
 	})
 
@@ -165,4 +165,82 @@ func (r *PredictionRepository) GetUserCompletedEventCount(ctx context.Context, u
 	}
 
 	return count, nil
+}
+
+// GetUserPredictionsByGroup retrieves all predictions for a specific user in a specific group
+func (r *PredictionRepository) GetUserPredictionsByGroup(ctx context.Context, userID int64, groupID int64) ([]*domain.Prediction, error) {
+	var predictions []*domain.Prediction
+
+	err := r.queue.Execute(func(db *sql.DB) error {
+		rows, err := db.QueryContext(ctx,
+			`SELECT p.id, p.event_id, p.user_id, p.option, p.timestamp
+			 FROM predictions p
+			 JOIN events e ON p.event_id = e.id
+			 WHERE p.user_id = ? AND e.group_id = ?
+			 ORDER BY p.timestamp ASC`,
+			userID, groupID,
+		)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+
+		for rows.Next() {
+			var prediction domain.Prediction
+			if err := rows.Scan(
+				&prediction.ID, &prediction.EventID, &prediction.UserID,
+				&prediction.Option, &prediction.Timestamp,
+			); err != nil {
+				return err
+			}
+			predictions = append(predictions, &prediction)
+		}
+
+		return rows.Err()
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return predictions, nil
+}
+
+// GetPredictionsByEventInGroup retrieves all predictions for events in a specific group
+func (r *PredictionRepository) GetPredictionsByEventInGroup(ctx context.Context, eventID int64, groupID int64) ([]*domain.Prediction, error) {
+	var predictions []*domain.Prediction
+
+	err := r.queue.Execute(func(db *sql.DB) error {
+		rows, err := db.QueryContext(ctx,
+			`SELECT p.id, p.event_id, p.user_id, p.option, p.timestamp
+			 FROM predictions p
+			 JOIN events e ON p.event_id = e.id
+			 WHERE p.event_id = ? AND e.group_id = ?
+			 ORDER BY p.timestamp ASC`,
+			eventID, groupID,
+		)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+
+		for rows.Next() {
+			var prediction domain.Prediction
+			if err := rows.Scan(
+				&prediction.ID, &prediction.EventID, &prediction.UserID,
+				&prediction.Option, &prediction.Timestamp,
+			); err != nil {
+				return err
+			}
+			predictions = append(predictions, &prediction)
+		}
+
+		return rows.Err()
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return predictions, nil
 }

@@ -49,6 +49,7 @@ const (
 // Event represents a prediction event
 type Event struct {
 	ID            int64
+	GroupID       int64 // Group association for multi-group support
 	Question      string
 	Options       []string
 	CreatedAt     time.Time
@@ -72,6 +73,7 @@ type Prediction struct {
 // Rating represents a user's rating
 type Rating struct {
 	UserID       int64
+	GroupID      int64 // Group association for multi-group support
 	Username     string
 	Score        int
 	CorrectCount int
@@ -97,6 +99,7 @@ const (
 type Achievement struct {
 	ID        int64
 	UserID    int64
+	GroupID   int64 // Group association for multi-group support
 	Code      AchievementCode
 	Timestamp time.Time
 }
@@ -133,6 +136,9 @@ type GroupMembership struct {
 func (e *Event) Validate() error {
 	if e.Question == "" {
 		return ErrEmptyQuestion
+	}
+	if e.GroupID == 0 {
+		return ErrInvalidGroupID
 	}
 	if len(e.Options) < 2 {
 		return ErrInsufficientOptions
@@ -187,6 +193,9 @@ func (r *Rating) Validate() error {
 	if r.UserID == 0 {
 		return ErrInvalidUserID
 	}
+	if r.GroupID == 0 {
+		return ErrInvalidGroupID
+	}
 	if r.CorrectCount < 0 {
 		return ErrInvalidCorrectCount
 	}
@@ -200,6 +209,9 @@ func (r *Rating) Validate() error {
 func (a *Achievement) Validate() error {
 	if a.UserID == 0 {
 		return ErrInvalidUserID
+	}
+	if a.GroupID == 0 {
+		return ErrInvalidGroupID
 	}
 	if a.Code == "" {
 		return ErrInvalidAchievementCode

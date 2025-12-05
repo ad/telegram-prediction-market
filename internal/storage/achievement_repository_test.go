@@ -34,7 +34,7 @@ func TestAchievementDataRoundTrip(t *testing.T) {
 
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("achievement round-trip preserves all fields", prop.ForAll(
-		func(userID int64, code domain.AchievementCode, timestampOffset int64) bool {
+		func(userID int64, groupID int64, code domain.AchievementCode, timestampOffset int64) bool {
 			ctx := context.Background()
 
 			// Create achievement with valid data
@@ -42,6 +42,7 @@ func TestAchievementDataRoundTrip(t *testing.T) {
 
 			achievement := &domain.Achievement{
 				UserID:    userID,
+				GroupID:   groupID,
 				Code:      code,
 				Timestamp: timestamp,
 			}
@@ -58,7 +59,7 @@ func TestAchievementDataRoundTrip(t *testing.T) {
 			}
 
 			// Retrieve achievements for user
-			retrieved, err := repo.GetUserAchievements(ctx, userID)
+			retrieved, err := repo.GetUserAchievements(ctx, userID, groupID)
 			if err != nil {
 				t.Logf("Failed to get achievements: %v", err)
 				return false
@@ -104,6 +105,7 @@ func TestAchievementDataRoundTrip(t *testing.T) {
 			return true
 		},
 		gen.Int64Range(1, 1000000),
+		gen.Int64Range(1, 1000),
 		gen.OneConstOf(
 			domain.AchievementSharpshooter,
 			domain.AchievementWeeklyAnalyst,

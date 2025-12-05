@@ -141,12 +141,13 @@ func TestResolvedEventsOnlyCounting(t *testing.T) {
 
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("participation count includes only resolved events", prop.ForAll(
-		func(userID int64, resolvedCount int, activeCount int, cancelledCount int) bool {
+		func(groupID int64, userID int64, resolvedCount int, activeCount int, cancelledCount int) bool {
 			ctx := context.Background()
 
 			// Create resolved events with predictions
 			for i := 0; i < resolvedCount; i++ {
 				event := &domain.Event{
+					GroupID:   groupID,
 					Question:  "Resolved question " + time.Now().Format(time.RFC3339Nano),
 					Options:   []string{"Yes", "No"},
 					CreatedAt: time.Now().Truncate(time.Second),
@@ -178,6 +179,7 @@ func TestResolvedEventsOnlyCounting(t *testing.T) {
 			// Create active events with predictions (should not be counted)
 			for i := 0; i < activeCount; i++ {
 				event := &domain.Event{
+					GroupID:   groupID,
 					Question:  "Active question " + time.Now().Format(time.RFC3339Nano),
 					Options:   []string{"Yes", "No"},
 					CreatedAt: time.Now().Truncate(time.Second),
@@ -209,6 +211,7 @@ func TestResolvedEventsOnlyCounting(t *testing.T) {
 			// Create cancelled events with predictions (should not be counted)
 			for i := 0; i < cancelledCount; i++ {
 				event := &domain.Event{
+					GroupID:   groupID,
 					Question:  "Cancelled question " + time.Now().Format(time.RFC3339Nano),
 					Options:   []string{"Yes", "No"},
 					CreatedAt: time.Now().Truncate(time.Second),
@@ -238,7 +241,7 @@ func TestResolvedEventsOnlyCounting(t *testing.T) {
 			}
 
 			// Get the count of completed events
-			count, err := predictionRepo.GetUserCompletedEventCount(ctx, userID)
+			count, err := predictionRepo.GetUserCompletedEventCount(ctx, userID, groupID)
 			if err != nil {
 				t.Logf("Failed to get completed event count: %v", err)
 				return false
@@ -252,6 +255,7 @@ func TestResolvedEventsOnlyCounting(t *testing.T) {
 
 			return true
 		},
+		gen.Int64Range(1, 1000),
 		gen.Int64Range(1, 1000000),
 		gen.IntRange(0, 5),
 		gen.IntRange(0, 5),
@@ -282,7 +286,7 @@ func TestGetUserCompletedEventCount(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("returns zero when user has no predictions", func(t *testing.T) {
-		count, err := predictionRepo.GetUserCompletedEventCount(ctx, 999)
+		count, err := predictionRepo.GetUserCompletedEventCount(ctx, 999, 1)
 		if err != nil {
 			t.Fatalf("Failed to get count: %v", err)
 		}
@@ -293,9 +297,11 @@ func TestGetUserCompletedEventCount(t *testing.T) {
 
 	t.Run("counts only resolved events", func(t *testing.T) {
 		userID := int64(100)
+		groupID := int64(1)
 
 		// Create resolved event with prediction
 		resolvedEvent := &domain.Event{
+			GroupID:   groupID,
 			Question:  "Resolved question",
 			Options:   []string{"Yes", "No"},
 			CreatedAt: time.Now().Truncate(time.Second),
@@ -319,6 +325,7 @@ func TestGetUserCompletedEventCount(t *testing.T) {
 
 		// Create active event with prediction
 		activeEvent := &domain.Event{
+			GroupID:   groupID,
 			Question:  "Active question",
 			Options:   []string{"Yes", "No"},
 			CreatedAt: time.Now().Truncate(time.Second),
@@ -342,6 +349,7 @@ func TestGetUserCompletedEventCount(t *testing.T) {
 
 		// Create cancelled event with prediction
 		cancelledEvent := &domain.Event{
+			GroupID:   groupID,
 			Question:  "Cancelled question",
 			Options:   []string{"Yes", "No"},
 			CreatedAt: time.Now().Truncate(time.Second),
@@ -363,7 +371,7 @@ func TestGetUserCompletedEventCount(t *testing.T) {
 			t.Fatalf("Failed to save prediction: %v", err)
 		}
 
-		count, err := predictionRepo.GetUserCompletedEventCount(ctx, userID)
+		count, err := predictionRepo.GetUserCompletedEventCount(ctx, userID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to get count: %v", err)
 		}
@@ -375,9 +383,11 @@ func TestGetUserCompletedEventCount(t *testing.T) {
 	t.Run("counts correctly for multiple users", func(t *testing.T) {
 		user1 := int64(200)
 		user2 := int64(201)
+		groupID := int64(1)
 
 		// Create resolved event with predictions from both users
 		event := &domain.Event{
+			GroupID:   groupID,
 			Question:  "Multi-user question",
 			Options:   []string{"Yes", "No"},
 			CreatedAt: time.Now().Truncate(time.Second),
@@ -409,7 +419,7 @@ func TestGetUserCompletedEventCount(t *testing.T) {
 			t.Fatalf("Failed to save prediction for user2: %v", err)
 		}
 
-		count1, err := predictionRepo.GetUserCompletedEventCount(ctx, user1)
+		count1, err := predictionRepo.GetUserCompletedEventCount(ctx, user1, groupID)
 		if err != nil {
 			t.Fatalf("Failed to get count for user1: %v", err)
 		}
@@ -417,7 +427,7 @@ func TestGetUserCompletedEventCount(t *testing.T) {
 			t.Errorf("Expected count 1 for user1, got %d", count1)
 		}
 
-		count2, err := predictionRepo.GetUserCompletedEventCount(ctx, user2)
+		count2, err := predictionRepo.GetUserCompletedEventCount(ctx, user2, groupID)
 		if err != nil {
 			t.Fatalf("Failed to get count for user2: %v", err)
 		}

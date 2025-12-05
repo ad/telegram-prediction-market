@@ -186,7 +186,7 @@ func (m *MockPredictionRepo) GetUserPredictions(ctx context.Context, userID int6
 	return []*Prediction{}, nil
 }
 
-func (m *MockPredictionRepo) GetUserCompletedEventCount(ctx context.Context, userID int64) (int, error) {
+func (m *MockPredictionRepo) GetUserCompletedEventCount(ctx context.Context, userID int64, groupID int64) (int, error) {
 	return 0, nil
 }
 
@@ -468,7 +468,7 @@ func (m *MockPredictionRepoWithData) GetUserPredictions(ctx context.Context, use
 	return m.predictions, nil
 }
 
-func (m *MockPredictionRepoWithData) GetUserCompletedEventCount(ctx context.Context, userID int64) (int, error) {
+func (m *MockPredictionRepoWithData) GetUserCompletedEventCount(ctx context.Context, userID int64, groupID int64) (int, error) {
 	return 0, nil
 }
 

@@ -21,9 +21,9 @@ func NewAchievementRepository(queue *DBQueue) *AchievementRepository {
 func (r *AchievementRepository) SaveAchievement(ctx context.Context, achievement *domain.Achievement) error {
 	return r.queue.Execute(func(db *sql.DB) error {
 		result, err := db.ExecContext(ctx,
-			`INSERT INTO achievements (user_id, code, timestamp)
-			 VALUES (?, ?, ?)`,
-			achievement.UserID, achievement.Code, achievement.Timestamp,
+			`INSERT INTO achievements (user_id, group_id, code, timestamp)
+			 VALUES (?, ?, ?, ?)`,
+			achievement.UserID, achievement.GroupID, achievement.Code, achievement.Timestamp,
 		)
 		if err != nil {
 			return err
@@ -38,15 +38,15 @@ func (r *AchievementRepository) SaveAchievement(ctx context.Context, achievement
 	})
 }
 
-// GetUserAchievements retrieves all achievements for a specific user
-func (r *AchievementRepository) GetUserAchievements(ctx context.Context, userID int64) ([]*domain.Achievement, error) {
+// GetUserAchievements retrieves all achievements for a specific user in a specific group
+func (r *AchievementRepository) GetUserAchievements(ctx context.Context, userID int64, groupID int64) ([]*domain.Achievement, error) {
 	var achievements []*domain.Achievement
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx,
-			`SELECT id, user_id, code, timestamp
-			 FROM achievements WHERE user_id = ? ORDER BY timestamp DESC`,
-			userID,
+			`SELECT id, user_id, group_id, code, timestamp
+			 FROM achievements WHERE user_id = ? AND group_id = ? ORDER BY timestamp DESC`,
+			userID, groupID,
 		)
 		if err != nil {
 			return err
@@ -56,7 +56,7 @@ func (r *AchievementRepository) GetUserAchievements(ctx context.Context, userID 
 		for rows.Next() {
 			var achievement domain.Achievement
 			if err := rows.Scan(
-				&achievement.ID, &achievement.UserID,
+				&achievement.ID, &achievement.UserID, &achievement.GroupID,
 				&achievement.Code, &achievement.Timestamp,
 			); err != nil {
 				return err
@@ -74,15 +74,15 @@ func (r *AchievementRepository) GetUserAchievements(ctx context.Context, userID 
 	return achievements, nil
 }
 
-// CheckAchievementExists checks if a user already has a specific achievement
-func (r *AchievementRepository) CheckAchievementExists(ctx context.Context, userID int64, code domain.AchievementCode) (bool, error) {
+// CheckAchievementExists checks if a user already has a specific achievement in a specific group
+func (r *AchievementRepository) CheckAchievementExists(ctx context.Context, userID int64, groupID int64, code domain.AchievementCode) (bool, error) {
 	var exists bool
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		var count int
 		err := db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM achievements WHERE user_id = ? AND code = ?`,
-			userID, code,
+			`SELECT COUNT(*) FROM achievements WHERE user_id = ? AND group_id = ? AND code = ?`,
+			userID, groupID, code,
 		).Scan(&count)
 		if err != nil {
 			return err

@@ -35,7 +35,7 @@ func TestEventDataRoundTrip(t *testing.T) {
 
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("event round-trip preserves all fields", prop.ForAll(
-		func(question string, optionCount int, eventType domain.EventType, createdBy int64) bool {
+		func(groupID int64, question string, optionCount int, eventType domain.EventType, createdBy int64) bool {
 			// Generate valid options based on event type
 			var options []string
 			switch eventType {
@@ -57,6 +57,7 @@ func TestEventDataRoundTrip(t *testing.T) {
 			deadline := now.Add(24 * time.Hour)
 
 			event := &domain.Event{
+				GroupID:   groupID,
 				Question:  question,
 				Options:   options,
 				CreatedAt: now,
@@ -133,6 +134,7 @@ func TestEventDataRoundTrip(t *testing.T) {
 
 			return true
 		},
+		gen.Int64Range(1, 1000),
 		gen.AlphaString().SuchThat(func(s string) bool { return len(s) > 0 && len(s) < 500 }),
 		gen.IntRange(0, 10),
 		gen.OneConstOf(domain.EventTypeBinary, domain.EventTypeMultiOption, domain.EventTypeProbability),
@@ -173,7 +175,7 @@ func TestCreatorIDPersistence(t *testing.T) {
 	properties := gopter.NewProperties(parameters)
 
 	properties.Property("creator ID persists after event creation and retrieval", prop.ForAll(
-		func(creatorID int64, question string, eventType domain.EventType) bool {
+		func(groupID int64, creatorID int64, question string, eventType domain.EventType) bool {
 			// Generate valid options based on event type
 			var options []string
 			switch eventType {
@@ -190,6 +192,7 @@ func TestCreatorIDPersistence(t *testing.T) {
 			deadline := now.Add(24 * time.Hour)
 
 			event := &domain.Event{
+				GroupID:   groupID,
 				Question:  question,
 				Options:   options,
 				CreatedAt: now,
@@ -228,6 +231,7 @@ func TestCreatorIDPersistence(t *testing.T) {
 
 			return true
 		},
+		gen.Int64Range(1, 1000),
 		gen.Int64Range(1, 1000000),
 		gen.AlphaString().SuchThat(func(s string) bool { return len(s) > 0 && len(s) < 500 }),
 		gen.OneConstOf(domain.EventTypeBinary, domain.EventTypeMultiOption, domain.EventTypeProbability),
@@ -256,7 +260,7 @@ func TestCreatorEventCounting(t *testing.T) {
 
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("count includes only events created by user", prop.ForAll(
-		func(targetUserID int64, otherUserID int64, targetUserEvents int, otherUserEvents int) bool {
+		func(groupID int64, targetUserID int64, otherUserID int64, targetUserEvents int, otherUserEvents int) bool {
 			// Ensure users are different
 			if targetUserID == otherUserID {
 				return true // Skip when users are the same
@@ -267,6 +271,7 @@ func TestCreatorEventCounting(t *testing.T) {
 			// Create events for target user
 			for i := 0; i < targetUserEvents; i++ {
 				event := &domain.Event{
+					GroupID:   groupID,
 					Question:  fmt.Sprintf("Target user question %d %s", i, time.Now().Format(time.RFC3339Nano)),
 					Options:   []string{"Yes", "No"},
 					CreatedAt: time.Now().Truncate(time.Second),
@@ -286,6 +291,7 @@ func TestCreatorEventCounting(t *testing.T) {
 			// Create events for other user (should not be counted)
 			for i := 0; i < otherUserEvents; i++ {
 				event := &domain.Event{
+					GroupID:   groupID,
 					Question:  fmt.Sprintf("Other user question %d %s", i, time.Now().Format(time.RFC3339Nano)),
 					Options:   []string{"Yes", "No"},
 					CreatedAt: time.Now().Truncate(time.Second),
@@ -303,7 +309,7 @@ func TestCreatorEventCounting(t *testing.T) {
 			}
 
 			// Get the count of events created by target user
-			count, err := repo.GetUserCreatedEventsCount(ctx, targetUserID)
+			count, err := repo.GetUserCreatedEventsCount(ctx, targetUserID, groupID)
 			if err != nil {
 				t.Logf("Failed to get created events count: %v", err)
 				return false
@@ -317,6 +323,7 @@ func TestCreatorEventCounting(t *testing.T) {
 
 			return true
 		},
+		gen.Int64Range(1, 1000),
 		gen.Int64Range(1, 1000000),
 		gen.Int64Range(1000001, 2000000),
 		gen.IntRange(0, 5),
@@ -346,7 +353,7 @@ func TestGetUserCreatedEventsCount(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("returns zero when user has created no events", func(t *testing.T) {
-		count, err := repo.GetUserCreatedEventsCount(ctx, 999)
+		count, err := repo.GetUserCreatedEventsCount(ctx, 999, 1)
 		if err != nil {
 			t.Fatalf("Failed to get count: %v", err)
 		}
@@ -357,9 +364,11 @@ func TestGetUserCreatedEventsCount(t *testing.T) {
 
 	t.Run("counts events with various statuses", func(t *testing.T) {
 		userID := int64(300)
+		groupID := int64(1)
 
 		// Create resolved event
 		resolvedEvent := &domain.Event{
+			GroupID:   groupID,
 			Question:  "Resolved by user",
 			Options:   []string{"Yes", "No"},
 			CreatedAt: time.Now().Truncate(time.Second),
@@ -375,6 +384,7 @@ func TestGetUserCreatedEventsCount(t *testing.T) {
 
 		// Create active event
 		activeEvent := &domain.Event{
+			GroupID:   groupID,
 			Question:  "Active by user",
 			Options:   []string{"Yes", "No"},
 			CreatedAt: time.Now().Truncate(time.Second),
@@ -390,6 +400,7 @@ func TestGetUserCreatedEventsCount(t *testing.T) {
 
 		// Create cancelled event
 		cancelledEvent := &domain.Event{
+			GroupID:   groupID,
 			Question:  "Cancelled by user",
 			Options:   []string{"Yes", "No"},
 			CreatedAt: time.Now().Truncate(time.Second),
@@ -403,7 +414,7 @@ func TestGetUserCreatedEventsCount(t *testing.T) {
 			t.Fatalf("Failed to create cancelled event: %v", err)
 		}
 
-		count, err := repo.GetUserCreatedEventsCount(ctx, userID)
+		count, err := repo.GetUserCreatedEventsCount(ctx, userID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to get count: %v", err)
 		}
@@ -415,10 +426,12 @@ func TestGetUserCreatedEventsCount(t *testing.T) {
 	t.Run("counts correctly for multiple users", func(t *testing.T) {
 		user1 := int64(400)
 		user2 := int64(401)
+		groupID := int64(1)
 
 		// Create 2 events for user1
 		for i := 0; i < 2; i++ {
 			event := &domain.Event{
+				GroupID:   groupID,
 				Question:  fmt.Sprintf("User1 question %d", i),
 				Options:   []string{"Yes", "No"},
 				CreatedAt: time.Now().Truncate(time.Second),
@@ -436,6 +449,7 @@ func TestGetUserCreatedEventsCount(t *testing.T) {
 		// Create 3 events for user2
 		for i := 0; i < 3; i++ {
 			event := &domain.Event{
+				GroupID:   groupID,
 				Question:  fmt.Sprintf("User2 question %d", i),
 				Options:   []string{"Yes", "No"},
 				CreatedAt: time.Now().Truncate(time.Second),
@@ -450,7 +464,7 @@ func TestGetUserCreatedEventsCount(t *testing.T) {
 			}
 		}
 
-		count1, err := repo.GetUserCreatedEventsCount(ctx, user1)
+		count1, err := repo.GetUserCreatedEventsCount(ctx, user1, groupID)
 		if err != nil {
 			t.Fatalf("Failed to get count for user1: %v", err)
 		}
@@ -458,7 +472,7 @@ func TestGetUserCreatedEventsCount(t *testing.T) {
 			t.Errorf("Expected count 2 for user1, got %d", count1)
 		}
 
-		count2, err := repo.GetUserCreatedEventsCount(ctx, user2)
+		count2, err := repo.GetUserCreatedEventsCount(ctx, user2, groupID)
 		if err != nil {
 			t.Fatalf("Failed to get count for user2: %v", err)
 		}

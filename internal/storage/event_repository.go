@@ -28,9 +28,9 @@ func (r *EventRepository) CreateEvent(ctx context.Context, event *domain.Event) 
 		}
 
 		result, err := db.ExecContext(ctx,
-			`INSERT INTO events (question, options_json, created_at, deadline, status, event_type, created_by, poll_id)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			event.Question, optionsJSON, event.CreatedAt, event.Deadline,
+			`INSERT INTO events (group_id, question, options_json, created_at, deadline, status, event_type, created_by, poll_id)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			event.GroupID, event.Question, optionsJSON, event.CreatedAt, event.Deadline,
 			event.Status, event.EventType, event.CreatedBy, event.PollID,
 		)
 		if err != nil {
@@ -55,11 +55,11 @@ func (r *EventRepository) GetEvent(ctx context.Context, eventID int64) (*domain.
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx,
-			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
+			`SELECT id, group_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
 			 FROM events WHERE id = ?`,
 			eventID,
 		).Scan(
-			&event.ID, &event.Question, &optionsJSON, &event.CreatedAt,
+			&event.ID, &event.GroupID, &event.Question, &optionsJSON, &event.CreatedAt,
 			&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID,
 		)
 	})
@@ -84,15 +84,15 @@ func (r *EventRepository) GetEvent(ctx context.Context, eventID int64) (*domain.
 	return &event, nil
 }
 
-// GetActiveEvents retrieves all active events
-func (r *EventRepository) GetActiveEvents(ctx context.Context) ([]*domain.Event, error) {
+// GetActiveEvents retrieves all active events for a specific group
+func (r *EventRepository) GetActiveEvents(ctx context.Context, groupID int64) ([]*domain.Event, error) {
 	var events []*domain.Event
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx,
-			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
-			 FROM events WHERE status = ? ORDER BY created_at DESC`,
-			domain.EventStatusActive,
+			`SELECT id, group_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
+			 FROM events WHERE status = ? AND group_id = ? ORDER BY created_at DESC`,
+			domain.EventStatusActive, groupID,
 		)
 		if err != nil {
 			return err
@@ -106,7 +106,7 @@ func (r *EventRepository) GetActiveEvents(ctx context.Context) ([]*domain.Event,
 			var pollID sql.NullString
 
 			if err := rows.Scan(
-				&event.ID, &event.Question, &optionsJSON, &event.CreatedAt,
+				&event.ID, &event.GroupID, &event.Question, &optionsJSON, &event.CreatedAt,
 				&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID,
 			); err != nil {
 				return err
@@ -152,9 +152,9 @@ func (r *EventRepository) UpdateEvent(ctx context.Context, event *domain.Event) 
 		}
 
 		_, err = db.ExecContext(ctx,
-			`UPDATE events SET question = ?, options_json = ?, deadline = ?, status = ?, correct_option = ?, poll_id = ?
+			`UPDATE events SET group_id = ?, question = ?, options_json = ?, deadline = ?, status = ?, correct_option = ?, poll_id = ?
 			 WHERE id = ?`,
-			event.Question, optionsJSON, event.Deadline, event.Status, correctOption, event.PollID, event.ID,
+			event.GroupID, event.Question, optionsJSON, event.Deadline, event.Status, correctOption, event.PollID, event.ID,
 		)
 		return err
 	})
@@ -177,7 +177,7 @@ func (r *EventRepository) GetEventsByDeadlineRange(ctx context.Context, start, e
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx,
-			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
+			`SELECT id, group_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
 			 FROM events WHERE deadline BETWEEN ? AND ? ORDER BY deadline ASC`,
 			start, end,
 		)
@@ -193,7 +193,7 @@ func (r *EventRepository) GetEventsByDeadlineRange(ctx context.Context, start, e
 			var pollID sql.NullString
 
 			if err := rows.Scan(
-				&event.ID, &event.Question, &optionsJSON, &event.CreatedAt,
+				&event.ID, &event.GroupID, &event.Question, &optionsJSON, &event.CreatedAt,
 				&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID,
 			); err != nil {
 				return err
@@ -234,11 +234,11 @@ func (r *EventRepository) GetEventByPollID(ctx context.Context, pollID string) (
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx,
-			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
+			`SELECT id, group_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
 			 FROM events WHERE poll_id = ?`,
 			pollID,
 		).Scan(
-			&event.ID, &event.Question, &optionsJSON, &event.CreatedAt,
+			&event.ID, &event.GroupID, &event.Question, &optionsJSON, &event.CreatedAt,
 			&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollIDNull,
 		)
 	})
@@ -272,7 +272,7 @@ func (r *EventRepository) GetResolvedEvents(ctx context.Context) ([]*domain.Even
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx,
-			`SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
+			`SELECT id, group_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id
 			 FROM events WHERE status = ? ORDER BY created_at DESC`,
 			domain.EventStatusResolved,
 		)
@@ -288,7 +288,7 @@ func (r *EventRepository) GetResolvedEvents(ctx context.Context) ([]*domain.Even
 			var pollID sql.NullString
 
 			if err := rows.Scan(
-				&event.ID, &event.Question, &optionsJSON, &event.CreatedAt,
+				&event.ID, &event.GroupID, &event.Question, &optionsJSON, &event.CreatedAt,
 				&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID,
 			); err != nil {
 				return err
@@ -320,14 +320,14 @@ func (r *EventRepository) GetResolvedEvents(ctx context.Context) ([]*domain.Even
 	return events, nil
 }
 
-// GetUserCreatedEventsCount counts events created by user
-func (r *EventRepository) GetUserCreatedEventsCount(ctx context.Context, userID int64) (int, error) {
+// GetUserCreatedEventsCount counts events created by user in a specific group
+func (r *EventRepository) GetUserCreatedEventsCount(ctx context.Context, userID int64, groupID int64) (int, error) {
 	var count int
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM events WHERE created_by = ?`,
-			userID,
+			`SELECT COUNT(*) FROM events WHERE created_by = ? AND group_id = ?`,
+			userID, groupID,
 		).Scan(&count)
 	})
 

@@ -32,7 +32,7 @@ func (m *mockPredictionRepo) UpdatePrediction(ctx context.Context, prediction *P
 	return nil
 }
 
-func (m *mockPredictionRepo) GetUserCompletedEventCount(ctx context.Context, userID int64) (int, error) {
+func (m *mockPredictionRepo) GetUserCompletedEventCount(ctx context.Context, userID int64, groupID int64) (int, error) {
 	if m.err != nil {
 		return 0, m.err
 	}
