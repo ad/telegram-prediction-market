@@ -35,6 +35,7 @@ CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(user_id);
 
 CREATE TABLE IF NOT EXISTS ratings (
     user_id INTEGER PRIMARY KEY,
+    username TEXT NOT NULL DEFAULT '',
     score INTEGER NOT NULL DEFAULT 0,
     correct_count INTEGER NOT NULL DEFAULT 0,
     wrong_count INTEGER NOT NULL DEFAULT 0,

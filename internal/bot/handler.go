@@ -217,8 +217,7 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 
 	// Build rating message
 	var sb strings.Builder
-	sb.WriteString("🏆 ТОП-10 УЧАСТНИКОВ\n")
-	sb.WriteString("════════════════════\n\n")
+	sb.WriteString("🏆 ТОП-10 УЧАСТНИКОВ\n\n")
 
 	medals := []string{"🥇", "🥈", "🥉"}
 	for i, rating := range ratings {
@@ -235,9 +234,19 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 			accuracy = float64(rating.CorrectCount) / float64(total) * 100
 		}
 
-		sb.WriteString(fmt.Sprintf("%s%d очков\n", medal, rating.Score))
-		sb.WriteString(fmt.Sprintf("   📊 Точность: %.1f%%  |  🔥 Серия: %d\n", accuracy, rating.Streak))
-		sb.WriteString(fmt.Sprintf("   ✅ %d  ❌ %d\n\n", rating.CorrectCount, rating.WrongCount))
+		// Display username or user ID if username is not available
+		displayName := rating.Username
+		if displayName == "" {
+			displayName = fmt.Sprintf("ID: %d", rating.UserID)
+		} else {
+			displayName = fmt.Sprintf("@%s", displayName)
+		}
+
+		sb.WriteString(fmt.Sprintf("%s%s — %d очков\n", medal, displayName, rating.Score))
+		sb.WriteString(fmt.Sprintf("     📊 Точность: %.1f\n", accuracy))
+		sb.WriteString(fmt.Sprintf("     🔥 Серия: %d\n", rating.Streak))
+		sb.WriteString(fmt.Sprintf("     ✅ %d\n", rating.CorrectCount))
+		sb.WriteString(fmt.Sprintf("     ❌ %d\n\n", rating.WrongCount))
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -274,7 +283,6 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 	// Build stats message
 	var sb strings.Builder
 	sb.WriteString("📊 ВАША СТАТИСТИКА\n")
-	sb.WriteString("════════════════════\n\n")
 
 	total := rating.CorrectCount + rating.WrongCount
 	accuracy := 0.0
@@ -290,10 +298,8 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 	sb.WriteString(fmt.Sprintf("📝 Всего прогнозов: %d\n\n", total))
 
 	// Add achievements
-	sb.WriteString("════════════════════\n")
 	if len(achievements) > 0 {
 		sb.WriteString("🏆 ВАШИ АЧИВКИ\n")
-		sb.WriteString("════════════════════\n\n")
 		achievementNames := map[domain.AchievementCode]string{
 			domain.AchievementSharpshooter:  "🎯 Меткий стрелок",
 			domain.AchievementProphet:       "🔮 Провидец",
@@ -310,7 +316,6 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 		}
 	} else {
 		sb.WriteString("🏆 АЧИВКИ\n")
-		sb.WriteString("════════════════════\n\n")
 		sb.WriteString("Пока нет. Продолжайте делать прогнозы!")
 	}
 
@@ -534,6 +539,37 @@ func (h *BotHandler) HandlePollAnswer(ctx context.Context, b *bot.Bot, update *m
 		}
 
 		h.logger.Info("prediction saved", "user_id", userID, "event_id", event.ID, "option", selectedOption)
+	}
+
+	// Update or create user rating with username
+	username := pollAnswer.User.Username
+	if username == "" {
+		// If username is not set, use first name or last name
+		if pollAnswer.User.FirstName != "" {
+			username = pollAnswer.User.FirstName
+		}
+		if pollAnswer.User.LastName != "" {
+			if username != "" {
+				username += " " + pollAnswer.User.LastName
+			} else {
+				username = pollAnswer.User.LastName
+			}
+		}
+	}
+
+	// Get or create rating to ensure username is saved
+	rating, err := h.ratingCalculator.GetUserRating(ctx, userID)
+	if err != nil {
+		h.logger.Error("failed to get user rating", "user_id", userID, "error", err)
+		return
+	}
+
+	// Update username if it's different or empty
+	if rating.Username != username && username != "" {
+		rating.Username = username
+		if err := h.ratingCalculator.UpdateRatingUsername(ctx, rating); err != nil {
+			h.logger.Error("failed to update username", "user_id", userID, "error", err)
+		}
 	}
 }
 

@@ -212,3 +212,14 @@ func (rc *RatingCalculator) UpdateStreak(ctx context.Context, userID int64, corr
 	rc.logger.Info("streak updated", "user_id", userID, "streak", rating.Streak)
 	return nil
 }
+
+// UpdateRatingUsername updates a user's rating (including username)
+func (rc *RatingCalculator) UpdateRatingUsername(ctx context.Context, rating *Rating) error {
+	if err := rc.ratingRepo.UpdateRating(ctx, rating); err != nil {
+		rc.logger.Error("failed to update rating", "user_id", rating.UserID, "error", err)
+		return err
+	}
+
+	rc.logger.Info("rating updated", "user_id", rating.UserID, "username", rating.Username)
+	return nil
+}

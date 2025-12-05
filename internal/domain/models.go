@@ -68,6 +68,7 @@ type Prediction struct {
 // Rating represents a user's rating
 type Rating struct {
 	UserID       int64
+	Username     string
 	Score        int
 	CorrectCount int
 	WrongCount   int
