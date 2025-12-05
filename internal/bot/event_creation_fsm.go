@@ -583,7 +583,8 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 		return err
 	}
 
-	// Update context with new message ID
+	// Update context with confirmation message ID
+	context.ConfirmationMessageID = messageID
 	context.LastBotMessageID = messageID
 
 	// Transition to confirm state
@@ -638,6 +639,11 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 
 	chatID := callback.Message.Message.Chat.ID
 	action := strings.TrimPrefix(callback.Data, "confirm:")
+
+	// Delete the confirmation message (with buttons)
+	if context.ConfirmationMessageID != 0 {
+		f.deleteMessages(ctx, chatID, context.ConfirmationMessageID)
+	}
 
 	if action == "yes" {
 		// Create the event

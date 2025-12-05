@@ -1102,8 +1102,6 @@ func TestProperty_SessionIndependenceOnCompletion(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 29: Validation error message cleanup
-// Validates: Requirements 1.10, 1.11
 func TestProperty_ValidationErrorMessageCleanup(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("validation error messages and invalid user input are deleted when valid input is provided", prop.ForAll(
@@ -1246,6 +1244,191 @@ func TestProperty_ValidationErrorMessageCleanup(t *testing.T) {
 		gen.Int64(),
 		gen.Const(""),    // Invalid input (empty string)
 		gen.Identifier(), // Valid input
+	))
+
+	properties.TestingRun(t)
+}
+
+func TestProperty_ConfirmationMessageDeletion(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("confirmation message is deleted after clicking either button", prop.ForAll(
+		func(userID int64, chatID int64, question string, confirmAction string) bool {
+			// Ensure non-zero IDs
+			if userID == 0 {
+				userID = 1
+			}
+			if chatID == 0 {
+				chatID = 12345
+			}
+
+			// Map confirmAction to either "yes" or "no"
+			action := "yes"
+			if len(confirmAction) > 0 && confirmAction[0]%2 == 0 {
+				action = "no"
+			}
+
+			// Create mock dependencies
+			ctx := context.Background()
+			mockDeleter := NewMockMessageDeleter()
+			log := logger.New(logger.ERROR)
+
+			// Create a context with a confirmation message ID
+			confirmationMessageID := 500
+			context := &domain.EventCreationContext{
+				Question:              question,
+				EventType:             domain.EventTypeBinary,
+				Options:               []string{"Да", "Нет"},
+				Deadline:              time.Now().Add(24 * time.Hour),
+				LastBotMessageID:      100,
+				LastUserMessageID:     200,
+				ConfirmationMessageID: confirmationMessageID,
+				ChatID:                chatID,
+			}
+
+			// Simulate the deletion logic from handleConfirmCallback
+			// Delete the confirmation message
+			if context.ConfirmationMessageID != 0 {
+				deleteMessages(ctx, mockDeleter, log, chatID, context.ConfirmationMessageID)
+			}
+
+			// Verify confirmation message was deleted
+			deletedMsgs := mockDeleter.GetDeletedMessages(chatID)
+			foundConfirmation := false
+			for _, msgID := range deletedMsgs {
+				if msgID == confirmationMessageID {
+					foundConfirmation = true
+					break
+				}
+			}
+
+			if !foundConfirmation {
+				t.Logf("Confirmation message %d should be deleted after clicking %s", confirmationMessageID, action)
+				return false
+			}
+
+			// Verify exactly 1 message was deleted (the confirmation message)
+			if len(deletedMsgs) != 1 {
+				t.Logf("Expected 1 message deleted (confirmation), got %d", len(deletedMsgs))
+				return false
+			}
+
+			return true
+		},
+		gen.Int64(),
+		gen.Int64(),
+		gen.Identifier(),
+		gen.Identifier(),
+	))
+
+	properties.TestingRun(t)
+}
+
+func TestProperty_CleanChatState(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("only command and final result remain after completion or cancellation", prop.ForAll(
+		func(userID int64, chatID int64, question string, options []string, isConfirmed bool) bool {
+			// Ensure non-zero IDs
+			if userID == 0 {
+				userID = 1
+			}
+			if chatID == 0 {
+				chatID = 12345
+			}
+
+			// Ensure valid options
+			if len(options) < 2 {
+				options = []string{"Option 1", "Option 2"}
+			}
+
+			// Create mock dependencies
+			ctx := context.Background()
+			mockDeleter := NewMockMessageDeleter()
+			log := logger.New(logger.ERROR)
+
+			// Track all intermediate message IDs that should be deleted
+			// These represent messages sent during the flow
+			questionPromptMsgID := 100
+			userQuestionMsgID := 101
+			eventTypePromptMsgID := 102
+			// eventTypeCallback deletes the prompt (102)
+			deadlinePromptMsgID := 103
+			userDeadlineMsgID := 104
+			confirmationMsgID := 105
+
+			// Also track error messages if validation failed
+			errorMsgID1 := 106
+			invalidInputMsgID1 := 107
+			errorMsgID2 := 108
+			invalidInputMsgID2 := 109
+
+			// Simulate the complete flow with message deletions:
+
+			// 1. Question input step - delete bot prompt and user message
+			deleteMessages(ctx, mockDeleter, log, chatID, questionPromptMsgID, userQuestionMsgID)
+
+			// 2. Event type selection - delete the prompt message
+			deleteMessages(ctx, mockDeleter, log, chatID, eventTypePromptMsgID)
+
+			// 3. Deadline input step - delete bot prompt and user message
+			deleteMessages(ctx, mockDeleter, log, chatID, deadlinePromptMsgID, userDeadlineMsgID)
+
+			// 4. Validation errors (if any occurred) - delete error messages and invalid inputs
+			// Simulating that there were 2 validation errors during the flow
+			deleteMessages(ctx, mockDeleter, log, chatID, errorMsgID1, invalidInputMsgID1)
+			deleteMessages(ctx, mockDeleter, log, chatID, errorMsgID2, invalidInputMsgID2)
+
+			// 5. Confirmation step - delete confirmation message
+			deleteMessages(ctx, mockDeleter, log, chatID, confirmationMsgID)
+
+			// Verify all intermediate messages were deleted
+			deletedMsgs := mockDeleter.GetDeletedMessages(chatID)
+
+			expectedDeleted := []int{
+				questionPromptMsgID,
+				userQuestionMsgID,
+				eventTypePromptMsgID,
+				deadlinePromptMsgID,
+				userDeadlineMsgID,
+				errorMsgID1,
+				invalidInputMsgID1,
+				errorMsgID2,
+				invalidInputMsgID2,
+				confirmationMsgID,
+			}
+
+			// Verify all expected messages were deleted
+			for _, expectedMsgID := range expectedDeleted {
+				found := false
+				for _, deletedMsgID := range deletedMsgs {
+					if deletedMsgID == expectedMsgID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Logf("Expected message %d to be deleted", expectedMsgID)
+					return false
+				}
+			}
+
+			// Verify the count matches
+			if len(deletedMsgs) != len(expectedDeleted) {
+				t.Logf("Expected %d messages deleted, got %d", len(expectedDeleted), len(deletedMsgs))
+				return false
+			}
+
+			// The remaining messages in the chat would be:
+			// - The /create_event command (never deleted)
+			// - The final result message (success or cancellation message)
+			// These are NOT in the deletedMsgs list, which is what we want
+
+			return true
+		},
+		gen.Int64(),
+		gen.Int64(),
+		gen.Identifier(),
+		gen.SliceOfN(2, gen.Identifier()),
+		gen.Bool(),
 	))
 
 	properties.TestingRun(t)

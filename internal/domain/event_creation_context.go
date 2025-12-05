@@ -15,27 +15,29 @@ var (
 
 // EventCreationContext holds data during event creation flow
 type EventCreationContext struct {
-	Question           string    `json:"question"`
-	EventType          EventType `json:"event_type"`
-	Options            []string  `json:"options"`
-	Deadline           time.Time `json:"deadline"`
-	LastBotMessageID   int       `json:"last_bot_message_id"`
-	LastUserMessageID  int       `json:"last_user_message_id"`
-	LastErrorMessageID int       `json:"last_error_message_id"`
-	ChatID             int64     `json:"chat_id"`
+	Question              string    `json:"question"`
+	EventType             EventType `json:"event_type"`
+	Options               []string  `json:"options"`
+	Deadline              time.Time `json:"deadline"`
+	LastBotMessageID      int       `json:"last_bot_message_id"`
+	LastUserMessageID     int       `json:"last_user_message_id"`
+	LastErrorMessageID    int       `json:"last_error_message_id"`
+	ConfirmationMessageID int       `json:"confirmation_message_id"`
+	ChatID                int64     `json:"chat_id"`
 }
 
 // ToMap converts EventCreationContext to a map for JSON serialization
 func (c *EventCreationContext) ToMap() map[string]interface{} {
 	return map[string]interface{}{
-		"question":              c.Question,
-		"event_type":            string(c.EventType),
-		"options":               c.Options,
-		"deadline":              c.Deadline.Format(time.RFC3339),
-		"last_bot_message_id":   c.LastBotMessageID,
-		"last_user_message_id":  c.LastUserMessageID,
-		"last_error_message_id": c.LastErrorMessageID,
-		"chat_id":               c.ChatID,
+		"question":                c.Question,
+		"event_type":              string(c.EventType),
+		"options":                 c.Options,
+		"deadline":                c.Deadline.Format(time.RFC3339),
+		"last_bot_message_id":     c.LastBotMessageID,
+		"last_user_message_id":    c.LastUserMessageID,
+		"last_error_message_id":   c.LastErrorMessageID,
+		"confirmation_message_id": c.ConfirmationMessageID,
+		"chat_id":                 c.ChatID,
 	}
 }
 
@@ -87,6 +89,11 @@ func (c *EventCreationContext) FromMap(data map[string]interface{}) error {
 	// Parse last_error_message_id
 	if lastErrorMsgID, ok := data["last_error_message_id"].(float64); ok {
 		c.LastErrorMessageID = int(lastErrorMsgID)
+	}
+
+	// Parse confirmation_message_id
+	if confirmMsgID, ok := data["confirmation_message_id"].(float64); ok {
+		c.ConfirmationMessageID = int(confirmMsgID)
 	}
 
 	// Parse chat_id
