@@ -241,16 +241,47 @@ func (f *EventCreationFSM) handleQuestionInput(ctx context.Context, userID int64
 	// Validate question is not empty
 	question := strings.TrimSpace(text)
 	if question == "" {
-		_, err := f.sendMessage(ctx, chatID, "❌ Вопрос не может быть пустым. Попробуйте снова:", nil)
-		return err
+		// Delete previous error message if it exists
+		if context.LastErrorMessageID != 0 {
+			f.deleteMessages(ctx, chatID, context.LastErrorMessageID)
+		}
+
+		// Delete invalid user input message
+		f.deleteMessages(ctx, chatID, userMessageID)
+
+		// Send error message and store its ID
+		errorMessageID, err := f.sendMessage(ctx, chatID, "❌ Вопрос не может быть пустым. Попробуйте снова:", nil)
+		if err != nil {
+			return err
+		}
+
+		// Store error message ID in context
+		context.LastErrorMessageID = errorMessageID
+
+		// Save updated context
+		state, _, err := f.storage.Get(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if err := f.storage.Set(ctx, userID, state, context.ToMap()); err != nil {
+			f.logger.Error("failed to update context with error message ID", "user_id", userID, "error", err)
+			return err
+		}
+
+		return nil
 	}
 
 	// Store question in context
 	context.Question = question
 	context.LastUserMessageID = userMessageID
 
-	// Delete bot message and user message
-	f.deleteMessages(ctx, chatID, context.LastBotMessageID, userMessageID)
+	// Delete bot message, user message, and any previous error message
+	messagesToDelete := []int{context.LastBotMessageID, userMessageID}
+	if context.LastErrorMessageID != 0 {
+		messagesToDelete = append(messagesToDelete, context.LastErrorMessageID)
+		context.LastErrorMessageID = 0 // Clear error message ID
+	}
+	f.deleteMessages(ctx, chatID, messagesToDelete...)
 
 	// Send event type selection with inline keyboard
 	kb := &models.InlineKeyboardMarkup{
@@ -350,8 +381,34 @@ func (f *EventCreationFSM) handleEventTypeCallback(ctx context.Context, userID i
 func (f *EventCreationFSM) handleOptionsInput(ctx context.Context, userID int64, chatID int64, text string, userMessageID int, context *domain.EventCreationContext) error {
 	optionsText := strings.TrimSpace(text)
 	if optionsText == "" {
-		_, err := f.sendMessage(ctx, chatID, "❌ Варианты не могут быть пустыми. Попробуйте снова:", nil)
-		return err
+		// Delete previous error message if it exists
+		if context.LastErrorMessageID != 0 {
+			f.deleteMessages(ctx, chatID, context.LastErrorMessageID)
+		}
+
+		// Delete invalid user input message
+		f.deleteMessages(ctx, chatID, userMessageID)
+
+		// Send error message and store its ID
+		errorMessageID, err := f.sendMessage(ctx, chatID, "❌ Варианты не могут быть пустыми. Попробуйте снова:", nil)
+		if err != nil {
+			return err
+		}
+
+		// Store error message ID in context
+		context.LastErrorMessageID = errorMessageID
+
+		// Save updated context
+		state, _, err := f.storage.Get(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if err := f.storage.Set(ctx, userID, state, context.ToMap()); err != nil {
+			f.logger.Error("failed to update context with error message ID", "user_id", userID, "error", err)
+			return err
+		}
+
+		return nil
 	}
 
 	// Parse options (one per line)
@@ -366,16 +423,47 @@ func (f *EventCreationFSM) handleOptionsInput(ctx context.Context, userID int64,
 
 	// Validate options count (2-6)
 	if len(cleanOptions) < 2 || len(cleanOptions) > 6 {
-		_, err := f.sendMessage(ctx, chatID, "❌ Для этого типа события нужно 2-6 вариантов. Попробуйте снова:", nil)
-		return err
+		// Delete previous error message if it exists
+		if context.LastErrorMessageID != 0 {
+			f.deleteMessages(ctx, chatID, context.LastErrorMessageID)
+		}
+
+		// Delete invalid user input message
+		f.deleteMessages(ctx, chatID, userMessageID)
+
+		// Send error message and store its ID
+		errorMessageID, err := f.sendMessage(ctx, chatID, "❌ Для этого типа события нужно 2-6 вариантов. Попробуйте снова:", nil)
+		if err != nil {
+			return err
+		}
+
+		// Store error message ID in context
+		context.LastErrorMessageID = errorMessageID
+
+		// Save updated context
+		state, _, err := f.storage.Get(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if err := f.storage.Set(ctx, userID, state, context.ToMap()); err != nil {
+			f.logger.Error("failed to update context with error message ID", "user_id", userID, "error", err)
+			return err
+		}
+
+		return nil
 	}
 
 	// Store options in context
 	context.Options = cleanOptions
 	context.LastUserMessageID = userMessageID
 
-	// Delete bot message and user message
-	f.deleteMessages(ctx, chatID, context.LastBotMessageID, userMessageID)
+	// Delete bot message, user message, and any previous error message
+	messagesToDelete := []int{context.LastBotMessageID, userMessageID}
+	if context.LastErrorMessageID != 0 {
+		messagesToDelete = append(messagesToDelete, context.LastErrorMessageID)
+		context.LastErrorMessageID = 0 // Clear error message ID
+	}
+	f.deleteMessages(ctx, chatID, messagesToDelete...)
 
 	// Send deadline request
 	messageID, err := f.sendMessage(ctx, chatID, "📅 Введите дедлайн в формате:\n   ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00", nil)
@@ -403,22 +491,79 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 	// Parse deadline in the configured timezone
 	deadline, err := time.ParseInLocation("02.01.2006 15:04", deadlineText, f.config.Timezone)
 	if err != nil {
-		_, sendErr := f.sendMessage(ctx, chatID, "❌ Неверный формат даты. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00", nil)
-		return sendErr
+		// Delete previous error message if it exists
+		if context.LastErrorMessageID != 0 {
+			f.deleteMessages(ctx, chatID, context.LastErrorMessageID)
+		}
+
+		// Delete invalid user input message
+		f.deleteMessages(ctx, chatID, userMessageID)
+
+		// Send error message and store its ID
+		errorMessageID, sendErr := f.sendMessage(ctx, chatID, "❌ Неверный формат даты. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00", nil)
+		if sendErr != nil {
+			return sendErr
+		}
+
+		// Store error message ID in context
+		context.LastErrorMessageID = errorMessageID
+
+		// Save updated context
+		state, _, err := f.storage.Get(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if err := f.storage.Set(ctx, userID, state, context.ToMap()); err != nil {
+			f.logger.Error("failed to update context with error message ID", "user_id", userID, "error", err)
+			return err
+		}
+
+		return nil
 	}
 
 	// Validate deadline is in future
 	if deadline.Before(time.Now()) {
-		_, sendErr := f.sendMessage(ctx, chatID, "❌ Дедлайн должен быть в будущем. Попробуйте снова:", nil)
-		return sendErr
+		// Delete previous error message if it exists
+		if context.LastErrorMessageID != 0 {
+			f.deleteMessages(ctx, chatID, context.LastErrorMessageID)
+		}
+
+		// Delete invalid user input message
+		f.deleteMessages(ctx, chatID, userMessageID)
+
+		// Send error message and store its ID
+		errorMessageID, sendErr := f.sendMessage(ctx, chatID, "❌ Дедлайн должен быть в будущем. Попробуйте снова:", nil)
+		if sendErr != nil {
+			return sendErr
+		}
+
+		// Store error message ID in context
+		context.LastErrorMessageID = errorMessageID
+
+		// Save updated context
+		state, _, err := f.storage.Get(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if err := f.storage.Set(ctx, userID, state, context.ToMap()); err != nil {
+			f.logger.Error("failed to update context with error message ID", "user_id", userID, "error", err)
+			return err
+		}
+
+		return nil
 	}
 
 	// Store deadline in context
 	context.Deadline = deadline
 	context.LastUserMessageID = userMessageID
 
-	// Delete bot message and user message
-	f.deleteMessages(ctx, chatID, context.LastBotMessageID, userMessageID)
+	// Delete bot message, user message, and any previous error message
+	messagesToDelete := []int{context.LastBotMessageID, userMessageID}
+	if context.LastErrorMessageID != 0 {
+		messagesToDelete = append(messagesToDelete, context.LastErrorMessageID)
+		context.LastErrorMessageID = 0 // Clear error message ID
+	}
+	f.deleteMessages(ctx, chatID, messagesToDelete...)
 
 	// Build summary message with all event details
 	summary := f.buildEventSummary(context)

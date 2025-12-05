@@ -10,8 +10,6 @@ import (
 	"github.com/leanovate/gopter/prop"
 )
 
-// Feature: event-creation-ux-improvement, Property 23: Context data serialization round-trip
-// Validates: Requirements 8.1, 8.2
 func TestContextSerializationRoundTrip(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 

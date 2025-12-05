@@ -27,8 +27,6 @@ func (m *mockBot) DeleteMessage(ctx context.Context, params *bot.DeleteMessagePa
 	return true, nil
 }
 
-// Feature: event-creation-ux-improvement, Property 10: Deletion error resilience
-// Validates: Requirements 3.3
 func TestDeletionErrorResilience(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
@@ -86,8 +84,6 @@ func TestDeletionErrorResilience(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 21: Rate limit retry behavior
-// Validates: Requirements 7.3
 func TestRateLimitRetryBehavior(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
@@ -127,8 +123,6 @@ func TestRateLimitRetryBehavior(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 22: Non-retryable error handling
-// Validates: Requirements 7.4
 func TestNonRetryableErrorHandling(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 

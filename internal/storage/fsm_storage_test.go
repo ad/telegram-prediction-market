@@ -13,8 +13,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Feature: event-creation-ux-improvement, Property 3: FSM state persistence on start
-// Validates: Requirements 2.1
 func TestFSMStatePersistenceOnStart(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
@@ -93,8 +91,6 @@ func TestFSMStatePersistenceOnStart(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 4: FSM state persistence on transitions
-// Validates: Requirements 2.2
 func TestFSMStatePersistenceOnTransitions(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
@@ -178,8 +174,6 @@ func TestFSMStatePersistenceOnTransitions(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 7: FSM session cleanup on completion
-// Validates: Requirements 2.5
 func TestFSMSessionCleanupOnCompletion(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
@@ -263,8 +257,6 @@ func TestFSMSessionCleanupOnCompletion(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 15: Stale session expiration
-// Validates: Requirements 5.1
 func TestStaleSessionExpiration(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
@@ -338,8 +330,6 @@ func TestStaleSessionExpiration(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 16: Startup stale session cleanup
-// Validates: Requirements 5.2
 func TestStartupStaleSessionCleanup(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
@@ -451,8 +441,6 @@ func TestStartupStaleSessionCleanup(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 24: Corrupted session cleanup
-// Validates: Requirements 8.3
 func TestCorruptedSessionCleanup(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
@@ -535,8 +523,6 @@ func TestCorruptedSessionCleanup(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 12: Session isolation by user
-// Validates: Requirements 4.1, 4.4
 func TestSessionIsolationByUser(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 

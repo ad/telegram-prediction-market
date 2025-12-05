@@ -266,11 +266,9 @@ func (ns *NotificationService) SendDeadlineReminder(ctx context.Context, eventID
 	timeUntil := time.Until(event.Deadline)
 	hours := int(timeUntil.Hours())
 
-	reminderText := fmt.Sprintf("⏰ НАПОМИНАНИЕ!\n"+
-		"════════════════════\n\n"+
+	reminderText := fmt.Sprintf("⏰ НАПОМИНАНИЕ!\n\n"+
 		"До дедлайна события осталось ~%d часов\n\n"+
 		"❓ %s\n\n"+
-		"════════════════════\n"+
 		"Не забудьте проголосовать! 🗳", hours, event.Question)
 
 	// Send reminders to users who haven't voted

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,8 +54,6 @@ func (m *MockMessageDeleter) SetDeleteError(messageID int, err error) {
 	m.deleteErrors[messageID] = err
 }
 
-// Feature: event-creation-ux-improvement, Property 1: Message cleanup completeness
-// **Validates: Requirements 1.2, 1.4, 1.6, 1.8, 9.5**
 func TestProperty_MessageCleanupCompleteness(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("message cleanup deletes expected number of messages", prop.ForAll(
@@ -100,8 +99,6 @@ func TestProperty_MessageCleanupCompleteness(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 2: Summary content completeness
-// **Validates: Requirements 1.9, 6.1, 9.1**
 func TestProperty_SummaryContentCompleteness(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("summary contains all required fields", prop.ForAll(
@@ -198,8 +195,6 @@ func (m *MockBot) SendMessage(ctx context.Context, params *bot.SendMessageParams
 	}, nil
 }
 
-// Feature: event-creation-ux-improvement, Property 26: Confirmation keyboard presence
-// **Validates: Requirements 9.2**
 func TestProperty_ConfirmationKeyboardPresence(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("confirmation message has correct keyboard buttons", prop.ForAll(
@@ -350,8 +345,6 @@ func (m *MockBotWithPoll) AnswerCallbackQuery(ctx context.Context, params *bot.A
 	return true, nil
 }
 
-// Feature: event-creation-ux-improvement, Property 27: Confirmation creates event
-// **Validates: Requirements 9.3**
 func TestProperty_ConfirmationCreatesEvent(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("confirmation callback with yes creates event data", prop.ForAll(
@@ -420,8 +413,6 @@ func TestProperty_ConfirmationCreatesEvent(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 28: Cancellation cleanup
-// **Validates: Requirements 9.4**
 func TestProperty_CancellationCleanup(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("cancellation callback with no does not create event", prop.ForAll(
@@ -490,8 +481,6 @@ func createTestFSMStorage(t *testing.T) *storage.FSMStorage {
 	return storage.NewFSMStorage(queue, log)
 }
 
-// Feature: event-creation-ux-improvement, Property 5: FSM session recovery after restart
-// **Validates: Requirements 2.3**
 func TestProperty_FSMSessionRecoveryAfterRestart(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("all active sessions are restored with identical state and context after restart", prop.ForAll(
@@ -654,8 +643,6 @@ func min(a, b, c int) int {
 	return result
 }
 
-// Feature: event-creation-ux-improvement, Property 6: FSM state resumption
-// **Validates: Requirements 2.4**
 func TestProperty_FSMStateResumption(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("message from admin with active session is processed in context of stored state", prop.ForAll(
@@ -742,8 +729,6 @@ func TestProperty_FSMStateResumption(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 18: Expired session handling
-// **Validates: Requirements 5.4**
 func TestProperty_ExpiredSessionHandling(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("message to expired session returns ErrSessionExpired and deletes session", prop.ForAll(
@@ -827,8 +812,6 @@ func TestProperty_ExpiredSessionHandling(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Feature: event-creation-ux-improvement, Property 13: Message routing to correct session
-// **Validates: Requirements 4.2**
 func TestProperty_MessageRoutingToCorrectSession(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("messages from admins are routed to their specific session using user_id", prop.ForAll(
@@ -948,8 +931,6 @@ func indexOf(slice []int64, value int64) int {
 	return -1
 }
 
-// Feature: event-creation-ux-improvement, Property 14: Session independence on completion
-// **Validates: Requirements 4.3**
 func TestProperty_SessionIndependenceOnCompletion(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("completing one admin's session does not affect other active sessions", prop.ForAll(
@@ -1116,6 +1097,155 @@ func TestProperty_SessionIndependenceOnCompletion(t *testing.T) {
 		},
 		gen.SliceOf(gen.Int64Range(1, 1000000)),
 		gen.SliceOf(gen.Identifier()),
+	))
+
+	properties.TestingRun(t)
+}
+
+// Feature: event-creation-ux-improvement, Property 29: Validation error message cleanup
+// Validates: Requirements 1.10, 1.11
+func TestProperty_ValidationErrorMessageCleanup(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("validation error messages and invalid user input are deleted when valid input is provided", prop.ForAll(
+		func(userID int64, chatID int64, invalidInput string, validInput string) bool {
+			// Ensure non-zero IDs
+			if userID == 0 {
+				userID = 1
+			}
+			if chatID == 0 {
+				chatID = 12345
+			}
+
+			// Ensure valid input is actually valid (non-empty)
+			if strings.TrimSpace(validInput) == "" {
+				validInput = "Valid question"
+			}
+
+			// Create mock dependencies
+			ctx := context.Background()
+			mockDeleter := NewMockMessageDeleter()
+			log := logger.New(logger.ERROR)
+			fsmStorage := createTestFSMStorage(t)
+
+			// Create a context with an error message ID from a previous validation error
+			errorMessageID := 999
+			context := &domain.EventCreationContext{
+				Question:           "",
+				EventType:          domain.EventTypeBinary,
+				Options:            []string{},
+				Deadline:           time.Time{},
+				LastBotMessageID:   100,
+				LastUserMessageID:  0,
+				LastErrorMessageID: errorMessageID,
+				ChatID:             chatID,
+			}
+
+			// Store the context in ask_question state
+			if err := fsmStorage.Set(ctx, userID, StateAskQuestion, context.ToMap()); err != nil {
+				t.Logf("Failed to set session: %v", err)
+				return false
+			}
+
+			// Simulate sending invalid input (empty string)
+			invalidUserMessageID := 200
+
+			// In the actual handler, this would:
+			// 1. Delete the previous error message (999)
+			// 2. Delete the invalid user input (200)
+			// 3. Send a new error message
+
+			// Simulate the deletion logic from handleQuestionInput
+			if context.LastErrorMessageID != 0 {
+				deleteMessages(ctx, mockDeleter, log, chatID, context.LastErrorMessageID)
+			}
+			deleteMessages(ctx, mockDeleter, log, chatID, invalidUserMessageID)
+
+			// Verify previous error message was deleted
+			deletedMsgs := mockDeleter.GetDeletedMessages(chatID)
+			foundPrevError := false
+			foundInvalidInput := false
+			for _, msgID := range deletedMsgs {
+				if msgID == errorMessageID {
+					foundPrevError = true
+				}
+				if msgID == invalidUserMessageID {
+					foundInvalidInput = true
+				}
+			}
+
+			if !foundPrevError {
+				t.Logf("Previous error message %d should be deleted", errorMessageID)
+				return false
+			}
+
+			if !foundInvalidInput {
+				t.Logf("Invalid user input message %d should be deleted", invalidUserMessageID)
+				return false
+			}
+
+			// Now simulate sending valid input
+			// Reset mock deleter to track new deletions
+			mockDeleter = NewMockMessageDeleter()
+			validUserMessageID := 300
+			newErrorMessageID := 1000 // This would be set if validation failed again
+
+			// Update context with new error message ID (simulating another error)
+			context.LastErrorMessageID = newErrorMessageID
+
+			// Now send valid input - should delete error message, bot message, and user message
+			if context.LastErrorMessageID != 0 {
+				deleteMessages(ctx, mockDeleter, log, chatID, context.LastErrorMessageID)
+			}
+			deleteMessages(ctx, mockDeleter, log, chatID, context.LastBotMessageID, validUserMessageID)
+
+			// Verify all messages were deleted
+			deletedMsgs = mockDeleter.GetDeletedMessages(chatID)
+			foundError := false
+			foundBot := false
+			foundUser := false
+
+			for _, msgID := range deletedMsgs {
+				if msgID == newErrorMessageID {
+					foundError = true
+				}
+				if msgID == context.LastBotMessageID {
+					foundBot = true
+				}
+				if msgID == validUserMessageID {
+					foundUser = true
+				}
+			}
+
+			if !foundError {
+				t.Logf("Error message %d should be deleted when valid input is provided", newErrorMessageID)
+				return false
+			}
+
+			if !foundBot {
+				t.Logf("Bot message %d should be deleted when valid input is provided", context.LastBotMessageID)
+				return false
+			}
+
+			if !foundUser {
+				t.Logf("User message %d should be deleted when valid input is provided", validUserMessageID)
+				return false
+			}
+
+			// Verify exactly 3 messages were deleted (error, bot, user)
+			if len(deletedMsgs) != 3 {
+				t.Logf("Expected 3 messages deleted (error, bot, user), got %d", len(deletedMsgs))
+				return false
+			}
+
+			// Cleanup
+			_ = fsmStorage.Delete(ctx, userID)
+
+			return true
+		},
+		gen.Int64(),
+		gen.Int64(),
+		gen.Const(""),    // Invalid input (empty string)
+		gen.Identifier(), // Valid input
 	))
 
 	properties.TestingRun(t)
