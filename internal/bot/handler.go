@@ -62,6 +62,32 @@ func (h *BotHandler) isAdmin(userID int64) bool {
 	return false
 }
 
+// getUserDisplayName retrieves user display name (username, first name, or ID)
+// It tries username first (format: @username), falls back to first name if username not available,
+// and falls back to "User [UserID]" if neither available
+func (h *BotHandler) getUserDisplayName(ctx context.Context, userID int64) string {
+	// Try to get user information from the bot API
+	// Since we don't have direct access to the bot API's GetChat method for users,
+	// we'll use the rating repository which stores username information
+	rating, err := h.ratingCalculator.GetUserRating(ctx, userID)
+	if err != nil {
+		// If we can't get the rating, fall back to user ID
+		return fmt.Sprintf("User id%d", userID)
+	}
+
+	// Try username first
+	if rating.Username != "" {
+		// Check if username already has @ prefix
+		if rating.Username[0] == '@' {
+			return rating.Username
+		}
+		return fmt.Sprintf("@%s", rating.Username)
+	}
+
+	// Fall back to "User [UserID]"
+	return fmt.Sprintf("User id%d", userID)
+}
+
 // requireAdmin is a middleware that checks if the user is an admin
 // Returns true if authorized, false otherwise (and sends error message)
 func (h *BotHandler) requireAdmin(ctx context.Context, update *models.Update) bool {
@@ -976,11 +1002,14 @@ func (h *BotHandler) publishEventResults(ctx context.Context, b *bot.Bot, event 
 
 func (h *BotHandler) sendAchievementNotification(ctx context.Context, b *bot.Bot, userID int64, achievement *domain.Achievement) {
 	achievementNames := map[domain.AchievementCode]string{
-		domain.AchievementSharpshooter:  "🎯 Меткий стрелок",
-		domain.AchievementProphet:       "🔮 Провидец",
-		domain.AchievementRiskTaker:     "🎲 Риск-мейкер",
-		domain.AchievementWeeklyAnalyst: "📊 Аналитик недели",
-		domain.AchievementVeteran:       "🏆 Старожил",
+		domain.AchievementSharpshooter:     "🎯 Меткий стрелок",
+		domain.AchievementProphet:          "🔮 Провидец",
+		domain.AchievementRiskTaker:        "🎲 Риск-мейкер",
+		domain.AchievementWeeklyAnalyst:    "📊 Аналитик недели",
+		domain.AchievementVeteran:          "🏆 Старожил",
+		domain.AchievementEventOrganizer:   "🎪 Организатор событий",
+		domain.AchievementActiveOrganizer:  "🎭 Активный организатор",
+		domain.AchievementMasterOrganizer:  "🎬 Мастер организатор",
 	}
 
 	name := achievementNames[achievement.Code]
@@ -997,10 +1026,13 @@ func (h *BotHandler) sendAchievementNotification(ctx context.Context, b *bot.Bot
 		h.logger.Error("failed to send achievement notification to user", "user_id", userID, "error", err)
 	}
 
-	// Announce in group
+	// Get user display name for group announcement
+	displayName := h.getUserDisplayName(ctx, userID)
+
+	// Announce in group with username
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: h.config.GroupID,
-		Text:   fmt.Sprintf("🎉 Участник получил ачивку: %s!", name),
+		Text:   fmt.Sprintf("🎉 %s получил ачивку: %s!", displayName, name),
 	})
 	if err != nil {
 		h.logger.Error("failed to send achievement announcement to group", "error", err)
