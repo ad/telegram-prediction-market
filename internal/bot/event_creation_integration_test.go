@@ -602,6 +602,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 	// Create repositories
 	eventRepo := storage.NewEventRepository(queue)
 	predictionRepo := storage.NewPredictionRepository(queue)
+	groupMembershipRepo := storage.NewGroupMembershipRepository(queue)
 
 	// Create event manager
 	eventManager := domain.NewEventManager(eventRepo, predictionRepo, log)
@@ -611,6 +612,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 	eventPermissionValidator := domain.NewEventPermissionValidator(
 		eventRepo,
 		predictionRepo,
+		groupMembershipRepo,
 		minEventsToCreate,
 		log,
 	)
@@ -846,6 +848,7 @@ func TestIntegration_EventResolutionPermissions(t *testing.T) {
 	// Create repositories
 	eventRepo := storage.NewEventRepository(queue)
 	predictionRepo := storage.NewPredictionRepository(queue)
+	groupMembershipRepo := storage.NewGroupMembershipRepository(queue)
 
 	// Create event manager
 	eventManager := domain.NewEventManager(eventRepo, predictionRepo, log)
@@ -854,6 +857,7 @@ func TestIntegration_EventResolutionPermissions(t *testing.T) {
 	eventPermissionValidator := domain.NewEventPermissionValidator(
 		eventRepo,
 		predictionRepo,
+		groupMembershipRepo,
 		3,
 		log,
 	)

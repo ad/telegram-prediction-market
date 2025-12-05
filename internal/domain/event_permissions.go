@@ -14,6 +14,7 @@ var (
 type EventPermissionValidator struct {
 	eventRepo         EventRepository
 	predictionRepo    PredictionRepository
+	membershipRepo    GroupMembershipRepository
 	minEventsToCreate int
 	logger            Logger
 }
@@ -22,20 +23,45 @@ type EventPermissionValidator struct {
 func NewEventPermissionValidator(
 	eventRepo EventRepository,
 	predictionRepo PredictionRepository,
+	membershipRepo GroupMembershipRepository,
 	minEventsToCreate int,
 	logger Logger,
 ) *EventPermissionValidator {
 	return &EventPermissionValidator{
 		eventRepo:         eventRepo,
 		predictionRepo:    predictionRepo,
+		membershipRepo:    membershipRepo,
 		minEventsToCreate: minEventsToCreate,
 		logger:            logger,
 	}
 }
 
 // CanManageEvent checks if user can resolve/cancel event
-// Returns true if user is the creator or an administrator
+// Returns true if user is the creator or an administrator AND has membership in the event's group
 func (v *EventPermissionValidator) CanManageEvent(ctx context.Context, userID int64, eventID int64, adminIDs []int64) (bool, error) {
+	// Get the event to check its group
+	event, err := v.eventRepo.GetEvent(ctx, eventID)
+	if err != nil {
+		v.logger.Error("failed to get event", "user_id", userID, "event_id", eventID, "error", err)
+		return false, err
+	}
+
+	if event == nil {
+		return false, ErrEventNotFound
+	}
+
+	// Verify user has active membership in the event's group
+	hasMembership, err := v.HasGroupMembership(ctx, userID, event.GroupID)
+	if err != nil {
+		v.logger.Error("failed to check group membership", "user_id", userID, "group_id", event.GroupID, "error", err)
+		return false, err
+	}
+
+	if !hasMembership {
+		v.logger.Debug("user does not have membership in event's group", "user_id", userID, "event_id", eventID, "group_id", event.GroupID)
+		return false, nil
+	}
+
 	// Check if user is admin
 	if v.IsAdmin(userID, adminIDs) {
 		v.logger.Debug("user is admin, can manage event", "user_id", userID, "event_id", eventID)
@@ -43,13 +69,7 @@ func (v *EventPermissionValidator) CanManageEvent(ctx context.Context, userID in
 	}
 
 	// Check if user is the creator
-	isCreator, err := v.IsEventCreator(ctx, userID, eventID)
-	if err != nil {
-		v.logger.Error("failed to check if user is event creator", "user_id", userID, "event_id", eventID, "error", err)
-		return false, err
-	}
-
-	if isCreator {
+	if event.CreatedBy == userID {
 		v.logger.Debug("user is event creator, can manage event", "user_id", userID, "event_id", eventID)
 		return true, nil
 	}
@@ -59,9 +79,21 @@ func (v *EventPermissionValidator) CanManageEvent(ctx context.Context, userID in
 }
 
 // CanCreateEvent checks if user has participated in enough completed events in a specific group
-// Returns true if user meets the participation requirement or is an admin
+// Returns true if user meets the participation requirement or is an admin AND has membership in the group
 // Also returns the current participation count
 func (v *EventPermissionValidator) CanCreateEvent(ctx context.Context, userID int64, groupID int64, adminIDs []int64) (bool, int, error) {
+	// Verify user has active membership in the group
+	hasMembership, err := v.HasGroupMembership(ctx, userID, groupID)
+	if err != nil {
+		v.logger.Error("failed to check group membership", "user_id", userID, "group_id", groupID, "error", err)
+		return false, 0, err
+	}
+
+	if !hasMembership {
+		v.logger.Debug("user does not have membership in group", "user_id", userID, "group_id", groupID)
+		return false, 0, nil
+	}
+
 	// Admins are exempt from participation requirement
 	if v.IsAdmin(userID, adminIDs) {
 		v.logger.Debug("user is admin, can create event", "user_id", userID, "group_id", groupID)
@@ -103,4 +135,9 @@ func (v *EventPermissionValidator) IsAdmin(userID int64, adminIDs []int64) bool 
 		}
 	}
 	return false
+}
+
+// HasGroupMembership checks if user has active membership in the specified group
+func (v *EventPermissionValidator) HasGroupMembership(ctx context.Context, userID int64, groupID int64) (bool, error) {
+	return v.membershipRepo.HasActiveMembership(ctx, groupID, userID)
 }

@@ -172,6 +172,7 @@ func main() {
 	eventPermissionValidator := domain.NewEventPermissionValidator(
 		eventRepo,
 		predictionRepo,
+		groupMembershipRepo,
 		cfg.MinEventsToCreate,
 		log,
 	)
