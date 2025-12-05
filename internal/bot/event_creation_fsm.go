@@ -33,6 +33,8 @@ type EventCreationFSM struct {
 	eventManager         *domain.EventManager
 	achievementTracker   *domain.AchievementTracker
 	groupContextResolver *domain.GroupContextResolver
+	groupRepo            domain.GroupRepository
+	ratingRepo           domain.RatingRepository
 	config               *config.Config
 	logger               domain.Logger
 }
@@ -44,6 +46,8 @@ func NewEventCreationFSM(
 	eventManager *domain.EventManager,
 	achievementTracker *domain.AchievementTracker,
 	groupContextResolver *domain.GroupContextResolver,
+	groupRepo domain.GroupRepository,
+	ratingRepo domain.RatingRepository,
 	cfg *config.Config,
 	logger domain.Logger,
 ) *EventCreationFSM {
@@ -53,6 +57,8 @@ func NewEventCreationFSM(
 		eventManager:         eventManager,
 		achievementTracker:   achievementTracker,
 		groupContextResolver: groupContextResolver,
+		groupRepo:            groupRepo,
+		ratingRepo:           ratingRepo,
 		config:               cfg,
 		logger:               logger,
 	}
@@ -939,10 +945,22 @@ func (f *EventCreationFSM) sendAchievementNotification(ctx context.Context, user
 		name = string(achievement.Code)
 	}
 
-	// Send to user
-	_, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
+	// Get group information
+	group, err := f.groupRepo.GetGroup(ctx, achievement.GroupID)
+	if err != nil {
+		f.logger.Error("failed to get group for achievement notification", "group_id", achievement.GroupID, "error", err)
+		// Continue with notification even if we can't get group name
+	}
+
+	groupName := "группе"
+	if group != nil && group.Name != "" {
+		groupName = fmt.Sprintf("группе \"%s\"", group.Name)
+	}
+
+	// Send to user with group context
+	_, err = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: userID,
-		Text:   fmt.Sprintf("🎉 Поздравляем! Вы получили ачивку:\n\n%s", name),
+		Text:   fmt.Sprintf("🎉 Поздравляем! Вы получили ачивку в %s:\n\n%s", groupName, name),
 	})
 	if err != nil {
 		f.logger.Error("failed to send achievement notification to user", "user_id", userID, "error", err)
@@ -950,13 +968,28 @@ func (f *EventCreationFSM) sendAchievementNotification(ctx context.Context, user
 	}
 
 	// Get user display name for group announcement
-	// We'll use a simple approach here - just use user ID
-	// In a full implementation, we'd fetch the username from the rating repository
 	displayName := fmt.Sprintf("User id%d", userID)
+	rating, err := f.ratingRepo.GetRating(ctx, userID, achievement.GroupID)
+	if err == nil && rating != nil && rating.Username != "" {
+		if rating.Username[0] == '@' {
+			displayName = rating.Username
+		} else {
+			displayName = fmt.Sprintf("@%s", rating.Username)
+		}
+	}
+
+	// Get the Telegram chat ID for the group to send announcement
+	var telegramChatID int64
+	if group != nil {
+		telegramChatID = group.TelegramChatID
+	} else {
+		// Fallback to config group ID if we couldn't get group info
+		telegramChatID = f.config.GroupID
+	}
 
 	// Announce in group
 	_, err = f.bot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: f.config.GroupID,
+		ChatID: telegramChatID,
 		Text:   fmt.Sprintf("🎉 %s получил ачивку: %s!", displayName, name),
 	})
 	if err != nil {

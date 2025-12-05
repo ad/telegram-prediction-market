@@ -124,6 +124,7 @@ func (ns *NotificationService) SendNewEventNotification(ctx context.Context, eve
 }
 
 // SendAchievementNotification sends a notification to the user and publishes an announcement in the group
+// This method is deprecated - use SendAchievementNotificationWithGroup instead
 func (ns *NotificationService) SendAchievementNotification(ctx context.Context, userID int64, achievement *Achievement) error {
 	// Map achievement codes to display names
 	achievementNames := map[AchievementCode]string{

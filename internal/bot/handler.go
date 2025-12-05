@@ -1487,10 +1487,22 @@ func (h *BotHandler) sendAchievementNotification(ctx context.Context, b *bot.Bot
 		name = string(achievement.Code)
 	}
 
-	// Send to user
-	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+	// Get group information
+	group, err := h.groupRepo.GetGroup(ctx, achievement.GroupID)
+	if err != nil {
+		h.logger.Error("failed to get group for achievement notification", "group_id", achievement.GroupID, "error", err)
+		// Continue with notification even if we can't get group name
+	}
+
+	groupName := "группе"
+	if group != nil && group.Name != "" {
+		groupName = fmt.Sprintf("группе \"%s\"", group.Name)
+	}
+
+	// Send to user with group context
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: userID,
-		Text:   fmt.Sprintf("🎉 Поздравляем! Вы получили ачивку:\n\n%s", name),
+		Text:   fmt.Sprintf("🎉 Поздравляем! Вы получили ачивку в %s:\n\n%s", groupName, name),
 	})
 	if err != nil {
 		h.logger.Error("failed to send achievement notification to user", "user_id", userID, "error", err)
@@ -1499,9 +1511,18 @@ func (h *BotHandler) sendAchievementNotification(ctx context.Context, b *bot.Bot
 	// Get user display name for group announcement
 	displayName := h.getUserDisplayName(ctx, userID, achievement.GroupID)
 
+	// Get the Telegram chat ID for the group to send announcement
+	var telegramChatID int64
+	if group != nil {
+		telegramChatID = group.TelegramChatID
+	} else {
+		// Fallback to config group ID if we couldn't get group info
+		telegramChatID = h.config.GroupID
+	}
+
 	// Announce in group with username
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: h.config.GroupID,
+		ChatID: telegramChatID,
 		Text:   fmt.Sprintf("🎉 %s получил ачивку: %s!", displayName, name),
 	})
 	if err != nil {

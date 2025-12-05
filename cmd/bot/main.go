@@ -161,6 +161,8 @@ func main() {
 		eventManager,
 		achievementTracker,
 		groupContextResolver,
+		groupRepo,
+		ratingRepo,
 		cfg,
 		log,
 	)
