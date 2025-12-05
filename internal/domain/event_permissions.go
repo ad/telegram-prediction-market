@@ -6,16 +6,16 @@ import (
 )
 
 var (
-	ErrUnauthorized             = errors.New("user is not authorized to manage this event")
+	ErrUnauthorized              = errors.New("user is not authorized to manage this event")
 	ErrInsufficientParticipation = errors.New("insufficient participation to create events")
 )
 
 // EventPermissionValidator validates user permissions for event operations
 type EventPermissionValidator struct {
-	eventRepo      EventRepository
-	predictionRepo PredictionRepository
+	eventRepo         EventRepository
+	predictionRepo    PredictionRepository
 	minEventsToCreate int
-	logger         Logger
+	logger            Logger
 }
 
 // NewEventPermissionValidator creates a new EventPermissionValidator
@@ -26,10 +26,10 @@ func NewEventPermissionValidator(
 	logger Logger,
 ) *EventPermissionValidator {
 	return &EventPermissionValidator{
-		eventRepo:      eventRepo,
-		predictionRepo: predictionRepo,
+		eventRepo:         eventRepo,
+		predictionRepo:    predictionRepo,
 		minEventsToCreate: minEventsToCreate,
-		logger:         logger,
+		logger:            logger,
 	}
 }
 
@@ -58,20 +58,20 @@ func (v *EventPermissionValidator) CanManageEvent(ctx context.Context, userID in
 	return false, nil
 }
 
-// CanCreateEvent checks if user has participated in enough completed events
+// CanCreateEvent checks if user has participated in enough completed events in a specific group
 // Returns true if user meets the participation requirement or is an admin
 // Also returns the current participation count
-func (v *EventPermissionValidator) CanCreateEvent(ctx context.Context, userID int64, adminIDs []int64) (bool, int, error) {
+func (v *EventPermissionValidator) CanCreateEvent(ctx context.Context, userID int64, groupID int64, adminIDs []int64) (bool, int, error) {
 	// Admins are exempt from participation requirement
 	if v.IsAdmin(userID, adminIDs) {
-		v.logger.Debug("user is admin, can create event", "user_id", userID)
+		v.logger.Debug("user is admin, can create event", "user_id", userID, "group_id", groupID)
 		return true, 0, nil
 	}
 
-	// Count user's participation in completed events
-	count, err := v.predictionRepo.GetUserCompletedEventCount(ctx, userID)
+	// Count user's participation in completed events for this group
+	count, err := v.predictionRepo.GetUserCompletedEventCount(ctx, userID, groupID)
 	if err != nil {
-		v.logger.Error("failed to count user completed event participation", "user_id", userID, "error", err)
+		v.logger.Error("failed to count user completed event participation", "user_id", userID, "group_id", groupID, "error", err)
 		return false, 0, err
 	}
 

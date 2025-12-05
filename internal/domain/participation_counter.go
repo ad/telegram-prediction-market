@@ -24,14 +24,14 @@ func NewParticipationCounter(
 	}
 }
 
-// CountCompletedEventParticipation counts how many completed events user participated in
-func (c *ParticipationCounter) CountCompletedEventParticipation(ctx context.Context, userID int64) (int, error) {
-	count, err := c.predictionRepo.GetUserCompletedEventCount(ctx, userID)
+// CountCompletedEventParticipation counts how many completed events user participated in for a specific group
+func (c *ParticipationCounter) CountCompletedEventParticipation(ctx context.Context, userID int64, groupID int64) (int, error) {
+	count, err := c.predictionRepo.GetUserCompletedEventCount(ctx, userID, groupID)
 	if err != nil {
-		c.logger.Error("failed to count completed event participation", "user_id", userID, "error", err)
+		c.logger.Error("failed to count completed event participation", "user_id", userID, "group_id", groupID, "error", err)
 		return 0, err
 	}
 
-	c.logger.Debug("counted completed event participation", "user_id", userID, "count", count)
+	c.logger.Debug("counted completed event participation", "user_id", userID, "group_id", groupID, "count", count)
 	return count, nil
 }

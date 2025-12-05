@@ -21,8 +21,8 @@ const (
 // AchievementRepository interface for achievement operations
 type AchievementRepository interface {
 	SaveAchievement(ctx context.Context, achievement *Achievement) error
-	GetUserAchievements(ctx context.Context, userID int64) ([]*Achievement, error)
-	CheckAchievementExists(ctx context.Context, userID int64, code AchievementCode) (bool, error)
+	GetUserAchievements(ctx context.Context, userID int64, groupID int64) ([]*Achievement, error)
+	CheckAchievementExists(ctx context.Context, userID int64, groupID int64, code AchievementCode) (bool, error)
 }
 
 // AchievementTracker tracks and awards achievements
@@ -51,22 +51,22 @@ func NewAchievementTracker(
 	}
 }
 
-// CheckAndAwardAchievements checks and awards achievements for a user
-func (at *AchievementTracker) CheckAndAwardAchievements(ctx context.Context, userID int64) ([]*Achievement, error) {
+// CheckAndAwardAchievements checks and awards achievements for a user in a specific group
+func (at *AchievementTracker) CheckAndAwardAchievements(ctx context.Context, userID int64, groupID int64) ([]*Achievement, error) {
 	var newAchievements []*Achievement
 
-	// Get user's rating
-	rating, err := at.ratingRepo.GetRating(ctx, userID)
+	// Get user's rating for this group
+	rating, err := at.ratingRepo.GetRating(ctx, userID, groupID)
 	if err != nil {
-		at.logger.Error("failed to get rating", "user_id", userID, "error", err)
+		at.logger.Error("failed to get rating", "user_id", userID, "group_id", groupID, "error", err)
 		return nil, err
 	}
 
 	// Check Sharpshooter (3 correct in a row)
 	if rating.Streak >= SharpshooterStreak {
-		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementSharpshooter)
+		achievement, err := at.awardAchievementIfNew(ctx, userID, groupID, AchievementSharpshooter)
 		if err != nil {
-			at.logger.Error("failed to award sharpshooter", "user_id", userID, "error", err)
+			at.logger.Error("failed to award sharpshooter", "user_id", userID, "group_id", groupID, "error", err)
 		} else if achievement != nil {
 			newAchievements = append(newAchievements, achievement)
 		}
@@ -74,9 +74,9 @@ func (at *AchievementTracker) CheckAndAwardAchievements(ctx context.Context, use
 
 	// Check Prophet (10 correct in a row)
 	if rating.Streak >= ProphetStreak {
-		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementProphet)
+		achievement, err := at.awardAchievementIfNew(ctx, userID, groupID, AchievementProphet)
 		if err != nil {
-			at.logger.Error("failed to award prophet", "user_id", userID, "error", err)
+			at.logger.Error("failed to award prophet", "user_id", userID, "group_id", groupID, "error", err)
 		} else if achievement != nil {
 			newAchievements = append(newAchievements, achievement)
 		}
@@ -85,9 +85,9 @@ func (at *AchievementTracker) CheckAndAwardAchievements(ctx context.Context, use
 	// Check Veteran (50 participations) - Requirement 5.5
 	totalParticipations := rating.CorrectCount + rating.WrongCount
 	if totalParticipations >= VeteranCount {
-		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementVeteran)
+		achievement, err := at.awardAchievementIfNew(ctx, userID, groupID, AchievementVeteran)
 		if err != nil {
-			at.logger.Error("failed to award veteran", "user_id", userID, "error", err)
+			at.logger.Error("failed to award veteran", "user_id", userID, "group_id", groupID, "error", err)
 		} else if achievement != nil {
 			newAchievements = append(newAchievements, achievement)
 		}
@@ -95,13 +95,13 @@ func (at *AchievementTracker) CheckAndAwardAchievements(ctx context.Context, use
 
 	// Check Risk Taker (3 minority correct in a row) - Requirement 5.4
 	// This requires checking recent predictions
-	isRiskTaker, err := at.checkRiskTakerAchievement(ctx, userID)
+	isRiskTaker, err := at.checkRiskTakerAchievement(ctx, userID, groupID)
 	if err != nil {
-		at.logger.Error("failed to check risk taker", "user_id", userID, "error", err)
+		at.logger.Error("failed to check risk taker", "user_id", userID, "group_id", groupID, "error", err)
 	} else if isRiskTaker {
-		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementRiskTaker)
+		achievement, err := at.awardAchievementIfNew(ctx, userID, groupID, AchievementRiskTaker)
 		if err != nil {
-			at.logger.Error("failed to award risk taker", "user_id", userID, "error", err)
+			at.logger.Error("failed to award risk taker", "user_id", userID, "group_id", groupID, "error", err)
 		} else if achievement != nil {
 			newAchievements = append(newAchievements, achievement)
 		}
@@ -114,21 +114,22 @@ func (at *AchievementTracker) CheckAndAwardAchievements(ctx context.Context, use
 }
 
 // awardAchievementIfNew awards an achievement if the user doesn't already have it
-func (at *AchievementTracker) awardAchievementIfNew(ctx context.Context, userID int64, code AchievementCode) (*Achievement, error) {
+func (at *AchievementTracker) awardAchievementIfNew(ctx context.Context, userID int64, groupID int64, code AchievementCode) (*Achievement, error) {
 	// Check if achievement already exists
-	exists, err := at.achievementRepo.CheckAchievementExists(ctx, userID, code)
+	exists, err := at.achievementRepo.CheckAchievementExists(ctx, userID, groupID, code)
 	if err != nil {
 		return nil, err
 	}
 
 	if exists {
-		at.logger.Debug("achievement already exists", "user_id", userID, "code", code)
+		at.logger.Debug("achievement already exists", "user_id", userID, "group_id", groupID, "code", code)
 		return nil, nil
 	}
 
 	// Create new achievement
 	achievement := &Achievement{
 		UserID:    userID,
+		GroupID:   groupID,
 		Code:      code,
 		Timestamp: time.Now(),
 	}
@@ -137,12 +138,12 @@ func (at *AchievementTracker) awardAchievementIfNew(ctx context.Context, userID 
 		return nil, err
 	}
 
-	at.logger.Info("achievement awarded", "user_id", userID, "code", code)
+	at.logger.Info("achievement awarded", "user_id", userID, "group_id", groupID, "code", code)
 	return achievement, nil
 }
 
-// checkRiskTakerAchievement checks if user has 3 minority correct predictions in a row
-func (at *AchievementTracker) checkRiskTakerAchievement(ctx context.Context, userID int64) (bool, error) {
+// checkRiskTakerAchievement checks if user has 3 minority correct predictions in a row for a specific group
+func (at *AchievementTracker) checkRiskTakerAchievement(ctx context.Context, userID int64, groupID int64) (bool, error) {
 	// Get all user's predictions
 	userPredictions, err := at.predictionRepo.GetUserPredictions(ctx, userID)
 	if err != nil {
@@ -159,10 +160,12 @@ func (at *AchievementTracker) checkRiskTakerAchievement(ctx context.Context, use
 		return false, err
 	}
 
-	// Create a map of resolved events for quick lookup
+	// Create a map of resolved events for quick lookup, filtering by group
 	eventMap := make(map[int64]*Event)
 	for _, event := range resolvedEvents {
-		eventMap[event.ID] = event
+		if event.GroupID == groupID {
+			eventMap[event.ID] = event
+		}
 	}
 
 	// Track consecutive minority correct predictions
@@ -229,49 +232,49 @@ func (at *AchievementTracker) checkRiskTakerAchievement(ctx context.Context, use
 	return false, nil
 }
 
-// GetUserAchievements retrieves all achievements for a user
-func (at *AchievementTracker) GetUserAchievements(ctx context.Context, userID int64) ([]*Achievement, error) {
-	achievements, err := at.achievementRepo.GetUserAchievements(ctx, userID)
+// GetUserAchievements retrieves all achievements for a user in a specific group
+func (at *AchievementTracker) GetUserAchievements(ctx context.Context, userID int64, groupID int64) ([]*Achievement, error) {
+	achievements, err := at.achievementRepo.GetUserAchievements(ctx, userID, groupID)
 	if err != nil {
-		at.logger.Error("failed to get user achievements", "user_id", userID, "error", err)
+		at.logger.Error("failed to get user achievements", "user_id", userID, "group_id", groupID, "error", err)
 		return nil, err
 	}
 
 	return achievements, nil
 }
 
-// AwardWeeklyAnalyst awards the Weekly Analyst achievement to the user with most points in a week
+// AwardWeeklyAnalyst awards the Weekly Analyst achievement to the user with most points in a week for a specific group
 // This should be called by a scheduled job at the end of each week
-func (at *AchievementTracker) AwardWeeklyAnalyst(ctx context.Context, userID int64) error {
-	achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementWeeklyAnalyst)
+func (at *AchievementTracker) AwardWeeklyAnalyst(ctx context.Context, userID int64, groupID int64) error {
+	achievement, err := at.awardAchievementIfNew(ctx, userID, groupID, AchievementWeeklyAnalyst)
 	if err != nil {
-		at.logger.Error("failed to award weekly analyst", "user_id", userID, "error", err)
+		at.logger.Error("failed to award weekly analyst", "user_id", userID, "group_id", groupID, "error", err)
 		return err
 	}
 
 	if achievement != nil {
-		at.logger.Info("weekly analyst awarded", "user_id", userID)
+		at.logger.Info("weekly analyst awarded", "user_id", userID, "group_id", groupID)
 	}
 
 	return nil
 }
 
-// CheckCreatorAchievements checks and awards creator-specific achievements
-func (at *AchievementTracker) CheckCreatorAchievements(ctx context.Context, userID int64) ([]*Achievement, error) {
+// CheckCreatorAchievements checks and awards creator-specific achievements for a specific group
+func (at *AchievementTracker) CheckCreatorAchievements(ctx context.Context, userID int64, groupID int64) ([]*Achievement, error) {
 	var newAchievements []*Achievement
 
-	// Get count of events created by user
-	createdCount, err := at.eventRepo.GetUserCreatedEventsCount(ctx, userID)
+	// Get count of events created by user in this group
+	createdCount, err := at.eventRepo.GetUserCreatedEventsCount(ctx, userID, groupID)
 	if err != nil {
-		at.logger.Error("failed to get created events count", "user_id", userID, "error", err)
+		at.logger.Error("failed to get created events count", "user_id", userID, "group_id", groupID, "error", err)
 		return nil, err
 	}
 
 	// Check Event Organizer (1 event created)
 	if createdCount >= EventOrganizerThreshold {
-		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementEventOrganizer)
+		achievement, err := at.awardAchievementIfNew(ctx, userID, groupID, AchievementEventOrganizer)
 		if err != nil {
-			at.logger.Error("failed to award event organizer", "user_id", userID, "error", err)
+			at.logger.Error("failed to award event organizer", "user_id", userID, "group_id", groupID, "error", err)
 		} else if achievement != nil {
 			newAchievements = append(newAchievements, achievement)
 		}
@@ -279,9 +282,9 @@ func (at *AchievementTracker) CheckCreatorAchievements(ctx context.Context, user
 
 	// Check Active Organizer (5 events created)
 	if createdCount >= ActiveOrganizerThreshold {
-		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementActiveOrganizer)
+		achievement, err := at.awardAchievementIfNew(ctx, userID, groupID, AchievementActiveOrganizer)
 		if err != nil {
-			at.logger.Error("failed to award active organizer", "user_id", userID, "error", err)
+			at.logger.Error("failed to award active organizer", "user_id", userID, "group_id", groupID, "error", err)
 		} else if achievement != nil {
 			newAchievements = append(newAchievements, achievement)
 		}
@@ -289,9 +292,9 @@ func (at *AchievementTracker) CheckCreatorAchievements(ctx context.Context, user
 
 	// Check Master Organizer (25 events created)
 	if createdCount >= MasterOrganizerThreshold {
-		achievement, err := at.awardAchievementIfNew(ctx, userID, AchievementMasterOrganizer)
+		achievement, err := at.awardAchievementIfNew(ctx, userID, groupID, AchievementMasterOrganizer)
 		if err != nil {
-			at.logger.Error("failed to award master organizer", "user_id", userID, "error", err)
+			at.logger.Error("failed to award master organizer", "user_id", userID, "group_id", groupID, "error", err)
 		} else if achievement != nil {
 			newAchievements = append(newAchievements, achievement)
 		}

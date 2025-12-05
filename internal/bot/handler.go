@@ -79,11 +79,11 @@ func (h *BotHandler) isAdmin(userID int64) bool {
 // getUserDisplayName retrieves user display name (username, first name, or ID)
 // It tries username first (format: @username), falls back to first name if username not available,
 // and falls back to "User [UserID]" if neither available
-func (h *BotHandler) getUserDisplayName(ctx context.Context, userID int64) string {
+func (h *BotHandler) getUserDisplayName(ctx context.Context, userID int64, groupID int64) string {
 	// Try to get user information from the bot API
 	// Since we don't have direct access to the bot API's GetChat method for users,
 	// we'll use the rating repository which stores username information
-	rating, err := h.ratingCalculator.GetUserRating(ctx, userID)
+	rating, err := h.ratingCalculator.GetUserRating(ctx, userID, groupID)
 	if err != nil {
 		// If we can't get the rating, fall back to user ID
 		return fmt.Sprintf("User id%d", userID)
@@ -146,97 +146,311 @@ func (h *BotHandler) logAdminAction(userID int64, action string, eventID int64, 
 	)
 }
 
+// HandleStart handles the /start command
+// Checks for deep-link parameter and either processes group join or displays help
+func (h *BotHandler) HandleStart(ctx context.Context, b *bot.Bot, update *models.Update) {
+	// Check if there's a start parameter (deep-link)
+	if update.Message != nil && update.Message.Text != "" {
+		parts := strings.Fields(update.Message.Text)
+		if len(parts) > 1 {
+			// There's a parameter - process as deep-link
+			startParam := parts[1]
+			h.handleDeepLinkJoin(ctx, b, update, startParam)
+			return
+		}
+	}
+
+	// No parameter - display help message
+	h.displayHelp(ctx, b, update)
+}
+
 // HandleHelp handles the /help command
 func (h *BotHandler) HandleHelp(ctx context.Context, b *bot.Bot, update *models.Update) {
-	helpText := `🤖 Telegram Prediction Market Bot
+	h.displayHelp(ctx, b, update)
+}
 
-════════════════════
-📋 ДОСТУПНЫЕ КОМАНДЫ
-════════════════════
+// displayHelp displays the help message with role-based command visibility
+func (h *BotHandler) displayHelp(ctx context.Context, b *bot.Bot, update *models.Update) {
+	userID := update.Message.From.ID
+	isAdmin := h.isAdmin(userID)
 
-👤 Для всех пользователей:
-  /help — Показать эту справку
-  /rating — Топ-10 участников по очкам
-  /my — Ваша статистика и ачивки
-  /events — Список активных событий
+	var helpText strings.Builder
+	helpText.WriteString("🤖 Telegram Prediction Market Bot\n\n")
 
-👑 Для администраторов:
-  /create_event — Создать новое событие
-  /resolve_event — Завершить событие и подвести итоги
-  /edit_event — Редактировать событие (только без голосов)
+	// User commands section
+	helpText.WriteString("════════════════════\n")
+	helpText.WriteString("👤 КОМАНДЫ ПОЛЬЗОВАТЕЛЯ\n")
+	helpText.WriteString("════════════════════\n\n")
+	helpText.WriteString("  /help — Показать эту справку\n")
+	helpText.WriteString("  /rating — Топ-10 участников по очкам\n")
+	helpText.WriteString("  /my — Ваша статистика и ачивки\n")
+	helpText.WriteString("  /events — Список активных событий\n")
+	helpText.WriteString("  /groups — Ваши группы\n\n")
 
-════════════════════
-💰 ПРАВИЛА НАЧИСЛЕНИЯ ОЧКОВ
-════════════════════
+	// Admin commands section (only for admins)
+	if isAdmin {
+		helpText.WriteString("════════════════════\n")
+		helpText.WriteString("👑 КОМАНДЫ АДМИНИСТРАТОРА\n")
+		helpText.WriteString("════════════════════\n\n")
+		helpText.WriteString("  /create_group — Создать новую группу\n")
+		helpText.WriteString("  /list_groups — Список всех групп с deep-links\n")
+		helpText.WriteString("  /group_members — Список участников группы\n")
+		helpText.WriteString("  /remove_member — Удалить участника из группы\n")
+		helpText.WriteString("  /create_event — Создать новое событие\n")
+		helpText.WriteString("  /resolve_event — Завершить событие\n")
+		helpText.WriteString("  /edit_event — Редактировать событие\n\n")
+	}
 
-✅ За правильный прогноз:
-  • Бинарное событие (Да/Нет): +10 очков
-  • Множественный выбор (3-6 вариантов): +15 очков
-  • Вероятностное событие: +15 очков
+	// Rules and scoring information
+	helpText.WriteString("════════════════════\n")
+	helpText.WriteString("💰 ПРАВИЛА НАЧИСЛЕНИЯ ОЧКОВ\n")
+	helpText.WriteString("════════════════════\n\n")
+	helpText.WriteString("✅ За правильный прогноз:\n")
+	helpText.WriteString("  • Бинарное событие (Да/Нет): +10 очков\n")
+	helpText.WriteString("  • Множественный выбор (3-6 вариантов): +15 очков\n")
+	helpText.WriteString("  • Вероятностное событие: +15 очков\n\n")
+	helpText.WriteString("🎁 Бонусы:\n")
+	helpText.WriteString("  • Меньшинство (<40% голосов): +5 очков\n")
+	helpText.WriteString("  • Ранний голос (первые 12 часов): +3 очка\n")
+	helpText.WriteString("  • Участие в любом событии: +1 очко\n\n")
+	helpText.WriteString("❌ Штрафы:\n")
+	helpText.WriteString("  • Неправильный прогноз: -3 очка\n\n")
 
-🎁 Бонусы:
-  • Меньшинство (<40% голосов): +5 очков
-  • Ранний голос (первые 12 часов): +3 очка
-  • Участие в любом событии: +1 очко
+	// Achievements
+	helpText.WriteString("════════════════════\n")
+	helpText.WriteString("🏆 АЧИВКИ\n")
+	helpText.WriteString("════════════════════\n\n")
+	helpText.WriteString("🎯 Меткий стрелок\n")
+	helpText.WriteString("   → 3 правильных прогноза подряд\n\n")
+	helpText.WriteString("🔮 Провидец\n")
+	helpText.WriteString("   → 10 правильных прогнозов подряд\n\n")
+	helpText.WriteString("🎲 Риск-мейкер\n")
+	helpText.WriteString("   → 3 правильных прогноза в меньшинстве подряд\n\n")
+	helpText.WriteString("📊 Аналитик недели\n")
+	helpText.WriteString("   → Больше всех очков за неделю\n\n")
+	helpText.WriteString("🏆 Старожил\n")
+	helpText.WriteString("   → Участие в 50 событиях\n\n")
 
-❌ Штрафы:
-  • Неправильный прогноз: -3 очка
-
-════════════════════
-🏆 АЧИВКИ
-════════════════════
-
-🎯 Меткий стрелок
-   → 3 правильных прогноза подряд
-
-🔮 Провидец
-   → 10 правильных прогнозов подряд
-
-🎲 Риск-мейкер
-   → 3 правильных прогноза в меньшинстве подряд
-
-📊 Аналитик недели
-   → Больше всех очков за неделю
-
-🏆 Старожил
-   → Участие в 50 событиях
-
-════════════════════
-🎲 ТИПЫ СОБЫТИЙ
-════════════════════
-
-1️⃣ Бинарное
-   → Да/Нет вопросы
-
-2️⃣ Множественный выбор
-   → 2-6 вариантов ответа
-
-3️⃣ Вероятностное
-   → Диапазоны вероятности
-   (0-25%, 25-50%, 50-75%, 75-100%)
-
-════════════════════
-
-⏰ Голосуйте до дедлайна!
-За 24 часа до окончания придёт напоминание 🔔`
+	// Event types
+	helpText.WriteString("════════════════════\n")
+	helpText.WriteString("🎲 ТИПЫ СОБЫТИЙ\n")
+	helpText.WriteString("════════════════════\n\n")
+	helpText.WriteString("1️⃣ Бинарное\n")
+	helpText.WriteString("   → Да/Нет вопросы\n\n")
+	helpText.WriteString("2️⃣ Множественный выбор\n")
+	helpText.WriteString("   → 2-6 вариантов ответа\n\n")
+	helpText.WriteString("3️⃣ Вероятностное\n")
+	helpText.WriteString("   → Диапазоны вероятности\n")
+	helpText.WriteString("   (0-25%, 25-50%, 50-75%, 75-100%)\n\n")
+	helpText.WriteString("════════════════════\n\n")
+	helpText.WriteString("⏰ Голосуйте до дедлайна!\n")
+	helpText.WriteString("За 24 часа до окончания придёт напоминание 🔔")
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   helpText,
+		Text:   helpText.String(),
 	})
 	if err != nil {
 		h.logger.Error("failed to send help message", "error", err)
 	}
 }
 
+// handleDeepLinkJoin processes group join flow from deep-link
+func (h *BotHandler) handleDeepLinkJoin(ctx context.Context, b *bot.Bot, update *models.Update, startParam string) {
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+
+	// Parse group ID from start parameter
+	groupID, err := h.deepLinkService.ParseGroupIDFromStart(startParam)
+	if err != nil {
+		h.logger.Warn("invalid deep-link parameter", "user_id", userID, "param", startParam, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Неверная ссылка для приглашения. Пожалуйста, запросите новую ссылку у администратора.",
+		})
+		return
+	}
+
+	// Validate group exists
+	group, err := h.groupRepo.GetGroup(ctx, groupID)
+	if err != nil {
+		h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при проверке группы. Попробуйте позже.",
+		})
+		return
+	}
+
+	if group == nil {
+		h.logger.Warn("group not found", "group_id", groupID, "user_id", userID)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Группа не найдена. Возможно, она была удалена.",
+		})
+		return
+	}
+
+	// Check if user already has membership
+	existingMembership, err := h.groupMembershipRepo.GetMembership(ctx, groupID, userID)
+	if err != nil {
+		h.logger.Error("failed to check membership", "group_id", groupID, "user_id", userID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при проверке членства. Попробуйте позже.",
+		})
+		return
+	}
+
+	// If membership exists and is active, inform user
+	if existingMembership != nil && existingMembership.Status == domain.MembershipStatusActive {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   fmt.Sprintf("ℹ️ Вы уже являетесь участником группы \"%s\".", group.Name),
+		})
+		return
+	}
+
+	// If membership exists but was removed, reactivate it
+	if existingMembership != nil && existingMembership.Status == domain.MembershipStatusRemoved {
+		err = h.groupMembershipRepo.UpdateMembershipStatus(ctx, groupID, userID, domain.MembershipStatusActive)
+		if err != nil {
+			h.logger.Error("failed to reactivate membership", "group_id", groupID, "user_id", userID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Ошибка при восстановлении членства. Попробуйте позже.",
+			})
+			return
+		}
+
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   fmt.Sprintf("✅ Добро пожаловать обратно в группу \"%s\"!", group.Name),
+		})
+		h.logger.Info("membership reactivated", "group_id", groupID, "user_id", userID)
+		return
+	}
+
+	// Create new membership
+	membership := &domain.GroupMembership{
+		GroupID:  groupID,
+		UserID:   userID,
+		JoinedAt: time.Now(),
+		Status:   domain.MembershipStatusActive,
+	}
+
+	if err := membership.Validate(); err != nil {
+		h.logger.Error("membership validation failed", "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка валидации членства.",
+		})
+		return
+	}
+
+	if err := h.groupMembershipRepo.CreateMembership(ctx, membership); err != nil {
+		h.logger.Error("failed to create membership", "group_id", groupID, "user_id", userID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при создании членства. Попробуйте позже.",
+		})
+		return
+	}
+
+	// Initialize rating record for this group
+	username := update.Message.From.Username
+	if username == "" {
+		if update.Message.From.FirstName != "" {
+			username = update.Message.From.FirstName
+		}
+		if update.Message.From.LastName != "" {
+			if username != "" {
+				username += " " + update.Message.From.LastName
+			} else {
+				username = update.Message.From.LastName
+			}
+		}
+	}
+
+	rating := &domain.Rating{
+		UserID:       userID,
+		GroupID:      groupID,
+		Username:     username,
+		Score:        0,
+		CorrectCount: 0,
+		WrongCount:   0,
+		Streak:       0,
+	}
+
+	if err := h.ratingRepo.UpdateRating(ctx, rating); err != nil {
+		h.logger.Error("failed to initialize rating", "group_id", groupID, "user_id", userID, "error", err)
+		// Don't fail the join - rating can be created later
+	}
+
+	// Send welcome message
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: chatID,
+		Text: fmt.Sprintf("✅ Добро пожаловать в группу \"%s\"!\n\n"+
+			"Теперь вы можете участвовать в событиях этой группы.\n"+
+			"Используйте /events для просмотра активных событий.",
+			group.Name),
+	})
+	if err != nil {
+		h.logger.Error("failed to send welcome message", "error", err)
+	}
+
+	h.logger.Info("user joined group", "group_id", groupID, "user_id", userID, "group_name", group.Name)
+}
+
 // HandleRating handles the /rating command
 func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *models.Update) {
-	// Get top 10 ratings
-	ratings, err := h.ratingCalculator.GetTopRatings(ctx, 10)
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+
+	// Determine user's current group context
+	groupContextResolver := domain.NewGroupContextResolver(h.groupRepo)
+	groupID, err := groupContextResolver.ResolveGroupForUser(ctx, userID)
 	if err != nil {
-		h.logger.Error("failed to get top ratings", "error", err)
+		if err == domain.ErrNoGroupMembership {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text: "❌ Вы не состоите ни в одной группе.\n\n" +
+					"Чтобы присоединиться к группе, попросите администратора отправить вам ссылку-приглашение.",
+			})
+			return
+		}
+		if err == domain.ErrMultipleGroupsNeedChoice {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Вы состоите в нескольких группах. Пожалуйста, используйте команду /groups для просмотра ваших групп.",
+			})
+			return
+		}
+		h.logger.Error("failed to resolve group context", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
+			ChatID: chatID,
+			Text:   "❌ Ошибка при определении группы.",
+		})
+		return
+	}
+
+	// Get group information
+	group, err := h.groupRepo.GetGroup(ctx, groupID)
+	if err != nil || group == nil {
+		h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при получении информации о группе.",
+		})
+		return
+	}
+
+	// Get top 10 ratings for this group
+	ratings, err := h.ratingCalculator.GetTopRatings(ctx, groupID, 10)
+	if err != nil {
+		h.logger.Error("failed to get top ratings", "group_id", groupID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
 			Text:   "❌ Ошибка при получении рейтинга.",
 		})
 		return
@@ -244,15 +458,16 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 
 	if len(ratings) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "📊 Рейтинг пока пуст. Начните делать прогнозы!",
+			ChatID: chatID,
+			Text:   fmt.Sprintf("📊 Рейтинг группы \"%s\" пока пуст. Начните делать прогнозы!", group.Name),
 		})
 		return
 	}
 
 	// Build rating message
 	var sb strings.Builder
-	sb.WriteString("🏆 ТОП-10 УЧАСТНИКОВ\n\n")
+	sb.WriteString(fmt.Sprintf("🏆 ТОП-10 УЧАСТНИКОВ\n"))
+	sb.WriteString(fmt.Sprintf("📍 Группа: %s\n\n", group.Name))
 
 	medals := []string{"🥇", "🥈", "🥉"}
 	for i, rating := range ratings {
@@ -278,14 +493,14 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 		}
 
 		sb.WriteString(fmt.Sprintf("%s%s — %d очков\n", medal, displayName, rating.Score))
-		sb.WriteString(fmt.Sprintf("     📊 Точность: %.1f\n", accuracy))
+		sb.WriteString(fmt.Sprintf("     📊 Точность: %.1f%%\n", accuracy))
 		sb.WriteString(fmt.Sprintf("     🔥 Серия: %d\n", rating.Streak))
 		sb.WriteString(fmt.Sprintf("     ✅ %d\n", rating.CorrectCount))
 		sb.WriteString(fmt.Sprintf("     ❌ %d\n\n", rating.WrongCount))
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
+		ChatID: chatID,
 		Text:   sb.String(),
 	})
 	if err != nil {
@@ -296,28 +511,68 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 // HandleMy handles the /my command
 func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Update) {
 	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
 
-	// Get user rating
-	rating, err := h.ratingCalculator.GetUserRating(ctx, userID)
+	// Determine user's current group context
+	groupContextResolver := domain.NewGroupContextResolver(h.groupRepo)
+	groupID, err := groupContextResolver.ResolveGroupForUser(ctx, userID)
 	if err != nil {
-		h.logger.Error("failed to get user rating", "user_id", userID, "error", err)
+		if err == domain.ErrNoGroupMembership {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text: "❌ Вы не состоите ни в одной группе.\n\n" +
+					"Чтобы присоединиться к группе, попросите администратора отправить вам ссылку-приглашение.",
+			})
+			return
+		}
+		if err == domain.ErrMultipleGroupsNeedChoice {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Вы состоите в нескольких группах. Пожалуйста, используйте команду /groups для просмотра ваших групп.",
+			})
+			return
+		}
+		h.logger.Error("failed to resolve group context", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
+			ChatID: chatID,
+			Text:   "❌ Ошибка при определении группы.",
+		})
+		return
+	}
+
+	// Get group information
+	group, err := h.groupRepo.GetGroup(ctx, groupID)
+	if err != nil || group == nil {
+		h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при получении информации о группе.",
+		})
+		return
+	}
+
+	// Get user rating for this group
+	rating, err := h.ratingCalculator.GetUserRating(ctx, userID, groupID)
+	if err != nil {
+		h.logger.Error("failed to get user rating", "user_id", userID, "group_id", groupID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
 			Text:   "❌ Ошибка при получении статистики.",
 		})
 		return
 	}
 
-	// Get user achievements
-	achievements, err := h.achievementTracker.GetUserAchievements(ctx, userID)
+	// Get user achievements for this group
+	achievements, err := h.achievementTracker.GetUserAchievements(ctx, userID, groupID)
 	if err != nil {
-		h.logger.Error("failed to get user achievements", "user_id", userID, "error", err)
+		h.logger.Error("failed to get user achievements", "user_id", userID, "group_id", groupID, "error", err)
 		achievements = []*domain.Achievement{} // Continue with empty achievements
 	}
 
 	// Build stats message
 	var sb strings.Builder
 	sb.WriteString("📊 ВАША СТАТИСТИКА\n")
+	sb.WriteString(fmt.Sprintf("📍 Группа: %s\n\n", group.Name))
 
 	total := rating.CorrectCount + rating.WrongCount
 	accuracy := 0.0
@@ -355,7 +610,7 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
+		ChatID: chatID,
 		Text:   sb.String(),
 	})
 	if err != nil {
@@ -365,21 +620,46 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 
 // HandleEvents handles the /events command
 func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *models.Update) {
-	// Get all active events
-	events, err := h.eventManager.GetActiveEvents(ctx)
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+
+	// Get all groups where user has membership
+	groups, err := h.groupRepo.GetUserGroups(ctx, userID)
 	if err != nil {
-		h.logger.Error("failed to get active events", "error", err)
+		h.logger.Error("failed to get user groups", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Ошибка при получении списка событий.",
+			ChatID: chatID,
+			Text:   "❌ Ошибка при получении списка групп.",
 		})
 		return
 	}
 
-	if len(events) == 0 {
+	if len(groups) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "📋 Нет активных событий. Ожидайте новых!",
+			ChatID: chatID,
+			Text: "❌ Вы не состоите ни в одной группе.\n\n" +
+				"Чтобы присоединиться к группе, попросите администратора отправить вам ссылку-приглашение.",
+		})
+		return
+	}
+
+	// Collect all active events from all user's groups
+	var allEvents []*domain.Event
+	groupNames := make(map[int64]string)
+	for _, group := range groups {
+		groupNames[group.ID] = group.Name
+		events, err := h.eventManager.GetActiveEvents(ctx, group.ID)
+		if err != nil {
+			h.logger.Error("failed to get active events for group", "group_id", group.ID, "error", err)
+			continue
+		}
+		allEvents = append(allEvents, events...)
+	}
+
+	if len(allEvents) == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "📋 Нет активных событий в ваших группах. Ожидайте новых!",
 		})
 		return
 	}
@@ -389,8 +669,11 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 	sb.WriteString("📋 АКТИВНЫЕ СОБЫТИЯ\n")
 	sb.WriteString("════════════════════\n\n")
 
-	for i, event := range events {
-		sb.WriteString(fmt.Sprintf("▸ %d. %s\n\n", i+1, event.Question))
+	for i, event := range allEvents {
+		// Include group name for context
+		groupName := groupNames[event.GroupID]
+		sb.WriteString(fmt.Sprintf("▸ %d. %s\n", i+1, event.Question))
+		sb.WriteString(fmt.Sprintf("📍 Группа: %s\n\n", groupName))
 
 		// Event type
 		typeStr := ""
@@ -458,7 +741,7 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
+		ChatID: chatID,
 		Text:   sb.String(),
 	})
 	if err != nil {
@@ -506,23 +789,55 @@ func (h *BotHandler) HandlePollAnswer(ctx context.Context, b *bot.Bot, update *m
 	userID := pollAnswer.User.ID
 	pollID := pollAnswer.PollID
 
-	// Get all active events and find the matching one
-	events, err := h.eventManager.GetActiveEvents(ctx)
+	// Get event by poll ID
+	event, err := h.eventManager.GetEvent(ctx, 0) // We need to find by poll ID
 	if err != nil {
-		h.logger.Error("failed to get active events", "error", err)
+		h.logger.Error("failed to get event", "poll_id", pollID, "error", err)
 		return
 	}
 
-	var event *domain.Event
-	for _, e := range events {
-		if e.PollID == pollID {
-			event = e
+	// Find event by poll ID - we need to search through user's groups
+	groups, err := h.groupRepo.GetUserGroups(ctx, userID)
+	if err != nil {
+		h.logger.Error("failed to get user groups", "user_id", userID, "error", err)
+		return
+	}
+
+	var matchedEvent *domain.Event
+	for _, group := range groups {
+		events, err := h.eventManager.GetActiveEvents(ctx, group.ID)
+		if err != nil {
+			h.logger.Error("failed to get active events for group", "group_id", group.ID, "error", err)
+			continue
+		}
+		for _, e := range events {
+			if e.PollID == pollID {
+				matchedEvent = e
+				break
+			}
+		}
+		if matchedEvent != nil {
 			break
 		}
 	}
 
-	if event == nil {
-		h.logger.Warn("poll answer for unknown event", "poll_id", pollID)
+	if matchedEvent == nil {
+		h.logger.Warn("poll answer for unknown or inaccessible event", "poll_id", pollID, "user_id", userID)
+		return
+	}
+
+	event = matchedEvent
+
+	// Verify user has active membership in the event's group
+	hasActiveMembership, err := h.groupMembershipRepo.HasActiveMembership(ctx, event.GroupID, userID)
+	if err != nil {
+		h.logger.Error("failed to check group membership", "user_id", userID, "group_id", event.GroupID, "error", err)
+		return
+	}
+
+	if !hasActiveMembership {
+		h.logger.Warn("vote rejected: user not member of group", "user_id", userID, "event_id", event.ID, "group_id", event.GroupID)
+		// Note: Telegram doesn't allow us to reject the vote in the UI, but we won't save it
 		return
 	}
 
@@ -558,7 +873,7 @@ func (h *BotHandler) HandlePollAnswer(ctx context.Context, b *bot.Bot, update *m
 			return
 		}
 
-		h.logger.Info("prediction updated", "user_id", userID, "event_id", event.ID, "option", selectedOption)
+		h.logger.Info("prediction updated", "user_id", userID, "event_id", event.ID, "group_id", event.GroupID, "option", selectedOption)
 	} else {
 		// Create new prediction
 		prediction := &domain.Prediction{
@@ -573,7 +888,7 @@ func (h *BotHandler) HandlePollAnswer(ctx context.Context, b *bot.Bot, update *m
 			return
 		}
 
-		h.logger.Info("prediction saved", "user_id", userID, "event_id", event.ID, "option", selectedOption)
+		h.logger.Info("prediction saved", "user_id", userID, "event_id", event.ID, "group_id", event.GroupID, "option", selectedOption)
 	}
 
 	// Update or create user rating with username
@@ -593,9 +908,9 @@ func (h *BotHandler) HandlePollAnswer(ctx context.Context, b *bot.Bot, update *m
 	}
 
 	// Get or create rating to ensure username is saved
-	rating, err := h.ratingCalculator.GetUserRating(ctx, userID)
+	rating, err := h.ratingCalculator.GetUserRating(ctx, userID, event.GroupID)
 	if err != nil {
-		h.logger.Error("failed to get user rating", "user_id", userID, "error", err)
+		h.logger.Error("failed to get user rating", "user_id", userID, "group_id", event.GroupID, "error", err)
 		return
 	}
 
@@ -603,7 +918,7 @@ func (h *BotHandler) HandlePollAnswer(ctx context.Context, b *bot.Bot, update *m
 	if rating.Username != username && username != "" {
 		rating.Username = username
 		if err := h.ratingCalculator.UpdateRatingUsername(ctx, rating); err != nil {
-			h.logger.Error("failed to update username", "user_id", userID, "error", err)
+			h.logger.Error("failed to update username", "user_id", userID, "group_id", event.GroupID, "error", err)
 		}
 	}
 }
@@ -613,26 +928,55 @@ func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
 
-	// Check if user has permission to create events
 	// Admins are exempt from participation requirement
-	canCreate, participationCount, err := h.eventPermissionValidator.CanCreateEvent(ctx, userID, h.config.AdminUserIDs)
-	if err != nil {
-		h.logger.Error("failed to check event creation permission", "user_id", userID, "error", err)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "❌ Ошибка при проверке прав доступа. Попробуйте позже.",
-		})
-		return
-	}
+	if !h.isAdmin(userID) {
+		// Get user's groups to check participation in each
+		groups, err := h.groupRepo.GetUserGroups(ctx, userID)
+		if err != nil {
+			h.logger.Error("failed to get user groups", "user_id", userID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Ошибка при проверке прав доступа. Попробуйте позже.",
+			})
+			return
+		}
 
-	if !canCreate {
-		// User doesn't have enough participation
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   fmt.Sprintf("❌ Для создания событий нужно участвовать минимум в %d завершенных событиях. У вас: %d.", h.config.MinEventsToCreate, participationCount),
-		})
-		h.logger.Info("event creation denied due to insufficient participation", "user_id", userID, "participation_count", participationCount, "required", h.config.MinEventsToCreate)
-		return
+		if len(groups) == 0 {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text: "❌ Вы не состоите ни в одной группе.\n\n" +
+					"Чтобы присоединиться к группе, попросите администратора отправить вам ссылку-приглашение.",
+			})
+			return
+		}
+
+		// Check if user has sufficient participation in at least one group
+		hasPermissionInAnyGroup := false
+		maxParticipation := 0
+		for _, group := range groups {
+			canCreate, participationCount, err := h.eventPermissionValidator.CanCreateEvent(ctx, userID, group.ID, h.config.AdminUserIDs)
+			if err != nil {
+				h.logger.Error("failed to check event creation permission", "user_id", userID, "group_id", group.ID, "error", err)
+				continue
+			}
+			if participationCount > maxParticipation {
+				maxParticipation = participationCount
+			}
+			if canCreate {
+				hasPermissionInAnyGroup = true
+				break
+			}
+		}
+
+		if !hasPermissionInAnyGroup {
+			// User doesn't have enough participation in any group
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   fmt.Sprintf("❌ Для создания событий нужно участвовать минимум в %d завершенных событиях в группе. Ваше максимальное участие: %d.", h.config.MinEventsToCreate, maxParticipation),
+			})
+			h.logger.Info("event creation denied due to insufficient participation", "user_id", userID, "max_participation", maxParticipation, "required", h.config.MinEventsToCreate)
+			return
+		}
 	}
 
 	// Start FSM session for user
@@ -812,18 +1156,35 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update *models.Update) {
 	userID := update.Message.From.ID
 
-	// Get all active events
-	events, err := h.eventManager.GetActiveEvents(ctx)
+	// Get all groups where user has access (admin sees all, others see their groups)
+	var groups []*domain.Group
+	var err error
+	if h.isAdmin(userID) {
+		groups, err = h.groupRepo.GetAllGroups(ctx)
+	} else {
+		groups, err = h.groupRepo.GetUserGroups(ctx, userID)
+	}
 	if err != nil {
-		h.logger.Error("failed to get active events", "error", err)
+		h.logger.Error("failed to get groups", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Ошибка при получении списка событий.",
+			Text:   "❌ Ошибка при получении списка групп.",
 		})
 		return
 	}
 
-	if len(events) == 0 {
+	// Get all active events from accessible groups
+	var allEvents []*domain.Event
+	for _, group := range groups {
+		events, err := h.eventManager.GetActiveEvents(ctx, group.ID)
+		if err != nil {
+			h.logger.Error("failed to get active events for group", "group_id", group.ID, "error", err)
+			continue
+		}
+		allEvents = append(allEvents, events...)
+	}
+
+	if len(allEvents) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
 			Text:   "📋 Нет активных событий для завершения.",
@@ -833,7 +1194,7 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 
 	// Filter events that user can manage
 	var manageableEvents []*domain.Event
-	for _, event := range events {
+	for _, event := range allEvents {
 		canManage, err := h.eventPermissionValidator.CanManageEvent(ctx, userID, event.ID, h.config.AdminUserIDs)
 		if err != nil {
 			h.logger.Error("failed to check event management permission", "user_id", userID, "event_id", event.ID, "error", err)
@@ -951,9 +1312,9 @@ func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, call
 		predictions, err := h.predictionRepo.GetPredictionsByEvent(ctx, eventID)
 		if err == nil {
 			for _, pred := range predictions {
-				achievements, err := h.achievementTracker.CheckAndAwardAchievements(ctx, pred.UserID)
+				achievements, err := h.achievementTracker.CheckAndAwardAchievements(ctx, pred.UserID, event.GroupID)
 				if err != nil {
-					h.logger.Error("failed to check achievements", "user_id", pred.UserID, "error", err)
+					h.logger.Error("failed to check achievements", "user_id", pred.UserID, "group_id", event.GroupID, "error", err)
 					continue
 				}
 
@@ -1064,15 +1425,15 @@ func (h *BotHandler) publishEventResults(ctx context.Context, b *bot.Bot, event 
 		}
 	}
 
-	// Get top 5 participants by points earned (simplified - just show top 5 overall)
-	topRatings, err := h.ratingCalculator.GetTopRatings(ctx, 5)
+	// Get top 5 participants by points earned for this group
+	topRatings, err := h.ratingCalculator.GetTopRatings(ctx, event.GroupID, 5)
 	if err != nil {
-		h.logger.Error("failed to get top ratings", "error", err)
+		h.logger.Error("failed to get top ratings", "group_id", event.GroupID, "error", err)
 		topRatings = []*domain.Rating{}
 	}
 
 	// Get resolver display name
-	resolverDisplayName := h.getUserDisplayName(ctx, resolverID)
+	resolverDisplayName := h.getUserDisplayName(ctx, resolverID, event.GroupID)
 
 	// Determine if resolver is admin or creator
 	isAdmin := h.isAdmin(resolverID)
@@ -1136,7 +1497,7 @@ func (h *BotHandler) sendAchievementNotification(ctx context.Context, b *bot.Bot
 	}
 
 	// Get user display name for group announcement
-	displayName := h.getUserDisplayName(ctx, userID)
+	displayName := h.getUserDisplayName(ctx, userID, achievement.GroupID)
 
 	// Announce in group with username
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -1435,15 +1796,15 @@ func (h *BotHandler) handleGroupMembersCallback(ctx context.Context, b *bot.Bot,
 			}
 		}
 
-		// Get achievements count (note: achievements are currently not group-scoped in the tracker)
-		achievements, err := h.achievementTracker.GetUserAchievements(ctx, member.UserID)
+		// Get achievements count for this group
+		achievements, err := h.achievementTracker.GetUserAchievements(ctx, member.UserID, groupID)
 		if err != nil {
-			h.logger.Error("failed to get user achievements", "user_id", member.UserID, "error", err)
+			h.logger.Error("failed to get user achievements", "user_id", member.UserID, "group_id", groupID, "error", err)
 			achievements = []*domain.Achievement{}
 		}
 
 		// Get display name
-		displayName := h.getUserDisplayName(ctx, member.UserID)
+		displayName := h.getUserDisplayName(ctx, member.UserID, groupID)
 
 		// Status indicator
 		statusIcon := "✅"
@@ -1469,6 +1830,79 @@ func (h *BotHandler) handleGroupMembersCallback(ctx context.Context, b *bot.Bot,
 	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 		CallbackQueryID: callback.ID,
 	})
+}
+
+// HandleGroups handles the /groups command for users
+func (h *BotHandler) HandleGroups(ctx context.Context, b *bot.Bot, update *models.Update) {
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+
+	// Retrieve user's active group memberships
+	groups, err := h.groupRepo.GetUserGroups(ctx, userID)
+	if err != nil {
+		h.logger.Error("failed to get user groups", "user_id", userID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при получении списка групп.",
+		})
+		return
+	}
+
+	// Handle case of no memberships
+	if len(groups) == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text: "📋 У вас пока нет групп.\n\n" +
+				"Чтобы присоединиться к группе, попросите администратора отправить вам ссылку-приглашение.",
+		})
+		return
+	}
+
+	// Build groups list message
+	var sb strings.Builder
+	sb.WriteString("📋 ВАШИ ГРУППЫ\n")
+	sb.WriteString("════════════════════\n\n")
+
+	// Get memberships to access join dates (groups are already ordered by join date DESC)
+	for i, group := range groups {
+		// Get membership to access join date
+		membership, err := h.groupMembershipRepo.GetMembership(ctx, group.ID, userID)
+		if err != nil {
+			h.logger.Error("failed to get membership", "group_id", group.ID, "user_id", userID, "error", err)
+			continue
+		}
+
+		if membership == nil {
+			continue
+		}
+
+		// Get member count for this group
+		members, err := h.groupMembershipRepo.GetGroupMembers(ctx, group.ID)
+		if err != nil {
+			h.logger.Error("failed to get group members", "group_id", group.ID, "error", err)
+			continue
+		}
+
+		// Count active members
+		activeCount := 0
+		for _, member := range members {
+			if member.Status == domain.MembershipStatusActive {
+				activeCount++
+			}
+		}
+
+		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, group.Name))
+		sb.WriteString(fmt.Sprintf("   👥 Участников: %d\n", activeCount))
+		sb.WriteString(fmt.Sprintf("   📅 Присоединились: %s\n\n", membership.JoinedAt.Format("02.01.2006")))
+	}
+
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: chatID,
+		Text:   sb.String(),
+	})
+	if err != nil {
+		h.logger.Error("failed to send groups list", "error", err)
+	}
 }
 
 // handleRemoveMemberCallback handles the callback for removing a member
@@ -1546,7 +1980,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 		// Build inline keyboard with members
 		var buttons [][]models.InlineKeyboardButton
 		for _, member := range activeMembers {
-			displayName := h.getUserDisplayName(ctx, member.UserID)
+			displayName := h.getUserDisplayName(ctx, member.UserID, groupID)
 			buttons = append(buttons, []models.InlineKeyboardButton{
 				{
 					Text:         displayName,
@@ -1630,7 +2064,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 		h.logAdminAction(userID, "remove_member", groupID, fmt.Sprintf("Removed user %d from group %s", memberUserID, group.Name))
 
 		// Get display name
-		displayName := h.getUserDisplayName(ctx, memberUserID)
+		displayName := h.getUserDisplayName(ctx, memberUserID, groupID)
 
 		// Send confirmation
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{

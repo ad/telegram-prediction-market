@@ -195,10 +195,12 @@ func main() {
 	log.Info("Bot handler created")
 
 	// Register command handlers
+	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/start", tgbot.MatchTypePrefix, handler.HandleStart)
 	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/help", tgbot.MatchTypeExact, handler.HandleHelp)
 	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/rating", tgbot.MatchTypeExact, handler.HandleRating)
 	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/my", tgbot.MatchTypeExact, handler.HandleMy)
 	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/events", tgbot.MatchTypeExact, handler.HandleEvents)
+	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/groups", tgbot.MatchTypeExact, handler.HandleGroups)
 	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/create_event", tgbot.MatchTypeExact, handler.HandleCreateEvent)
 	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/resolve_event", tgbot.MatchTypeExact, handler.HandleResolveEvent)
 	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/edit_event", tgbot.MatchTypeExact, handler.HandleEditEvent)

@@ -83,10 +83,10 @@ func (rc *RatingCalculator) CalculateScores(ctx context.Context, eventID int64, 
 		// Calculate points for this prediction
 		points := rc.calculatePoints(event, pred, isCorrect, voteDistribution, totalVotes)
 
-		// Get current rating
-		rating, err := rc.ratingRepo.GetRating(ctx, pred.UserID)
+		// Get current rating for this group
+		rating, err := rc.ratingRepo.GetRating(ctx, pred.UserID, event.GroupID)
 		if err != nil {
-			rc.logger.Error("failed to get rating", "user_id", pred.UserID, "error", err)
+			rc.logger.Error("failed to get rating", "user_id", pred.UserID, "group_id", event.GroupID, "error", err)
 			continue
 		}
 
@@ -103,12 +103,13 @@ func (rc *RatingCalculator) CalculateScores(ctx context.Context, eventID int64, 
 
 		// Save updated rating
 		if err := rc.ratingRepo.UpdateRating(ctx, rating); err != nil {
-			rc.logger.Error("failed to update rating", "user_id", pred.UserID, "error", err)
+			rc.logger.Error("failed to update rating", "user_id", pred.UserID, "group_id", event.GroupID, "error", err)
 			continue
 		}
 
 		rc.logger.Info("updated rating",
 			"user_id", pred.UserID,
+			"group_id", event.GroupID,
 			"points", points,
 			"new_score", rating.Score,
 			"streak", rating.Streak,
@@ -168,33 +169,33 @@ func (rc *RatingCalculator) calculatePoints(
 	return points
 }
 
-// GetTopRatings retrieves the top N users by score
-func (rc *RatingCalculator) GetTopRatings(ctx context.Context, limit int) ([]*Rating, error) {
-	ratings, err := rc.ratingRepo.GetTopRatings(ctx, limit)
+// GetTopRatings retrieves the top N users by score for a specific group
+func (rc *RatingCalculator) GetTopRatings(ctx context.Context, groupID int64, limit int) ([]*Rating, error) {
+	ratings, err := rc.ratingRepo.GetTopRatings(ctx, groupID, limit)
 	if err != nil {
-		rc.logger.Error("failed to get top ratings", "limit", limit, "error", err)
+		rc.logger.Error("failed to get top ratings", "group_id", groupID, "limit", limit, "error", err)
 		return nil, err
 	}
 
 	return ratings, nil
 }
 
-// GetUserRating retrieves a specific user's rating
-func (rc *RatingCalculator) GetUserRating(ctx context.Context, userID int64) (*Rating, error) {
-	rating, err := rc.ratingRepo.GetRating(ctx, userID)
+// GetUserRating retrieves a specific user's rating for a specific group
+func (rc *RatingCalculator) GetUserRating(ctx context.Context, userID int64, groupID int64) (*Rating, error) {
+	rating, err := rc.ratingRepo.GetRating(ctx, userID, groupID)
 	if err != nil {
-		rc.logger.Error("failed to get user rating", "user_id", userID, "error", err)
+		rc.logger.Error("failed to get user rating", "user_id", userID, "group_id", groupID, "error", err)
 		return nil, err
 	}
 
 	return rating, nil
 }
 
-// UpdateStreak updates a user's streak
-func (rc *RatingCalculator) UpdateStreak(ctx context.Context, userID int64, correct bool) error {
-	rating, err := rc.ratingRepo.GetRating(ctx, userID)
+// UpdateStreak updates a user's streak for a specific group
+func (rc *RatingCalculator) UpdateStreak(ctx context.Context, userID int64, groupID int64, correct bool) error {
+	rating, err := rc.ratingRepo.GetRating(ctx, userID, groupID)
 	if err != nil {
-		rc.logger.Error("failed to get rating for streak update", "user_id", userID, "error", err)
+		rc.logger.Error("failed to get rating for streak update", "user_id", userID, "group_id", groupID, "error", err)
 		return err
 	}
 
@@ -204,12 +205,12 @@ func (rc *RatingCalculator) UpdateStreak(ctx context.Context, userID int64, corr
 		rating.Streak = 0
 	}
 
-	if err := rc.ratingRepo.UpdateStreak(ctx, userID, rating.Streak); err != nil {
-		rc.logger.Error("failed to update streak", "user_id", userID, "error", err)
+	if err := rc.ratingRepo.UpdateStreak(ctx, userID, groupID, rating.Streak); err != nil {
+		rc.logger.Error("failed to update streak", "user_id", userID, "group_id", groupID, "error", err)
 		return err
 	}
 
-	rc.logger.Info("streak updated", "user_id", userID, "streak", rating.Streak)
+	rc.logger.Info("streak updated", "user_id", userID, "group_id", groupID, "streak", rating.Streak)
 	return nil
 }
 

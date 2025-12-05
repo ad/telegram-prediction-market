@@ -26,11 +26,12 @@ type EventRepository interface {
 	CreateEvent(ctx context.Context, event *Event) error
 	GetEvent(ctx context.Context, eventID int64) (*Event, error)
 	GetEventByPollID(ctx context.Context, pollID string) (*Event, error)
-	GetActiveEvents(ctx context.Context) ([]*Event, error)
+	GetActiveEvents(ctx context.Context, groupID int64) ([]*Event, error)
 	GetResolvedEvents(ctx context.Context) ([]*Event, error)
 	UpdateEvent(ctx context.Context, event *Event) error
 	ResolveEvent(ctx context.Context, eventID int64, correctOption int) error
-	GetUserCreatedEventsCount(ctx context.Context, userID int64) (int, error)
+	GetUserCreatedEventsCount(ctx context.Context, userID int64, groupID int64) (int, error)
+	GetEventsByDeadlineRange(ctx context.Context, start, end time.Time) ([]*Event, error)
 }
 
 // PredictionRepository interface for prediction operations
@@ -40,7 +41,7 @@ type PredictionRepository interface {
 	GetPredictionsByEvent(ctx context.Context, eventID int64) ([]*Prediction, error)
 	GetPredictionByUserAndEvent(ctx context.Context, userID, eventID int64) (*Prediction, error)
 	GetUserPredictions(ctx context.Context, userID int64) ([]*Prediction, error)
-	GetUserCompletedEventCount(ctx context.Context, userID int64) (int, error)
+	GetUserCompletedEventCount(ctx context.Context, userID int64, groupID int64) (int, error)
 }
 
 // EventManager manages event operations and business logic
@@ -91,15 +92,15 @@ func (em *EventManager) CreateEvent(ctx context.Context, event *Event) error {
 	return nil
 }
 
-// GetActiveEvents retrieves all active events
-func (em *EventManager) GetActiveEvents(ctx context.Context) ([]*Event, error) {
-	events, err := em.eventRepo.GetActiveEvents(ctx)
+// GetActiveEvents retrieves all active events for a specific group
+func (em *EventManager) GetActiveEvents(ctx context.Context, groupID int64) ([]*Event, error) {
+	events, err := em.eventRepo.GetActiveEvents(ctx, groupID)
 	if err != nil {
-		em.logger.Error("failed to get active events", "error", err)
+		em.logger.Error("failed to get active events", "group_id", groupID, "error", err)
 		return nil, err
 	}
 
-	em.logger.Debug("retrieved active events", "count", len(events))
+	em.logger.Debug("retrieved active events", "group_id", groupID, "count", len(events))
 	return events, nil
 }
 

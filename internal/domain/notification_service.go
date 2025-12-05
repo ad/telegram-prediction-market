@@ -187,10 +187,10 @@ func (ns *NotificationService) PublishEventResults(ctx context.Context, eventID 
 		}
 	}
 
-	// Get top 5 participants by overall rating
-	topRatings, err := ns.ratingRepo.GetTopRatings(ctx, 5)
+	// Get top 5 participants by overall rating for this group
+	topRatings, err := ns.ratingRepo.GetTopRatings(ctx, event.GroupID, 5)
 	if err != nil {
-		ns.logger.Error("failed to get top ratings", "error", err)
+		ns.logger.Error("failed to get top ratings", "group_id", event.GroupID, "error", err)
 		topRatings = []*Rating{} // Continue with empty list
 	}
 
@@ -254,11 +254,11 @@ func (ns *NotificationService) SendDeadlineReminder(ctx context.Context, eventID
 		votedUsers[pred.UserID] = true
 	}
 
-	// Get all participants (users who have ratings)
+	// Get all participants (users who have ratings) for this group
 	// For simplicity, we'll send reminders to all users in the rating system who haven't voted
-	allRatings, err := ns.ratingRepo.GetTopRatings(ctx, 1000) // Get up to 1000 users
+	allRatings, err := ns.ratingRepo.GetTopRatings(ctx, event.GroupID, 1000) // Get up to 1000 users
 	if err != nil {
-		ns.logger.Error("failed to get all ratings for reminder", "error", err)
+		ns.logger.Error("failed to get all ratings for reminder", "group_id", event.GroupID, "error", err)
 		return err
 	}
 
@@ -407,18 +407,17 @@ func (ns *NotificationService) performStartupRecovery(ctx context.Context) error
 }
 
 // getEventsByDeadlineRange retrieves events with deadline in the specified range
-// This is a helper method that wraps the repository call
+// This uses the repository's GetEventsByDeadlineRange method which returns events from all groups
 func (ns *NotificationService) getEventsByDeadlineRange(ctx context.Context, start, end time.Time) ([]*Event, error) {
-	// We need to add this method to the EventRepository interface
-	// For now, we'll get all active events and filter
-	events, err := ns.eventRepo.GetActiveEvents(ctx)
+	// Use the repository method that gets events by deadline range
+	events, err := ns.eventRepo.GetEventsByDeadlineRange(ctx, start, end)
 	if err != nil {
 		return nil, err
 	}
 
 	var filtered []*Event
 	for _, event := range events {
-		if event.Deadline.After(start) && event.Deadline.Before(end) {
+		if event.Status == EventStatusActive {
 			filtered = append(filtered, event)
 		}
 	}

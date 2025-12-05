@@ -880,9 +880,9 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 
 		// Check and award creator achievements (non-blocking)
 		// Handle errors gracefully - don't block event creation
-		achievements, err := f.achievementTracker.CheckCreatorAchievements(ctx, userID)
+		achievements, err := f.achievementTracker.CheckCreatorAchievements(ctx, userID, event.GroupID)
 		if err != nil {
-			f.logger.Error("failed to check creator achievements", "user_id", userID, "error", err)
+			f.logger.Error("failed to check creator achievements", "user_id", userID, "group_id", event.GroupID, "error", err)
 			// Continue - achievement check failure should not block event creation
 		} else if len(achievements) > 0 {
 			// Send achievement notifications
