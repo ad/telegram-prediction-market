@@ -2052,3 +2052,58 @@ func TestProperty_AtomicSessionUpdates(t *testing.T) {
 
 	properties.TestingRun(t)
 }
+
+// TestProperty_EventGroupAssociation tests that EventCreationContext correctly preserves group_id
+// This validates Property 14: Event-Group Association from the design document
+func TestProperty_EventGroupAssociation(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("event creation context preserves group_id through serialization", prop.ForAll(
+		func(groupID int64, question string, chatID int64) bool {
+			// Skip invalid inputs
+			if groupID <= 0 || strings.TrimSpace(question) == "" || chatID <= 0 {
+				return true
+			}
+
+			// Create context with group ID
+			ctx := &domain.EventCreationContext{
+				GroupID:  groupID,
+				Question: question,
+				ChatID:   chatID,
+			}
+
+			// Serialize to map
+			data := ctx.ToMap()
+
+			// Deserialize from map
+			ctx2 := &domain.EventCreationContext{}
+			if err := ctx2.FromMap(data); err != nil {
+				t.Logf("Failed to deserialize context: %v", err)
+				return false
+			}
+
+			// Verify group ID is preserved
+			if ctx2.GroupID != groupID {
+				t.Logf("Expected group_id %d, got %d", groupID, ctx2.GroupID)
+				return false
+			}
+
+			// Verify other fields are also preserved
+			if ctx2.Question != question {
+				t.Logf("Question not preserved")
+				return false
+			}
+
+			if ctx2.ChatID != chatID {
+				t.Logf("ChatID not preserved")
+				return false
+			}
+
+			return true
+		},
+		gen.Int64Range(1, 1000),
+		gen.AlphaString().SuchThat(func(s string) bool { return len(strings.TrimSpace(s)) > 0 }),
+		gen.Int64Range(1, 1000000),
+	))
+
+	properties.TestingRun(t)
+}

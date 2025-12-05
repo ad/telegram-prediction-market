@@ -15,6 +15,7 @@ var (
 
 // EventCreationContext holds data during event creation flow
 type EventCreationContext struct {
+	GroupID               int64     `json:"group_id"`
 	Question              string    `json:"question"`
 	EventType             EventType `json:"event_type"`
 	Options               []string  `json:"options"`
@@ -29,6 +30,7 @@ type EventCreationContext struct {
 // ToMap converts EventCreationContext to a map for JSON serialization
 func (c *EventCreationContext) ToMap() map[string]interface{} {
 	return map[string]interface{}{
+		"group_id":                c.GroupID,
 		"question":                c.Question,
 		"event_type":              string(c.EventType),
 		"options":                 c.Options,
@@ -45,6 +47,11 @@ func (c *EventCreationContext) ToMap() map[string]interface{} {
 func (c *EventCreationContext) FromMap(data map[string]interface{}) error {
 	if data == nil {
 		return ErrInvalidContextData
+	}
+
+	// Parse group_id
+	if groupID, ok := data["group_id"].(float64); ok {
+		c.GroupID = int64(groupID)
 	}
 
 	// Parse question

@@ -76,6 +76,8 @@ func main() {
 	ratingRepo := storage.NewRatingRepository(dbQueue)
 	achievementRepo := storage.NewAchievementRepository(dbQueue)
 	reminderRepo := storage.NewReminderRepository(dbQueue)
+	groupRepo := storage.NewGroupRepository(dbQueue)
+	groupMembershipRepo := storage.NewGroupMembershipRepository(dbQueue)
 
 	log.Info("Repositories created")
 
@@ -83,6 +85,7 @@ func main() {
 	eventManager := domain.NewEventManager(eventRepo, predictionRepo, log)
 	ratingCalculator := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, log)
 	achievementTracker := domain.NewAchievementTracker(achievementRepo, ratingRepo, predictionRepo, eventRepo, log)
+	groupContextResolver := domain.NewGroupContextResolver(groupRepo)
 
 	log.Info("Domain managers created")
 
@@ -145,6 +148,7 @@ func main() {
 		b,
 		eventManager,
 		achievementTracker,
+		groupContextResolver,
 		cfg,
 		log,
 	)

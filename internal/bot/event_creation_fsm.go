@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 // FSM state constants
 const (
+	StateSelectGroup  = "select_group"
 	StateAskQuestion  = "ask_question"
 	StateAskEventType = "ask_event_type"
 	StateAskOptions   = "ask_options"
@@ -26,12 +28,13 @@ const (
 
 // EventCreationFSM manages the event creation state machine
 type EventCreationFSM struct {
-	storage            *storage.FSMStorage
-	bot                *bot.Bot
-	eventManager       *domain.EventManager
-	achievementTracker *domain.AchievementTracker
-	config             *config.Config
-	logger             domain.Logger
+	storage              *storage.FSMStorage
+	bot                  *bot.Bot
+	eventManager         *domain.EventManager
+	achievementTracker   *domain.AchievementTracker
+	groupContextResolver *domain.GroupContextResolver
+	config               *config.Config
+	logger               domain.Logger
 }
 
 // NewEventCreationFSM creates a new FSM for event creation
@@ -40,16 +43,18 @@ func NewEventCreationFSM(
 	b *bot.Bot,
 	eventManager *domain.EventManager,
 	achievementTracker *domain.AchievementTracker,
+	groupContextResolver *domain.GroupContextResolver,
 	cfg *config.Config,
 	logger domain.Logger,
 ) *EventCreationFSM {
 	return &EventCreationFSM{
-		storage:            storage,
-		bot:                b,
-		eventManager:       eventManager,
-		achievementTracker: achievementTracker,
-		config:             cfg,
-		logger:             logger,
+		storage:              storage,
+		bot:                  b,
+		eventManager:         eventManager,
+		achievementTracker:   achievementTracker,
+		groupContextResolver: groupContextResolver,
+		config:               cfg,
+		logger:               logger,
 	}
 }
 
@@ -60,16 +65,38 @@ func (f *EventCreationFSM) Start(ctx context.Context, userID int64, chatID int64
 		ChatID: chatID,
 	}
 
-	// Store initial state
-	if err := f.storage.Set(ctx, userID, StateAskQuestion, initialContext.ToMap()); err != nil {
-		f.logger.Error("failed to start FSM session", "user_id", userID, "error", err)
+	// Try to resolve group for user
+	groupID, err := f.groupContextResolver.ResolveGroupForUser(ctx, userID)
+	if err == nil {
+		// User has exactly one group - auto-select it
+		initialContext.GroupID = groupID
+
+		// Store initial state and skip to question
+		if err := f.storage.Set(ctx, userID, StateAskQuestion, initialContext.ToMap()); err != nil {
+			f.logger.Error("failed to start FSM session", "user_id", userID, "error", err)
+			return err
+		}
+
+		f.logger.Info("FSM session started with auto-selected group", "user_id", userID, "group_id", groupID, "state", StateAskQuestion)
+
+		// Send initial message
+		return f.handleAskQuestion(ctx, userID, chatID)
+	} else if err == domain.ErrMultipleGroupsNeedChoice {
+		// User has multiple groups - need to prompt for selection
+		if err := f.storage.Set(ctx, userID, StateSelectGroup, initialContext.ToMap()); err != nil {
+			f.logger.Error("failed to start FSM session", "user_id", userID, "error", err)
+			return err
+		}
+
+		f.logger.Info("FSM session started with group selection", "user_id", userID, "state", StateSelectGroup)
+
+		// Send group selection prompt
+		return f.handleSelectGroup(ctx, userID, chatID)
+	} else {
+		// Error or no groups
+		f.logger.Error("failed to resolve group for user", "user_id", userID, "error", err)
 		return err
 	}
-
-	f.logger.Info("FSM session started", "user_id", userID, "state", StateAskQuestion)
-
-	// Send initial message
-	return f.handleAskQuestion(ctx, userID, chatID)
 }
 
 // HasSession checks if a user has an active FSM session
@@ -177,6 +204,10 @@ func (f *EventCreationFSM) HandleCallback(ctx context.Context, callback *models.
 	}
 
 	// Route based on callback data and state
+	if strings.HasPrefix(data, "select_group:") && state == StateSelectGroup {
+		return f.handleGroupSelectionCallback(ctx, userID, callback, context)
+	}
+
 	if strings.HasPrefix(data, "event_type:") && state == StateAskEventType {
 		return f.handleEventTypeCallback(ctx, userID, callback, context)
 	}
@@ -206,6 +237,103 @@ func (f *EventCreationFSM) sendMessage(ctx context.Context, chatID int64, text s
 		return 0, err
 	}
 	return msg.ID, nil
+}
+
+// handleSelectGroup sends the group selection prompt with inline keyboard
+func (f *EventCreationFSM) handleSelectGroup(ctx context.Context, userID int64, chatID int64) error {
+	// Get user's group choices
+	groups, err := f.groupContextResolver.GetUserGroupChoices(ctx, userID)
+	if err != nil {
+		f.logger.Error("failed to get user group choices", "user_id", userID, "error", err)
+		return err
+	}
+
+	if len(groups) == 0 {
+		// This shouldn't happen as we check in Start, but handle it gracefully
+		_, _ = f.sendMessage(ctx, chatID, "❌ У вас нет доступных групп для создания события.", nil)
+		_ = f.storage.Delete(ctx, userID)
+		return fmt.Errorf("no groups available for user")
+	}
+
+	// Build inline keyboard with group choices
+	var buttons [][]models.InlineKeyboardButton
+	for _, group := range groups {
+		buttons = append(buttons, []models.InlineKeyboardButton{
+			{
+				Text:         group.Name,
+				CallbackData: fmt.Sprintf("select_group:%d", group.ID),
+			},
+		})
+	}
+
+	kb := &models.InlineKeyboardMarkup{
+		InlineKeyboard: buttons,
+	}
+
+	// Send message
+	messageID, err := f.sendMessage(ctx, chatID, "📝 СОЗДАНИЕ НОВОГО СОБЫТИЯ\n\nВыберите группу для события:", kb)
+	if err != nil {
+		return err
+	}
+
+	// Update context with message ID
+	state, data, err := f.storage.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	context := &domain.EventCreationContext{}
+	if err := context.FromMap(data); err != nil {
+		return err
+	}
+
+	context.LastBotMessageID = messageID
+
+	// Save updated context
+	if err := f.storage.Set(ctx, userID, state, context.ToMap()); err != nil {
+		f.logger.Error("failed to update context with message ID", "user_id", userID, "error", err)
+		return err
+	}
+
+	f.logger.Debug("sent group selection prompt", "user_id", userID, "message_id", messageID)
+	return nil
+}
+
+// handleGroupSelectionCallback processes the group selection
+func (f *EventCreationFSM) handleGroupSelectionCallback(ctx context.Context, userID int64, callback *models.CallbackQuery, context *domain.EventCreationContext) error {
+	// Answer callback query to remove loading state
+	_, _ = f.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: callback.ID,
+	})
+
+	// Parse group ID from callback data
+	groupIDStr := strings.TrimPrefix(callback.Data, "select_group:")
+	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
+	if err != nil {
+		f.logger.Error("failed to parse group ID", "user_id", userID, "data", callback.Data, "error", err)
+		return err
+	}
+
+	// Store group ID in context
+	context.GroupID = groupID
+
+	// Delete the group selection message
+	if callback.Message.Message != nil {
+		f.deleteMessages(ctx, callback.Message.Message.Chat.ID, callback.Message.Message.ID)
+	}
+
+	// Transition to ask_question state
+	chatID := callback.Message.Message.Chat.ID
+	f.logger.Info("state transition", "user_id", userID, "old_state", StateSelectGroup, "new_state", StateAskQuestion)
+	if err := f.storage.Set(ctx, userID, StateAskQuestion, context.ToMap()); err != nil {
+		f.logger.Error("failed to transition to ask_question", "user_id", userID, "error", err)
+		return err
+	}
+
+	f.logger.Debug("group selected", "user_id", userID, "group_id", groupID)
+
+	// Send question prompt
+	return f.handleAskQuestion(ctx, userID, chatID)
 }
 
 // handleAskQuestion sends the initial question prompt
@@ -697,6 +825,7 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 	if action == "yes" {
 		// Create the event
 		event := &domain.Event{
+			GroupID:   context.GroupID,
 			Question:  context.Question,
 			EventType: context.EventType,
 			Options:   context.Options,
@@ -795,14 +924,14 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 // sendAchievementNotification sends achievement notification to user and group
 func (f *EventCreationFSM) sendAchievementNotification(ctx context.Context, userID int64, achievement *domain.Achievement) error {
 	achievementNames := map[domain.AchievementCode]string{
-		domain.AchievementSharpshooter:     "🎯 Меткий стрелок",
-		domain.AchievementProphet:          "🔮 Провидец",
-		domain.AchievementRiskTaker:        "🎲 Риск-мейкер",
-		domain.AchievementWeeklyAnalyst:    "📊 Аналитик недели",
-		domain.AchievementVeteran:          "🏆 Старожил",
-		domain.AchievementEventOrganizer:   "🎪 Организатор событий",
-		domain.AchievementActiveOrganizer:  "🎭 Активный организатор",
-		domain.AchievementMasterOrganizer:  "🎬 Мастер организатор",
+		domain.AchievementSharpshooter:    "🎯 Меткий стрелок",
+		domain.AchievementProphet:         "🔮 Провидец",
+		domain.AchievementRiskTaker:       "🎲 Риск-мейкер",
+		domain.AchievementWeeklyAnalyst:   "📊 Аналитик недели",
+		domain.AchievementVeteran:         "🏆 Старожил",
+		domain.AchievementEventOrganizer:  "🎪 Организатор событий",
+		domain.AchievementActiveOrganizer: "🎭 Активный организатор",
+		domain.AchievementMasterOrganizer: "🎬 Мастер организатор",
 	}
 
 	name := achievementNames[achievement.Code]
