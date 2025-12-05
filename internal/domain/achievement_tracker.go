@@ -82,7 +82,7 @@ func (at *AchievementTracker) CheckAndAwardAchievements(ctx context.Context, use
 		}
 	}
 
-	// Check Veteran (50 participations) - Requirement 5.5
+	// Check Veteran (50 participations)
 	totalParticipations := rating.CorrectCount + rating.WrongCount
 	if totalParticipations >= VeteranCount {
 		achievement, err := at.awardAchievementIfNew(ctx, userID, groupID, AchievementVeteran)
@@ -93,7 +93,7 @@ func (at *AchievementTracker) CheckAndAwardAchievements(ctx context.Context, use
 		}
 	}
 
-	// Check Risk Taker (3 minority correct in a row) - Requirement 5.4
+	// Check Risk Taker (3 minority correct in a row)
 	// This requires checking recent predictions
 	isRiskTaker, err := at.checkRiskTakerAchievement(ctx, userID, groupID)
 	if err != nil {

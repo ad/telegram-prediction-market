@@ -477,7 +477,6 @@ func TestCheckCreatorAchievements_Error(t *testing.T) {
 // TestAchievementCalculationIsolation tests Property 30: Achievement Calculation Isolation
 // For any user with participation in multiple groups, achievement eligibility calculations
 // should only consider events and predictions within each specific group independently.
-// Validates: Requirements 10.1, 10.2, 10.3, 10.4
 func TestAchievementCalculationIsolation(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -589,7 +588,6 @@ func TestAchievementCalculationIsolation(t *testing.T) {
 // TestIndependentAchievementEarning tests Property 31: Independent Achievement Earning
 // For any user with memberships in multiple groups, earning the same achievement type
 // in one group should not prevent earning it in another group.
-// Validates: Requirements 10.5
 func TestIndependentAchievementEarning(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -710,7 +708,6 @@ func TestIndependentAchievementEarning(t *testing.T) {
 // TestAchievementGroupAssociation tests Property 24: Achievement-Group Association
 // For any achievement earned by a user, the achievement record should contain
 // the group identifier where it was earned.
-// Validates: Requirements 7.2
 func TestAchievementGroupAssociation(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -804,7 +801,6 @@ func TestAchievementGroupAssociation(t *testing.T) {
 }
 
 // TestAchievementsCalculatedPerGroup tests that achievements are calculated per-group
-// Validates: Requirements 10.1
 func TestAchievementsCalculatedPerGroup(t *testing.T) {
 	ctx := context.Background()
 	achievementRepo := newMockAchievementRepo()
@@ -872,7 +868,6 @@ func TestAchievementsCalculatedPerGroup(t *testing.T) {
 }
 
 // TestEventCountsPerGroup tests that event counts are tracked per-group
-// Validates: Requirements 10.2
 func TestEventCountsPerGroup(t *testing.T) {
 	ctx := context.Background()
 	achievementRepo := newMockAchievementRepo()
@@ -921,7 +916,6 @@ func TestEventCountsPerGroup(t *testing.T) {
 }
 
 // TestSameAchievementInMultipleGroups tests that the same achievement can be earned in multiple groups
-// Validates: Requirements 10.5
 func TestSameAchievementInMultipleGroups(t *testing.T) {
 	ctx := context.Background()
 	achievementRepo := newMockAchievementRepo()

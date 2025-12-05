@@ -14,6 +14,12 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
+// createGroupSession tracks the state of group creation process
+type createGroupSession struct {
+	step      int    // 1 = waiting for name, 2 = waiting for chat ID
+	groupName string // Stored group name from step 1
+}
+
 // BotHandler handles all Telegram bot interactions
 type BotHandler struct {
 	bot                      *bot.Bot
@@ -30,7 +36,7 @@ type BotHandler struct {
 	deepLinkService          *domain.DeepLinkService
 	groupContextResolver     *domain.GroupContextResolver
 	ratingRepo               domain.RatingRepository
-	createGroupState         map[int64]bool // Tracks users in create_group flow
+	createGroupState         map[int64]*createGroupSession // Tracks users in create_group flow
 }
 
 // NewBotHandler creates a new BotHandler with all dependencies
@@ -65,7 +71,7 @@ func NewBotHandler(
 		deepLinkService:          deepLinkService,
 		groupContextResolver:     groupContextResolver,
 		ratingRepo:               ratingRepo,
-		createGroupState:         make(map[int64]bool),
+		createGroupState:         make(map[int64]*createGroupSession),
 	}
 }
 
@@ -1002,8 +1008,8 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 	userID := update.Message.From.ID
 
 	// Check if user is in create_group flow
-	if h.createGroupState[userID] {
-		h.handleCreateGroupInput(ctx, b, update)
+	if session, exists := h.createGroupState[userID]; exists {
+		h.handleCreateGroupInput(ctx, b, update, session)
 		return
 	}
 
@@ -1031,28 +1037,58 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 	// No active conversation - ignore message
 }
 
-// handleCreateGroupInput handles the group name input for create_group flow
-func (h *BotHandler) handleCreateGroupInput(ctx context.Context, b *bot.Bot, update *models.Update) {
+// handleCreateGroupInput handles the group name and chat ID input for create_group flow
+func (h *BotHandler) handleCreateGroupInput(ctx context.Context, b *bot.Bot, update *models.Update, session *createGroupSession) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
-	groupName := strings.TrimSpace(update.Message.Text)
+	input := strings.TrimSpace(update.Message.Text)
 
-	// Clear state
-	delete(h.createGroupState, userID)
+	if session.step == 1 {
+		// Step 1: Validate and store group name
+		if input == "" {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Название группы не может быть пустым. Попробуйте снова:",
+			})
+			return
+		}
 
-	// Validate group name
-	if groupName == "" {
+		// Store group name and move to step 2
+		session.groupName = input
+		session.step = 2
+
+		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text: "✅ Название сохранено: " + input + "\n\n" +
+				"Шаг 2/2: Введите ID группового чата Telegram, к которому будет привязана эта группа.\n\n" +
+				"💡 Как получить ID чата:\n" +
+				"1. Добавьте бота @userinfobot в ваш групповой чат\n" +
+				"2. Он отправит ID чата (например: -1001234567890)\n" +
+				"3. Скопируйте и отправьте этот ID сюда",
+		})
+		if err != nil {
+			h.logger.Error("failed to send chat ID prompt", "error", err)
+		}
+		return
+	}
+
+	// Step 2: Validate and create group with chat ID
+	telegramChatID, err := strconv.ParseInt(input, 10, 64)
+	if err != nil || telegramChatID == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Название группы не может быть пустым.",
+			Text:   "❌ Неверный формат ID чата. Введите числовой ID (например: -1001234567890):",
 		})
 		return
 	}
 
+	// Clear state
+	delete(h.createGroupState, userID)
+
 	// Create group
 	group := &domain.Group{
-		TelegramChatID: chatID,
-		Name:           groupName,
+		TelegramChatID: telegramChatID,
+		Name:           session.groupName,
 		CreatedAt:      time.Now(),
 		CreatedBy:      userID,
 	}
@@ -1061,7 +1097,7 @@ func (h *BotHandler) handleCreateGroupInput(ctx context.Context, b *bot.Bot, upd
 		h.logger.Error("group validation failed", "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка валидации группы.",
+			Text:   "❌ Ошибка валидации группы: " + err.Error(),
 		})
 		return
 	}
@@ -1070,31 +1106,32 @@ func (h *BotHandler) handleCreateGroupInput(ctx context.Context, b *bot.Bot, upd
 		h.logger.Error("failed to create group", "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при создании группы.",
+			Text:   "❌ Ошибка при создании группы: " + err.Error(),
 		})
 		return
 	}
 
 	// Log the action
-	h.logAdminAction(userID, "create_group", group.ID, fmt.Sprintf("Created group: %s", groupName))
+	h.logAdminAction(userID, "create_group", group.ID, fmt.Sprintf("Created group: %s (chat ID: %d)", session.groupName, telegramChatID))
 
 	// Generate deep-link
 	deepLink := h.deepLinkService.GenerateGroupInviteLink(group.ID)
 
 	// Send success message
-	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
 		Text: fmt.Sprintf("✅ Группа создана!\n\n"+
 			"📋 Название: %s\n"+
-			"🆔 ID: %d\n"+
+			"🆔 ID группы: %d\n"+
+			"💬 ID чата: %d\n"+
 			"🔗 Ссылка для приглашения:\n%s",
-			groupName, group.ID, deepLink),
+			session.groupName, group.ID, telegramChatID, deepLink),
 	})
 	if err != nil {
 		h.logger.Error("failed to send success message", "error", err)
 	}
 
-	h.logger.Info("group created", "group_id", group.ID, "name", groupName, "created_by", userID)
+	h.logger.Info("group created", "group_id", group.ID, "name", session.groupName, "telegram_chat_id", telegramChatID, "created_by", userID)
 }
 
 // HandleCallback handles callback queries (button clicks)
@@ -1107,8 +1144,8 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 	userID := callback.From.ID
 	data := callback.Data
 
-	// Check if this is an FSM callback (event_type selection or confirmation)
-	if strings.HasPrefix(data, "event_type:") || strings.HasPrefix(data, "confirm:") {
+	// Check if this is an FSM callback (group selection, event_type selection or confirmation)
+	if strings.HasPrefix(data, "select_group:") || strings.HasPrefix(data, "event_type:") || strings.HasPrefix(data, "confirm:") {
 		// Check if user has active FSM session
 		hasSession, err := h.eventCreationFSM.HasSession(ctx, userID)
 		if err != nil {
@@ -1559,15 +1596,17 @@ func (h *BotHandler) HandleCreateGroup(ctx context.Context, b *bot.Bot, update *
 	// Prompt for group name
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
-		Text:   "🏗️ СОЗДАНИЕ ГРУППЫ\n\nВведите название новой группы:",
+		Text:   "🏗️ СОЗДАНИЕ ГРУППЫ\n\nШаг 1/2: Введите название новой группы:",
 	})
 	if err != nil {
 		h.logger.Error("failed to send create group prompt", "error", err)
 		return
 	}
 
-	// Store state for this admin to expect group name input
-	h.createGroupState[userID] = true
+	// Initialize session for this admin
+	h.createGroupState[userID] = &createGroupSession{
+		step: 1,
+	}
 	h.logger.Info("create_group command initiated", "admin_user_id", userID)
 }
 

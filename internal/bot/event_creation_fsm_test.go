@@ -2054,7 +2054,7 @@ func TestProperty_AtomicSessionUpdates(t *testing.T) {
 }
 
 // TestProperty_EventGroupAssociation tests that EventCreationContext correctly preserves group_id
-// This validates Property 14: Event-Group Association from the design document
+// This validates: Event-Group Association from the design document
 func TestProperty_EventGroupAssociation(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 	properties.Property("event creation context preserves group_id through serialization", prop.ForAll(

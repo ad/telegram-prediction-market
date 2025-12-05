@@ -9,7 +9,6 @@ import (
 )
 
 // TestDeepLinkRoundTrip tests Property 6: Deep-link Round Trip
-// Validates: Requirements 2.1, 2.4
 func TestDeepLinkRoundTrip(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -62,7 +61,6 @@ func TestDeepLinkRoundTrip(t *testing.T) {
 }
 
 // TestDeepLinkFormatValidity tests Property 5: Deep-link Format Validity
-// Validates: Requirements 2.1, 2.3, 2.4
 func TestDeepLinkFormatValidity(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100

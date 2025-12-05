@@ -137,7 +137,6 @@ func TestFSMSessionsTableStructure(t *testing.T) {
 // TestUniqueGroupIdentifiers is a property-based test that verifies
 // all created groups have unique identifiers
 func TestUniqueGroupIdentifiers(t *testing.T) {
-	// Property: For any two groups created by the system, they should have different group identifiers
 	property := func(groupNames []string) bool {
 		if len(groupNames) == 0 {
 			return true

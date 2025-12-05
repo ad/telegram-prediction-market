@@ -15,7 +15,6 @@ import (
 )
 
 // TestGroupListCompleteness tests Property 2: Group List Completeness
-// Validates: Requirements 1.2
 func TestGroupListCompleteness(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100

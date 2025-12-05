@@ -14,9 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Property 36: User Groups List Accuracy
 // For any user with N active memberships, the /groups command should display exactly N groups with their names, join dates, and member counts
-// Validates: Requirements 13.1, 13.2
 func TestProperty_UserGroupsListAccuracy(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 
@@ -151,9 +149,7 @@ func TestProperty_UserGroupsListAccuracy(t *testing.T) {
 	properties.TestingRun(t, gopter.ConsoleReporter(false))
 }
 
-// Property 37: Groups List Ordering
 // For any user with memberships having different join dates, the groups list should be ordered with most recently joined groups first
-// Validates: Requirements 13.4
 func TestProperty_GroupsListOrdering(t *testing.T) {
 	properties := gopter.NewProperties(gopter.DefaultTestParameters())
 

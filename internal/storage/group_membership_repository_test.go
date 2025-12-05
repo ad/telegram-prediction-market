@@ -15,7 +15,6 @@ import (
 )
 
 // TestMultipleMemberships tests Property 11: Multiple Memberships
-// Validates: Requirements 3.5
 func TestMultipleMemberships(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -124,7 +123,6 @@ func TestMultipleMemberships(t *testing.T) {
 }
 
 // TestMembershipIdempotence tests Property 8: Idempotent Membership
-// Validates: Requirements 3.2
 func TestMembershipIdempotence(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -680,7 +678,6 @@ func TestHasActiveMembership(t *testing.T) {
 }
 
 // TestMembershipRemoval tests Property 18: Membership Removal
-// Validates: Requirements 6.1
 func TestMembershipRemoval(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -808,7 +805,6 @@ func TestMembershipRemoval(t *testing.T) {
 }
 
 // TestHistoricalDataPreservation tests Property 20: Historical Data Preservation
-// Validates: Requirements 6.3
 func TestHistoricalDataPreservation(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -946,7 +942,6 @@ func TestHistoricalDataPreservation(t *testing.T) {
 }
 
 // TestRejoinAfterRemoval tests Property 22: Rejoin After Removal
-// Validates: Requirements 6.5
 func TestRejoinAfterRemoval(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100

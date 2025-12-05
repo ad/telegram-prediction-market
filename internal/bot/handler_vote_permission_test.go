@@ -9,7 +9,6 @@ import (
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 )
 
-// Feature: multi-group-support, Property 25: Vote Permission Validation
 // For any user without active membership in an event's group, attempting to vote on that event should be rejected
 func TestVotePermissionValidation_Property(t *testing.T) {
 	ctx := context.Background()

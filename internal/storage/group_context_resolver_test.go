@@ -15,7 +15,6 @@ import (
 )
 
 // TestGroupSelectionListAccuracy tests Property 12: Group Selection List Accuracy
-// Validates: Requirements 4.1
 func TestGroupSelectionListAccuracy(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -129,7 +128,6 @@ func TestGroupSelectionListAccuracy(t *testing.T) {
 }
 
 // TestAutomaticGroupSelection tests Property 13: Automatic Group Selection
-// Validates: Requirements 4.2
 func TestAutomaticGroupSelection(t *testing.T) {
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
