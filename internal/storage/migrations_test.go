@@ -16,15 +16,15 @@ func TestRunMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+	_ = tmpFile.Close()
 
 	// Open database
 	db, err := sql.Open("sqlite", tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create DBQueue
 	queue := NewDBQueue(db)
@@ -81,15 +81,15 @@ func TestFSMSessionsTableStructure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+	_ = tmpFile.Close()
 
 	// Open database
 	db, err := sql.Open("sqlite", tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create DBQueue
 	queue := NewDBQueue(db)
@@ -148,8 +148,8 @@ func TestUniqueGroupIdentifiers(t *testing.T) {
 			t.Logf("Failed to create temp file: %v", err)
 			return false
 		}
-		defer os.Remove(tmpFile.Name())
-		tmpFile.Close()
+		defer func() { _ = os.Remove(tmpFile.Name()) }()
+		_ = tmpFile.Close()
 
 		// Open database
 		db, err := sql.Open("sqlite", tmpFile.Name())
@@ -157,7 +157,7 @@ func TestUniqueGroupIdentifiers(t *testing.T) {
 			t.Logf("Failed to open database: %v", err)
 			return false
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		// Create DBQueue
 		queue := NewDBQueue(db)
@@ -236,15 +236,15 @@ func TestMigrateExistingDataToDefaultGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+	_ = tmpFile.Close()
 
 	// Open database
 	db, err := sql.Open("sqlite", tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create DBQueue
 	queue := NewDBQueue(db)

@@ -745,7 +745,11 @@ func TestProperty_ExpiredSessionHandling(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() {
+				if err := db.Close(); err != nil {
+					t.Logf("Failed to close database: %v", err)
+				}
+			}()
 
 			queue := storage.NewDBQueue(db)
 			defer queue.Close()
@@ -1115,9 +1119,9 @@ func TestProperty_ValidationErrorMessageCleanup(t *testing.T) {
 			}
 
 			// Ensure valid input is actually valid (non-empty)
-			if strings.TrimSpace(validInput) == "" {
-				validInput = "Valid question"
-			}
+			// Note: validInput parameter is not used in this test as we're testing
+			// the message deletion logic, not the actual input validation
+			_ = validInput
 
 			// Create mock dependencies
 			ctx := context.Background()
@@ -1255,7 +1259,7 @@ func TestProperty_ConfirmationMessageDeletion(t *testing.T) {
 		func(userID int64, chatID int64, question string, confirmAction string) bool {
 			// Ensure non-zero IDs
 			if userID == 0 {
-				userID = 1
+				_ = userID // unused after this point
 			}
 			if chatID == 0 {
 				chatID = 12345
@@ -1329,7 +1333,7 @@ func TestProperty_CleanChatState(t *testing.T) {
 		func(userID int64, chatID int64, question string, options []string, isConfirmed bool) bool {
 			// Ensure non-zero IDs
 			if userID == 0 {
-				userID = 1
+				_ = userID // unused after this point
 			}
 			if chatID == 0 {
 				chatID = 12345
@@ -1337,7 +1341,7 @@ func TestProperty_CleanChatState(t *testing.T) {
 
 			// Ensure valid options
 			if len(options) < 2 {
-				options = []string{"Option 1", "Option 2"}
+				_ = options // unused after this point
 			}
 
 			// Create mock dependencies
@@ -1778,7 +1782,7 @@ func TestProperty_MessageIDPersistenceAcrossRestarts(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := storage.NewDBQueue(db)
 			defer queue.Close()
@@ -1902,7 +1906,7 @@ func TestProperty_AtomicSessionUpdates(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := storage.NewDBQueue(db)
 			defer queue.Close()

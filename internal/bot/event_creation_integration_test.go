@@ -283,11 +283,17 @@ func TestIntegration_ConcurrentSessions(t *testing.T) {
 
 	// Verify each session has its own question
 	restored1 := &domain.EventCreationContext{}
-	restored1.FromMap(data1)
+	if err := restored1.FromMap(data1); err != nil {
+		t.Fatalf("Failed to restore context for admin1: %v", err)
+	}
 	restored2 := &domain.EventCreationContext{}
-	restored2.FromMap(data2)
+	if err := restored2.FromMap(data2); err != nil {
+		t.Fatalf("Failed to restore context for admin2: %v", err)
+	}
 	restored3 := &domain.EventCreationContext{}
-	restored3.FromMap(data3)
+	if err := restored3.FromMap(data3); err != nil {
+		t.Fatalf("Failed to restore context for admin3: %v", err)
+	}
 
 	if restored1.Question != question1 {
 		t.Errorf("Admin1 question mismatch: expected %q, got %q", question1, restored1.Question)
@@ -336,9 +342,13 @@ func TestIntegration_ConcurrentSessions(t *testing.T) {
 	}
 
 	restored2After := &domain.EventCreationContext{}
-	restored2After.FromMap(data2After)
+	if err := restored2After.FromMap(data2After); err != nil {
+		t.Fatalf("Failed to restore context for admin2 after: %v", err)
+	}
 	restored3After := &domain.EventCreationContext{}
-	restored3After.FromMap(data3After)
+	if err := restored3After.FromMap(data3After); err != nil {
+		t.Fatalf("Failed to restore context for admin3 after: %v", err)
+	}
 
 	if restored2After.Question != question2 {
 		t.Errorf("Admin2 question changed after admin1 completed: expected %q, got %q", question2, restored2After.Question)
@@ -505,7 +515,7 @@ func TestIntegration_CancellationFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	queue := storage.NewDBQueue(db)
 	defer queue.Close()
@@ -587,7 +597,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	queue := storage.NewDBQueue(db)
 	defer queue.Close()
@@ -1093,7 +1103,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	queue := storage.NewDBQueue(db)
 	defer queue.Close()

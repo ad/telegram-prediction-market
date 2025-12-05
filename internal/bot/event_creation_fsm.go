@@ -73,7 +73,8 @@ func (f *EventCreationFSM) Start(ctx context.Context, userID int64, chatID int64
 
 	// Try to resolve group for user
 	groupID, err := f.groupContextResolver.ResolveGroupForUser(ctx, userID)
-	if err == nil {
+	switch err {
+	case nil:
 		// User has exactly one group - auto-select it
 		initialContext.GroupID = groupID
 
@@ -87,7 +88,7 @@ func (f *EventCreationFSM) Start(ctx context.Context, userID int64, chatID int64
 
 		// Send initial message
 		return f.handleAskQuestion(ctx, userID, chatID)
-	} else if err == domain.ErrMultipleGroupsNeedChoice {
+	case domain.ErrMultipleGroupsNeedChoice:
 		// User has multiple groups - need to prompt for selection
 		if err := f.storage.Set(ctx, userID, StateSelectGroup, initialContext.ToMap()); err != nil {
 			f.logger.Error("failed to start FSM session", "user_id", userID, "error", err)
@@ -98,7 +99,7 @@ func (f *EventCreationFSM) Start(ctx context.Context, userID int64, chatID int64
 
 		// Send group selection prompt
 		return f.handleSelectGroup(ctx, userID, chatID)
-	} else {
+	default:
 		// Error or no groups
 		f.logger.Error("failed to resolve group for user", "user_id", userID, "error", err)
 		return err

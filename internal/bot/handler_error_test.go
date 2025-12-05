@@ -100,7 +100,7 @@ func TestErrorUsageInHandlers(t *testing.T) {
 	t.Run("Handler sends user-friendly messages for unauthorized access", func(t *testing.T) {
 		// This test verifies that the handler code contains user-friendly error messages
 		// The actual message sending is tested in integration tests
-		
+
 		// Verify the error type exists and can be used
 		err := domain.ErrUnauthorized
 		if err == nil {
@@ -116,7 +116,7 @@ func TestErrorUsageInHandlers(t *testing.T) {
 	t.Run("Handler sends user-friendly messages for insufficient participation", func(t *testing.T) {
 		// This test verifies that the handler code contains user-friendly error messages
 		// The actual message sending is tested in integration tests
-		
+
 		// Verify the error type exists and can be used
 		err := domain.ErrInsufficientParticipation
 		if err == nil {
@@ -145,18 +145,20 @@ func TestErrorDistinction(t *testing.T) {
 	t.Run("Errors can be distinguished programmatically", func(t *testing.T) {
 		// Test that we can distinguish between the two errors
 		testErr := domain.ErrUnauthorized
-		
-		if testErr == domain.ErrUnauthorized {
+
+		switch testErr {
+		case domain.ErrUnauthorized:
 			// This is the expected path
-		} else if testErr == domain.ErrInsufficientParticipation {
+		case domain.ErrInsufficientParticipation:
 			t.Error("Should be able to distinguish ErrUnauthorized from ErrInsufficientParticipation")
 		}
 
 		testErr = domain.ErrInsufficientParticipation
-		
-		if testErr == domain.ErrInsufficientParticipation {
+
+		switch testErr {
+		case domain.ErrInsufficientParticipation:
 			// This is the expected path
-		} else if testErr == domain.ErrUnauthorized {
+		case domain.ErrUnauthorized:
 			t.Error("Should be able to distinguish ErrInsufficientParticipation from ErrUnauthorized")
 		}
 	})

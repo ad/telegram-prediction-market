@@ -94,7 +94,7 @@ func (s *FSMStorage) Set(ctx context.Context, userID int64, state string, data m
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Insert or replace session
 		_, err = tx.ExecContext(ctx, `
@@ -137,7 +137,7 @@ func (s *FSMStorage) Delete(ctx context.Context, userID int64) error {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		result, err := tx.ExecContext(ctx, `
 			DELETE FROM fsm_sessions WHERE user_id = ?
@@ -183,7 +183,7 @@ func (s *FSMStorage) CleanupStale(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
 			var userID int64
@@ -212,7 +212,7 @@ func (s *FSMStorage) CleanupStale(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Use SQLite's datetime function to calculate the threshold
 		result, err := tx.ExecContext(ctx, `

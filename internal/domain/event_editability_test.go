@@ -15,13 +15,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// mockLogger implements the domain.Logger interface for testing
-type mockLogger struct{}
+// mockLoggerEditability implements the domain.Logger interface for testing
+type mockLoggerEditability struct{}
 
-func (m *mockLogger) Info(msg string, args ...interface{})  {}
-func (m *mockLogger) Error(msg string, args ...interface{}) {}
-func (m *mockLogger) Debug(msg string, args ...interface{}) {}
-func (m *mockLogger) Warn(msg string, args ...interface{})  {}
+func (m *mockLoggerEditability) Info(msg string, args ...interface{})  {}
+func (m *mockLoggerEditability) Error(msg string, args ...interface{}) {}
+func (m *mockLoggerEditability) Debug(msg string, args ...interface{}) {}
+func (m *mockLoggerEditability) Warn(msg string, args ...interface{})  {}
 
 // setupTestDB creates an in-memory database with schema for testing
 func setupTestDB(t *testing.T) (*storage.DBQueue, *domain.EventManager) {
@@ -39,7 +39,7 @@ func setupTestDB(t *testing.T) (*storage.DBQueue, *domain.EventManager) {
 
 	eventRepo := storage.NewEventRepository(queue)
 	predictionRepo := storage.NewPredictionRepository(queue)
-	logger := &mockLogger{}
+	logger := &mockLoggerEditability{}
 
 	manager := domain.NewEventManager(eventRepo, predictionRepo, logger)
 

@@ -51,10 +51,10 @@ type sleepFunc func(time.Duration)
 // defaultSleep is the default sleep function
 var defaultSleep sleepFunc = time.Sleep
 
-// deleteMessageWithRetry attempts to delete a single message with retry logic for rate limits
-func deleteMessageWithRetry(ctx context.Context, b MessageDeleter, logger domain.Logger, chatID int64, messageID int) error {
-	return deleteMessageWithRetryAndSleep(ctx, b, logger, chatID, messageID, defaultSleep)
-}
+// // deleteMessageWithRetry attempts to delete a single message with retry logic for rate limits
+// func deleteMessageWithRetry(ctx context.Context, b MessageDeleter, logger domain.Logger, chatID int64, messageID int) error {
+// 	return deleteMessageWithRetryAndSleep(ctx, b, logger, chatID, messageID, defaultSleep)
+// }
 
 // deleteMessageWithRetryAndSleep is the internal implementation that accepts a sleep function
 func deleteMessageWithRetryAndSleep(ctx context.Context, b MessageDeleter, logger domain.Logger, chatID int64, messageID int, sleep sleepFunc) error {

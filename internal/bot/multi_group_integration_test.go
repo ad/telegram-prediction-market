@@ -36,7 +36,7 @@ func setupMultiGroupTestDB(t *testing.T) (*storage.DBQueue, func()) {
 
 	cleanup := func() {
 		queue.Close()
-		db.Close()
+		defer func() { _ = db.Close() }()
 	}
 
 	return queue, cleanup
@@ -1106,7 +1106,7 @@ func TestIntegration_DataMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	queue := storage.NewDBQueue(db)
 	defer queue.Close()

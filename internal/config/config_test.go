@@ -20,16 +20,16 @@ func TestInvalidConfigRejection(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("MIN_EVENTS_TO_CREATE", origMinEvents)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("MIN_EVENTS_TO_CREATE", origMinEvents)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
@@ -37,7 +37,7 @@ func TestInvalidConfigRejection(t *testing.T) {
 
 	properties.Property("invalid MIN_EVENTS_TO_CREATE values are rejected", prop.ForAll(
 		func(invalidValue string) bool {
-			os.Setenv("MIN_EVENTS_TO_CREATE", invalidValue)
+			_ = os.Setenv("MIN_EVENTS_TO_CREATE", invalidValue)
 
 			config, err := Load()
 
@@ -74,19 +74,19 @@ func TestMinEventsToCreateDefault(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("MIN_EVENTS_TO_CREATE", origMinEvents)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("MIN_EVENTS_TO_CREATE", origMinEvents)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	// Unset MIN_EVENTS_TO_CREATE to test default
-	os.Unsetenv("MIN_EVENTS_TO_CREATE")
+	_ = os.Unsetenv("MIN_EVENTS_TO_CREATE")
 
 	config, err := Load()
 	if err != nil {
@@ -108,16 +108,16 @@ func TestMinEventsToCreateValidValues(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("MIN_EVENTS_TO_CREATE", origMinEvents)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("MIN_EVENTS_TO_CREATE", origMinEvents)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	testCases := []struct {
 		name     string
@@ -133,7 +133,7 @@ func TestMinEventsToCreateValidValues(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			os.Setenv("MIN_EVENTS_TO_CREATE", tc.value)
+			_ = os.Setenv("MIN_EVENTS_TO_CREATE", tc.value)
 
 			config, err := Load()
 			if err != nil {
@@ -157,16 +157,16 @@ func TestMinEventsToCreateInvalidValues(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("MIN_EVENTS_TO_CREATE", origMinEvents)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("MIN_EVENTS_TO_CREATE", origMinEvents)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	testCases := []struct {
 		name  string
@@ -182,7 +182,7 @@ func TestMinEventsToCreateInvalidValues(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			os.Setenv("MIN_EVENTS_TO_CREATE", tc.value)
+			_ = os.Setenv("MIN_EVENTS_TO_CREATE", tc.value)
 
 			config, err := Load()
 			if err == nil {
@@ -202,19 +202,19 @@ func TestDefaultGroupNameDefault(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("DEFAULT_GROUP_NAME", origDefaultGroupName)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("DEFAULT_GROUP_NAME", origDefaultGroupName)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	// Unset DEFAULT_GROUP_NAME to test default
-	os.Unsetenv("DEFAULT_GROUP_NAME")
+	_ = os.Unsetenv("DEFAULT_GROUP_NAME")
 
 	config, err := Load()
 	if err != nil {
@@ -236,16 +236,16 @@ func TestDefaultGroupNameCustomValue(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("DEFAULT_GROUP_NAME", origDefaultGroupName)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("DEFAULT_GROUP_NAME", origDefaultGroupName)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	testCases := []struct {
 		name     string
@@ -261,7 +261,7 @@ func TestDefaultGroupNameCustomValue(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			os.Setenv("DEFAULT_GROUP_NAME", tc.value)
+			_ = os.Setenv("DEFAULT_GROUP_NAME", tc.value)
 
 			config, err := Load()
 			if err != nil {
@@ -285,19 +285,19 @@ func TestMaxGroupsPerAdminDefault(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("MAX_GROUPS_PER_ADMIN", origMaxGroups)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("MAX_GROUPS_PER_ADMIN", origMaxGroups)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	// Unset MAX_GROUPS_PER_ADMIN to test default
-	os.Unsetenv("MAX_GROUPS_PER_ADMIN")
+	_ = os.Unsetenv("MAX_GROUPS_PER_ADMIN")
 
 	config, err := Load()
 	if err != nil {
@@ -319,16 +319,16 @@ func TestMaxGroupsPerAdminValidValues(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("MAX_GROUPS_PER_ADMIN", origMaxGroups)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("MAX_GROUPS_PER_ADMIN", origMaxGroups)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	testCases := []struct {
 		name     string
@@ -344,7 +344,7 @@ func TestMaxGroupsPerAdminValidValues(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			os.Setenv("MAX_GROUPS_PER_ADMIN", tc.value)
+			_ = os.Setenv("MAX_GROUPS_PER_ADMIN", tc.value)
 
 			config, err := Load()
 			if err != nil {
@@ -368,16 +368,16 @@ func TestMaxGroupsPerAdminInvalidValues(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("MAX_GROUPS_PER_ADMIN", origMaxGroups)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("MAX_GROUPS_PER_ADMIN", origMaxGroups)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	testCases := []struct {
 		name  string
@@ -394,7 +394,7 @@ func TestMaxGroupsPerAdminInvalidValues(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			os.Setenv("MAX_GROUPS_PER_ADMIN", tc.value)
+			_ = os.Setenv("MAX_GROUPS_PER_ADMIN", tc.value)
 
 			config, err := Load()
 			if err == nil {
@@ -414,19 +414,19 @@ func TestMaxMembershipsPerUserDefault(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("MAX_MEMBERSHIPS_PER_USER", origMaxMemberships)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("MAX_MEMBERSHIPS_PER_USER", origMaxMemberships)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	// Unset MAX_MEMBERSHIPS_PER_USER to test default
-	os.Unsetenv("MAX_MEMBERSHIPS_PER_USER")
+	_ = os.Unsetenv("MAX_MEMBERSHIPS_PER_USER")
 
 	config, err := Load()
 	if err != nil {
@@ -448,16 +448,16 @@ func TestMaxMembershipsPerUserValidValues(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("MAX_MEMBERSHIPS_PER_USER", origMaxMemberships)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("MAX_MEMBERSHIPS_PER_USER", origMaxMemberships)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	testCases := []struct {
 		name     string
@@ -473,7 +473,7 @@ func TestMaxMembershipsPerUserValidValues(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			os.Setenv("MAX_MEMBERSHIPS_PER_USER", tc.value)
+			_ = os.Setenv("MAX_MEMBERSHIPS_PER_USER", tc.value)
 
 			config, err := Load()
 			if err != nil {
@@ -497,16 +497,16 @@ func TestMaxMembershipsPerUserInvalidValues(t *testing.T) {
 
 	defer func() {
 		// Restore original env vars
-		os.Setenv("TELEGRAM_TOKEN", origToken)
-		os.Setenv("GROUP_ID", origGroupID)
-		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		os.Setenv("MAX_MEMBERSHIPS_PER_USER", origMaxMemberships)
+		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
+		_ = os.Setenv("GROUP_ID", origGroupID)
+		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		_ = os.Setenv("MAX_MEMBERSHIPS_PER_USER", origMaxMemberships)
 	}()
 
 	// Set required valid env vars
-	os.Setenv("TELEGRAM_TOKEN", "test_token")
-	os.Setenv("GROUP_ID", "123456")
-	os.Setenv("ADMIN_USER_IDS", "111,222")
+	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
+	_ = os.Setenv("GROUP_ID", "123456")
+	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
 
 	testCases := []struct {
 		name  string
@@ -523,7 +523,7 @@ func TestMaxMembershipsPerUserInvalidValues(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			os.Setenv("MAX_MEMBERSHIPS_PER_USER", tc.value)
+			_ = os.Setenv("MAX_MEMBERSHIPS_PER_USER", tc.value)
 
 			config, err := Load()
 			if err == nil {

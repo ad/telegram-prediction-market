@@ -797,11 +797,11 @@ func (h *BotHandler) HandlePollAnswer(ctx context.Context, b *bot.Bot, update *m
 	pollID := pollAnswer.PollID
 
 	// Get event by poll ID
-	event, err := h.eventManager.GetEvent(ctx, 0) // We need to find by poll ID
-	if err != nil {
-		h.logger.Error("failed to get event", "poll_id", pollID, "error", err)
-		return
-	}
+	// event, err := h.eventManager.GetEvent(ctx, 0) // We need to find by poll ID
+	// if err != nil {
+	// 	h.logger.Error("failed to get event", "poll_id", pollID, "error", err)
+	// 	return
+	// }
 
 	// Find event by poll ID - we need to search through user's groups
 	groups, err := h.groupRepo.GetUserGroups(ctx, userID)
@@ -833,7 +833,7 @@ func (h *BotHandler) HandlePollAnswer(ctx context.Context, b *bot.Bot, update *m
 		return
 	}
 
-	event = matchedEvent
+	event := matchedEvent
 
 	// Verify user has active membership in the event's group
 	hasActiveMembership, err := h.groupMembershipRepo.HasActiveMembership(ctx, event.GroupID, userID)

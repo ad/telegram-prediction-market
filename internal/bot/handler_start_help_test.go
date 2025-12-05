@@ -120,6 +120,9 @@ func TestProperty_InvalidGroupRejection(t *testing.T) {
 
 			// Try to get membership for non-existent group
 			membership, err := groupMembershipRepo.GetMembership(ctx, invalidGroupID, userID)
+			if err != nil {
+				t.Log(err)
+			}
 
 			// Membership should be nil for non-existent group
 			return membership == nil

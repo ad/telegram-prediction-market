@@ -109,7 +109,7 @@ func columnExists(db *sql.DB, tableName, columnName string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var cid int
@@ -232,7 +232,7 @@ func MigrateExistingDataToDefaultGroup(queue *DBQueue, defaultGroupName string, 
 		if err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Check if there's any existing data that needs migration
 		var hasEvents, hasRatings, hasAchievements bool

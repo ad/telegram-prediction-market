@@ -116,11 +116,7 @@ func TestDeepLinkFormatValidity(t *testing.T) {
 					break
 				}
 			}
-			if !hasUsername {
-				return false
-			}
-
-			return true
+			return hasUsername
 		},
 		gen.Int64(),
 		gen.AlphaString().SuchThat(func(s string) bool { return len(s) > 0 && len(s) < 50 }),

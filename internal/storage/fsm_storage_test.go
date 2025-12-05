@@ -24,7 +24,7 @@ func TestFSMStatePersistenceOnStart(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := NewDBQueue(db)
 			defer queue.Close()
@@ -102,7 +102,7 @@ func TestFSMStatePersistenceOnTransitions(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := NewDBQueue(db)
 			defer queue.Close()
@@ -185,7 +185,7 @@ func TestFSMSessionCleanupOnCompletion(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := NewDBQueue(db)
 			defer queue.Close()
@@ -268,7 +268,7 @@ func TestStaleSessionExpiration(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := NewDBQueue(db)
 			defer queue.Close()
@@ -359,7 +359,7 @@ func TestStartupStaleSessionCleanup(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := NewDBQueue(db)
 			defer queue.Close()
@@ -452,7 +452,7 @@ func TestCorruptedSessionCleanup(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := NewDBQueue(db)
 			defer queue.Close()
@@ -552,7 +552,7 @@ func TestStaleSessionCleanupLogging(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := NewDBQueue(db)
 			defer queue.Close()
@@ -667,7 +667,7 @@ func TestSessionIsolationByUser(t *testing.T) {
 				t.Logf("Failed to open database: %v", err)
 				return false
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			queue := NewDBQueue(db)
 			defer queue.Close()
