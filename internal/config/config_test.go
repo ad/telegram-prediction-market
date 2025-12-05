@@ -191,3 +191,86 @@ func TestMinEventsToCreateInvalidValues(t *testing.T) {
 		})
 	}
 }
+
+// TestDefaultGroupNameDefault tests that default value is used when not set
+func TestDefaultGroupNameDefault(t *testing.T) {
+	// Save original env vars
+	origToken := os.Getenv("TELEGRAM_TOKEN")
+	origGroupID := os.Getenv("GROUP_ID")
+	origAdminIDs := os.Getenv("ADMIN_USER_IDS")
+	origDefaultGroupName := os.Getenv("DEFAULT_GROUP_NAME")
+
+	defer func() {
+		// Restore original env vars
+		os.Setenv("TELEGRAM_TOKEN", origToken)
+		os.Setenv("GROUP_ID", origGroupID)
+		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		os.Setenv("DEFAULT_GROUP_NAME", origDefaultGroupName)
+	}()
+
+	// Set required valid env vars
+	os.Setenv("TELEGRAM_TOKEN", "test_token")
+	os.Setenv("GROUP_ID", "123456")
+	os.Setenv("ADMIN_USER_IDS", "111,222")
+
+	// Unset DEFAULT_GROUP_NAME to test default
+	os.Unsetenv("DEFAULT_GROUP_NAME")
+
+	config, err := Load()
+	if err != nil {
+		t.Fatalf("Expected no error when DEFAULT_GROUP_NAME not set, got: %v", err)
+	}
+
+	if config.DefaultGroupName != "Default Group" {
+		t.Errorf("Expected default DefaultGroupName to be 'Default Group', got: %s", config.DefaultGroupName)
+	}
+}
+
+// TestDefaultGroupNameCustomValue tests that custom values are accepted
+func TestDefaultGroupNameCustomValue(t *testing.T) {
+	// Save original env vars
+	origToken := os.Getenv("TELEGRAM_TOKEN")
+	origGroupID := os.Getenv("GROUP_ID")
+	origAdminIDs := os.Getenv("ADMIN_USER_IDS")
+	origDefaultGroupName := os.Getenv("DEFAULT_GROUP_NAME")
+
+	defer func() {
+		// Restore original env vars
+		os.Setenv("TELEGRAM_TOKEN", origToken)
+		os.Setenv("GROUP_ID", origGroupID)
+		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		os.Setenv("DEFAULT_GROUP_NAME", origDefaultGroupName)
+	}()
+
+	// Set required valid env vars
+	os.Setenv("TELEGRAM_TOKEN", "test_token")
+	os.Setenv("GROUP_ID", "123456")
+	os.Setenv("ADMIN_USER_IDS", "111,222")
+
+	testCases := []struct {
+		name     string
+		value    string
+		expected string
+	}{
+		{"simple name", "My Group", "My Group"},
+		{"with special chars", "Test Group #1", "Test Group #1"},
+		{"with unicode", "Группа 测试", "Группа 测试"},
+		{"empty string uses default", "", "Default Group"},
+		{"single char", "A", "A"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Setenv("DEFAULT_GROUP_NAME", tc.value)
+
+			config, err := Load()
+			if err != nil {
+				t.Fatalf("Expected no error for value '%s', got: %v", tc.value, err)
+			}
+
+			if config.DefaultGroupName != tc.expected {
+				t.Errorf("Expected DefaultGroupName to be '%s', got: '%s'", tc.expected, config.DefaultGroupName)
+			}
+		})
+	}
+}

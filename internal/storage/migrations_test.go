@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"os"
 	"testing"
+	"testing/quick"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -27,6 +29,11 @@ func TestRunMigrations(t *testing.T) {
 	// Create DBQueue
 	queue := NewDBQueue(db)
 	defer queue.Close()
+
+	// Initialize base schema first
+	if err := InitSchema(queue); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
 
 	// Run migrations
 	if err := RunMigrations(queue); err != nil {
@@ -124,5 +131,236 @@ func TestFSMSessionsTableStructure(t *testing.T) {
 	}
 	if contextJSON != `{"question":"test"}` {
 		t.Errorf("Expected context_json '{\"question\":\"test\"}', got %s", contextJSON)
+	}
+}
+
+// TestUniqueGroupIdentifiers is a property-based test that verifies
+// all created groups have unique identifiers
+func TestUniqueGroupIdentifiers(t *testing.T) {
+	// Property: For any two groups created by the system, they should have different group identifiers
+	property := func(groupNames []string) bool {
+		if len(groupNames) == 0 {
+			return true
+		}
+
+		// Create temporary database
+		tmpFile, err := os.CreateTemp("", "test_unique_groups_*.db")
+		if err != nil {
+			t.Logf("Failed to create temp file: %v", err)
+			return false
+		}
+		defer os.Remove(tmpFile.Name())
+		tmpFile.Close()
+
+		// Open database
+		db, err := sql.Open("sqlite", tmpFile.Name())
+		if err != nil {
+			t.Logf("Failed to open database: %v", err)
+			return false
+		}
+		defer db.Close()
+
+		// Create DBQueue
+		queue := NewDBQueue(db)
+		defer queue.Close()
+
+		// Initialize schema and run migrations
+		if err := InitSchema(queue); err != nil {
+			t.Logf("Failed to initialize schema: %v", err)
+			return false
+		}
+
+		if err := RunMigrations(queue); err != nil {
+			t.Logf("Failed to run migrations: %v", err)
+			return false
+		}
+
+		// Create groups and collect their IDs
+		groupIDs := make(map[int64]bool)
+		createdBy := int64(1)
+
+		for i, name := range groupNames {
+			// Use a non-empty name
+			if name == "" {
+				name = "Group"
+			}
+			// Make names unique to avoid issues
+			uniqueName := name + string(rune(i))
+
+			var groupID int64
+			err := queue.Execute(func(db *sql.DB) error {
+				result, err := db.Exec(
+					"INSERT INTO groups (name, created_at, created_by) VALUES (?, ?, ?)",
+					uniqueName,
+					time.Now(),
+					createdBy,
+				)
+				if err != nil {
+					return err
+				}
+				groupID, err = result.LastInsertId()
+				return err
+			})
+
+			if err != nil {
+				t.Logf("Failed to create group: %v", err)
+				return false
+			}
+
+			// Check if this ID already exists
+			if groupIDs[groupID] {
+				t.Logf("Duplicate group ID found: %d", groupID)
+				return false
+			}
+			groupIDs[groupID] = true
+		}
+
+		// All group IDs should be unique
+		return len(groupIDs) == len(groupNames)
+	}
+
+	// Run property test with 100 iterations
+	config := &quick.Config{
+		MaxCount: 100,
+	}
+
+	if err := quick.Check(property, config); err != nil {
+		t.Errorf("Property test failed: %v", err)
+	}
+}
+
+// TestMigrateExistingDataToDefaultGroup tests the data migration function
+func TestMigrateExistingDataToDefaultGroup(t *testing.T) {
+	// Create temporary database
+	tmpFile, err := os.CreateTemp("", "test_data_migration_*.db")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	// Open database
+	db, err := sql.Open("sqlite", tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	// Create DBQueue
+	queue := NewDBQueue(db)
+	defer queue.Close()
+
+	// Initialize base schema
+	if err := InitSchema(queue); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Insert some test data before migration
+	err = queue.Execute(func(db *sql.DB) error {
+		// Insert test events
+		_, err := db.Exec(`
+			INSERT INTO events (question, options_json, created_at, deadline, status, event_type, created_by)
+			VALUES ('Test Event 1', '["Yes", "No"]', datetime('now'), datetime('now', '+1 day'), 'active', 'binary', 123)
+		`)
+		if err != nil {
+			return err
+		}
+
+		// Insert test ratings
+		_, err = db.Exec(`
+			INSERT INTO ratings (user_id, username, score, correct_count, wrong_count, streak)
+			VALUES (123, 'testuser', 100, 5, 2, 3)
+		`)
+		if err != nil {
+			return err
+		}
+
+		// Insert test achievements
+		_, err = db.Exec(`
+			INSERT INTO achievements (user_id, code, timestamp)
+			VALUES (123, 'first_prediction', datetime('now'))
+		`)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("Failed to insert test data: %v", err)
+	}
+
+	// Run migrations (this will add the group_id columns)
+	if err := RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	// Run data migration
+	defaultGroupName := "Test Default Group"
+	createdBy := int64(1)
+	if err := MigrateExistingDataToDefaultGroup(queue, defaultGroupName, createdBy); err != nil {
+		t.Fatalf("Failed to migrate data: %v", err)
+	}
+
+	// Verify default group was created
+	var groupID int64
+	var groupName string
+	err = db.QueryRow("SELECT id, name FROM groups WHERE name = ?", defaultGroupName).Scan(&groupID, &groupName)
+	if err != nil {
+		t.Fatalf("Failed to find default group: %v", err)
+	}
+	if groupName != defaultGroupName {
+		t.Errorf("Expected group name '%s', got '%s'", defaultGroupName, groupName)
+	}
+
+	// Verify events were associated with default group
+	var eventGroupID int64
+	err = db.QueryRow("SELECT group_id FROM events WHERE question = 'Test Event 1'").Scan(&eventGroupID)
+	if err != nil {
+		t.Fatalf("Failed to query event: %v", err)
+	}
+	if eventGroupID != groupID {
+		t.Errorf("Expected event group_id %d, got %d", groupID, eventGroupID)
+	}
+
+	// Verify ratings were associated with default group
+	var ratingGroupID int64
+	err = db.QueryRow("SELECT group_id FROM ratings WHERE user_id = 123").Scan(&ratingGroupID)
+	if err != nil {
+		t.Fatalf("Failed to query rating: %v", err)
+	}
+	if ratingGroupID != groupID {
+		t.Errorf("Expected rating group_id %d, got %d", groupID, ratingGroupID)
+	}
+
+	// Verify achievements were associated with default group
+	var achievementGroupID int64
+	err = db.QueryRow("SELECT group_id FROM achievements WHERE user_id = 123").Scan(&achievementGroupID)
+	if err != nil {
+		t.Fatalf("Failed to query achievement: %v", err)
+	}
+	if achievementGroupID != groupID {
+		t.Errorf("Expected achievement group_id %d, got %d", groupID, achievementGroupID)
+	}
+
+	// Verify group membership was created
+	var membershipCount int
+	err = db.QueryRow("SELECT COUNT(*) FROM group_memberships WHERE group_id = ? AND user_id = 123", groupID).Scan(&membershipCount)
+	if err != nil {
+		t.Fatalf("Failed to query group membership: %v", err)
+	}
+	if membershipCount != 1 {
+		t.Errorf("Expected 1 group membership, got %d", membershipCount)
+	}
+
+	// Verify migration is idempotent (running again should not create duplicate data)
+	if err := MigrateExistingDataToDefaultGroup(queue, defaultGroupName, createdBy); err != nil {
+		t.Fatalf("Failed to run migration second time: %v", err)
+	}
+
+	// Verify only one default group exists
+	var groupCount int
+	err = db.QueryRow("SELECT COUNT(*) FROM groups").Scan(&groupCount)
+	if err != nil {
+		t.Fatalf("Failed to count groups: %v", err)
+	}
+	if groupCount != 1 {
+		t.Errorf("Expected 1 group after second migration, got %d", groupCount)
 	}
 }

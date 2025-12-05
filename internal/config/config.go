@@ -12,11 +12,12 @@ import (
 type Config struct {
 	TelegramToken     string
 	AdminUserIDs      []int64
-	GroupID           int64
 	DatabasePath      string
 	LogLevel          string
 	Timezone          *time.Location
-	MinEventsToCreate int // Minimum completed events to create new events
+	MinEventsToCreate int    // Minimum completed events to create new events
+	GroupID           int64
+	DefaultGroupName  string // Name for default group during migration
 }
 
 // Load loads configuration from environment variables
@@ -78,14 +79,21 @@ func Load() (*Config, error) {
 		minEventsToCreate = minEvents
 	}
 
+	// Load default group name (default to "Default Group")
+	defaultGroupName := os.Getenv("DEFAULT_GROUP_NAME")
+	if defaultGroupName == "" {
+		defaultGroupName = "Default Group"
+	}
+
 	return &Config{
 		TelegramToken:     token,
 		AdminUserIDs:      adminIDs,
-		GroupID:           groupID,
 		DatabasePath:      dbPath,
 		LogLevel:          logLevel,
 		Timezone:          timezone,
 		MinEventsToCreate: minEventsToCreate,
+		GroupID:           groupID,
+		DefaultGroupName:  defaultGroupName,
 	}, nil
 }
 
