@@ -591,7 +591,7 @@ func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   "📝 СОЗДАНИЕ НОВОГО СОБЫТИЯ\n════════════════════\n\nВведите вопрос для прогноза:",
+		Text:   "📝 СОЗДАНИЕ НОВОГО СОБЫТИЯ\n\nВведите вопрос для прогноза:",
 	})
 	if err != nil {
 		h.logger.Error("failed to send create event message", "error", err)
