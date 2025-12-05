@@ -30,6 +30,7 @@ type EventRepository interface {
 	GetResolvedEvents(ctx context.Context) ([]*Event, error)
 	UpdateEvent(ctx context.Context, event *Event) error
 	ResolveEvent(ctx context.Context, eventID int64, correctOption int) error
+	GetUserCreatedEventsCount(ctx context.Context, userID int64) (int, error)
 }
 
 // PredictionRepository interface for prediction operations
@@ -39,6 +40,7 @@ type PredictionRepository interface {
 	GetPredictionsByEvent(ctx context.Context, eventID int64) ([]*Prediction, error)
 	GetPredictionByUserAndEvent(ctx context.Context, userID, eventID int64) (*Prediction, error)
 	GetUserPredictions(ctx context.Context, userID int64) ([]*Prediction, error)
+	GetUserCompletedEventCount(ctx context.Context, userID int64) (int, error)
 }
 
 // EventManager manages event operations and business logic

@@ -160,6 +160,10 @@ func (m *MockEventRepo) GetResolvedEvents(ctx context.Context) ([]*Event, error)
 	return []*Event{}, nil
 }
 
+func (m *MockEventRepo) GetUserCreatedEventsCount(ctx context.Context, userID int64) (int, error) {
+	return 0, nil
+}
+
 type MockPredictionRepo struct{}
 
 func (m *MockPredictionRepo) SavePrediction(ctx context.Context, prediction *Prediction) error {
@@ -180,6 +184,10 @@ func (m *MockPredictionRepo) GetPredictionByUserAndEvent(ctx context.Context, us
 
 func (m *MockPredictionRepo) GetUserPredictions(ctx context.Context, userID int64) ([]*Prediction, error) {
 	return []*Prediction{}, nil
+}
+
+func (m *MockPredictionRepo) GetUserCompletedEventCount(ctx context.Context, userID int64) (int, error) {
+	return 0, nil
 }
 
 type MockRatingRepo struct{}
@@ -432,6 +440,10 @@ func (m *MockEventRepoWithData) GetResolvedEvents(ctx context.Context) ([]*Event
 	return []*Event{m.event}, nil
 }
 
+func (m *MockEventRepoWithData) GetUserCreatedEventsCount(ctx context.Context, userID int64) (int, error) {
+	return 0, nil
+}
+
 type MockPredictionRepoWithData struct {
 	predictions []*Prediction
 }
@@ -454,6 +466,10 @@ func (m *MockPredictionRepoWithData) GetPredictionByUserAndEvent(ctx context.Con
 
 func (m *MockPredictionRepoWithData) GetUserPredictions(ctx context.Context, userID int64) ([]*Prediction, error) {
 	return m.predictions, nil
+}
+
+func (m *MockPredictionRepoWithData) GetUserCompletedEventCount(ctx context.Context, userID int64) (int, error) {
+	return 0, nil
 }
 
 type MockRatingRepoWithData struct {
