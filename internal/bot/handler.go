@@ -875,7 +875,7 @@ func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, call
 		}
 
 		// Publish results to group
-		h.publishEventResults(ctx, b, event, optionIndex)
+		h.publishEventResults(ctx, b, event, optionIndex, userID)
 
 		// Send confirmation to user
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -942,7 +942,7 @@ func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, call
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      callback.Message.Message.Chat.ID,
-		Text:        fmt.Sprintf("🎯 ВЫБОР ПРАВИЛЬНОГО ОТВЕТА\n════════════════════\n\n▸ Событие: %s\n\nВыберите правильный ответ:", event.Question),
+		Text:        fmt.Sprintf("🎯 ВЫБОР ПРАВИЛЬНОГО ОТВЕТА\n\n▸ Событие: %s\n\nВыберите правильный ответ:", event.Question),
 		ReplyMarkup: kb,
 	})
 	if err != nil {
@@ -950,7 +950,7 @@ func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, call
 	}
 }
 
-func (h *BotHandler) publishEventResults(ctx context.Context, b *bot.Bot, event *domain.Event, correctOption int) {
+func (h *BotHandler) publishEventResults(ctx context.Context, b *bot.Bot, event *domain.Event, correctOption int, resolverID int64) {
 	// Get all predictions
 	predictions, err := h.predictionRepo.GetPredictionsByEvent(ctx, event.ID)
 	if err != nil {
@@ -973,18 +973,29 @@ func (h *BotHandler) publishEventResults(ctx context.Context, b *bot.Bot, event 
 		topRatings = []*domain.Rating{}
 	}
 
+	// Get resolver display name
+	resolverDisplayName := h.getUserDisplayName(ctx, resolverID)
+
+	// Determine if resolver is admin or creator
+	isAdmin := h.isAdmin(resolverID)
+	isCreator := event.CreatedBy == resolverID
+
 	// Build results message
 	var sb strings.Builder
-	sb.WriteString("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n")
-	sb.WriteString("════════════════════\n\n")
+	sb.WriteString("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n\n")
 	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
 	sb.WriteString(fmt.Sprintf("✅ Правильный ответ:\n%s\n\n", event.Options[correctOption]))
 	sb.WriteString(fmt.Sprintf("📊 Угадали: %d из %d участников\n", correctCount, len(predictions)))
 
+	// Add resolver information with role distinction
+	if isAdmin && !isCreator {
+		sb.WriteString(fmt.Sprintf("\n👤 Завершил (администратор): %s\n", resolverDisplayName))
+	} else {
+		sb.WriteString(fmt.Sprintf("\n👤 Завершил (создатель): %s\n", resolverDisplayName))
+	}
+
 	if len(topRatings) > 0 {
-		sb.WriteString("\n════════════════════\n")
-		sb.WriteString("🏆 ТОП-5 УЧАСТНИКОВ\n")
-		sb.WriteString("════════════════════\n\n")
+		sb.WriteString("\n🏆 ТОП-5 УЧАСТНИКОВ\n\n")
 		medals := []string{"🥇", "🥈", "🥉", "4.", "5."}
 		for i, rating := range topRatings {
 			sb.WriteString(fmt.Sprintf("%s %d очков\n", medals[i], rating.Score))
