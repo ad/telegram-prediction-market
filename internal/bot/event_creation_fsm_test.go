@@ -826,3 +826,297 @@ func TestProperty_ExpiredSessionHandling(t *testing.T) {
 
 	properties.TestingRun(t)
 }
+
+// Feature: event-creation-ux-improvement, Property 13: Message routing to correct session
+// **Validates: Requirements 4.2**
+func TestProperty_MessageRoutingToCorrectSession(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("messages from admins are routed to their specific session using user_id", prop.ForAll(
+		func(userIDs []int64, questions []string) bool {
+			// Ensure we have at least one user
+			if len(userIDs) == 0 || len(questions) == 0 {
+				return true // Skip empty inputs
+			}
+
+			// Deduplicate user IDs
+			uniqueUserIDs := make(map[int64]bool)
+			var dedupedUserIDs []int64
+			for _, userID := range userIDs {
+				if userID > 0 && !uniqueUserIDs[userID] {
+					uniqueUserIDs[userID] = true
+					dedupedUserIDs = append(dedupedUserIDs, userID)
+				}
+			}
+
+			if len(dedupedUserIDs) == 0 {
+				return true // Skip if no valid user IDs
+			}
+
+			// Create in-memory storage for testing
+			ctx := context.Background()
+			fsmStorage := createTestFSMStorage(t)
+
+			// Create sessions for each user with unique questions
+			sessionData := make(map[int64]string) // userID -> question
+			for i, userID := range dedupedUserIDs {
+				question := questions[i%len(questions)]
+				sessionData[userID] = question
+
+				// Create a session in ask_event_type state (waiting for input)
+				sessionContext := &domain.EventCreationContext{
+					Question:          question,
+					EventType:         domain.EventTypeBinary,
+					Options:           []string{"Да", "Нет"},
+					Deadline:          time.Now().Add(24 * time.Hour),
+					LastBotMessageID:  100 + i,
+					LastUserMessageID: 0,
+					ChatID:            int64(12345 + i),
+				}
+
+				if err := fsmStorage.Set(ctx, userID, StateAskEventType, sessionContext.ToMap()); err != nil {
+					t.Logf("Failed to set session for user %d: %v", userID, err)
+					return false
+				}
+			}
+
+			// Simulate message routing: for each user, verify we can retrieve their specific session
+			for _, userID := range dedupedUserIDs {
+				// Get session for this user (simulating FSM.HandleMessage routing)
+				state, data, err := fsmStorage.Get(ctx, userID)
+				if err != nil {
+					t.Logf("Failed to get session for user %d: %v", userID, err)
+					return false
+				}
+
+				// Verify state is correct
+				if state != StateAskEventType {
+					t.Logf("State mismatch for user %d: expected %s, got %s", userID, StateAskEventType, state)
+					return false
+				}
+
+				// Load context
+				restoredContext := &domain.EventCreationContext{}
+				if err := restoredContext.FromMap(data); err != nil {
+					t.Logf("Failed to restore context for user %d: %v", userID, err)
+					return false
+				}
+
+				// Verify the question matches what we stored for this specific user
+				expectedQuestion := sessionData[userID]
+				if restoredContext.Question != expectedQuestion {
+					t.Logf("Question mismatch for user %d: expected %s, got %s", userID, expectedQuestion, restoredContext.Question)
+					return false
+				}
+
+				// Verify ChatID is unique to this user's session
+				expectedChatID := int64(12345 + indexOf(dedupedUserIDs, userID))
+				if restoredContext.ChatID != expectedChatID {
+					t.Logf("ChatID mismatch for user %d: expected %d, got %d", userID, expectedChatID, restoredContext.ChatID)
+					return false
+				}
+			}
+
+			// Verify that getting a non-existent user's session returns ErrSessionNotFound
+			nonExistentUserID := int64(999999999)
+			_, _, err := fsmStorage.Get(ctx, nonExistentUserID)
+			if err != storage.ErrSessionNotFound {
+				t.Logf("Expected ErrSessionNotFound for non-existent user, got: %v", err)
+				return false
+			}
+
+			// Cleanup
+			for _, userID := range dedupedUserIDs {
+				_ = fsmStorage.Delete(ctx, userID)
+			}
+
+			return true
+		},
+		gen.SliceOf(gen.Int64Range(1, 1000000)),
+		gen.SliceOf(gen.Identifier()),
+	))
+
+	properties.TestingRun(t)
+}
+
+// Helper function to find index of element in slice
+func indexOf(slice []int64, value int64) int {
+	for i, v := range slice {
+		if v == value {
+			return i
+		}
+	}
+	return -1
+}
+
+// Feature: event-creation-ux-improvement, Property 14: Session independence on completion
+// **Validates: Requirements 4.3**
+func TestProperty_SessionIndependenceOnCompletion(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+	properties.Property("completing one admin's session does not affect other active sessions", prop.ForAll(
+		func(userIDs []int64, questions []string) bool {
+			// Ensure we have at least 2 users
+			if len(userIDs) < 2 || len(questions) < 2 {
+				return true // Skip if not enough data
+			}
+
+			// Deduplicate user IDs
+			uniqueUserIDs := make(map[int64]bool)
+			var dedupedUserIDs []int64
+			for _, userID := range userIDs {
+				if userID > 0 && !uniqueUserIDs[userID] {
+					uniqueUserIDs[userID] = true
+					dedupedUserIDs = append(dedupedUserIDs, userID)
+				}
+			}
+
+			if len(dedupedUserIDs) < 2 {
+				return true // Need at least 2 users for this test
+			}
+
+			// Create in-memory storage for testing
+			ctx := context.Background()
+			fsmStorage := createTestFSMStorage(t)
+
+			// Create sessions for all users
+			sessionData := make(map[int64]*domain.EventCreationContext)
+			for i, userID := range dedupedUserIDs {
+				question := questions[i%len(questions)]
+
+				sessionContext := &domain.EventCreationContext{
+					Question:          question,
+					EventType:         domain.EventTypeBinary,
+					Options:           []string{"Да", "Нет"},
+					Deadline:          time.Now().Add(24 * time.Hour),
+					LastBotMessageID:  100 + i,
+					LastUserMessageID: 200 + i,
+					ChatID:            int64(12345 + i),
+				}
+
+				if err := fsmStorage.Set(ctx, userID, StateConfirm, sessionContext.ToMap()); err != nil {
+					t.Logf("Failed to set session for user %d: %v", userID, err)
+					return false
+				}
+
+				sessionData[userID] = sessionContext
+			}
+
+			// Verify all sessions exist
+			for _, userID := range dedupedUserIDs {
+				_, _, err := fsmStorage.Get(ctx, userID)
+				if err != nil {
+					t.Logf("Session should exist for user %d before completion, got error: %v", userID, err)
+					return false
+				}
+			}
+
+			// Complete the first user's session (simulate event creation completion)
+			completedUserID := dedupedUserIDs[0]
+			if err := fsmStorage.Delete(ctx, completedUserID); err != nil {
+				t.Logf("Failed to delete session for completed user %d: %v", completedUserID, err)
+				return false
+			}
+
+			// Verify the completed user's session is gone
+			_, _, err := fsmStorage.Get(ctx, completedUserID)
+			if err != storage.ErrSessionNotFound {
+				t.Logf("Completed user's session should be deleted, expected ErrSessionNotFound, got: %v", err)
+				return false
+			}
+
+			// Verify all other users' sessions are still intact with unchanged data
+			for i := 1; i < len(dedupedUserIDs); i++ {
+				userID := dedupedUserIDs[i]
+				originalContext := sessionData[userID]
+
+				state, data, err := fsmStorage.Get(ctx, userID)
+				if err != nil {
+					t.Logf("Session should still exist for user %d after another user completed, got error: %v", userID, err)
+					return false
+				}
+
+				// Verify state is unchanged
+				if state != StateConfirm {
+					t.Logf("State changed for user %d: expected %s, got %s", userID, StateConfirm, state)
+					return false
+				}
+
+				// Load context
+				restoredContext := &domain.EventCreationContext{}
+				if err := restoredContext.FromMap(data); err != nil {
+					t.Logf("Failed to restore context for user %d: %v", userID, err)
+					return false
+				}
+
+				// Verify all fields are unchanged
+				if restoredContext.Question != originalContext.Question {
+					t.Logf("Question changed for user %d after another user completed", userID)
+					return false
+				}
+
+				if restoredContext.EventType != originalContext.EventType {
+					t.Logf("EventType changed for user %d after another user completed", userID)
+					return false
+				}
+
+				if len(restoredContext.Options) != len(originalContext.Options) {
+					t.Logf("Options count changed for user %d after another user completed", userID)
+					return false
+				}
+
+				for j, opt := range originalContext.Options {
+					if restoredContext.Options[j] != opt {
+						t.Logf("Option %d changed for user %d after another user completed", j, userID)
+						return false
+					}
+				}
+
+				if restoredContext.LastBotMessageID != originalContext.LastBotMessageID {
+					t.Logf("LastBotMessageID changed for user %d after another user completed", userID)
+					return false
+				}
+
+				if restoredContext.LastUserMessageID != originalContext.LastUserMessageID {
+					t.Logf("LastUserMessageID changed for user %d after another user completed", userID)
+					return false
+				}
+
+				if restoredContext.ChatID != originalContext.ChatID {
+					t.Logf("ChatID changed for user %d after another user completed", userID)
+					return false
+				}
+
+				// Verify deadline is unchanged (within 1 second tolerance)
+				if restoredContext.Deadline.Sub(originalContext.Deadline).Abs() > time.Second {
+					t.Logf("Deadline changed for user %d after another user completed", userID)
+					return false
+				}
+			}
+
+			// Verify the total session count is correct (all users minus the completed one)
+			activeCount := 0
+			for _, userID := range dedupedUserIDs {
+				_, _, err := fsmStorage.Get(ctx, userID)
+				if err == nil {
+					activeCount++
+				}
+			}
+
+			expectedActiveCount := len(dedupedUserIDs) - 1
+			if activeCount != expectedActiveCount {
+				t.Logf("Active session count mismatch: expected %d, got %d", expectedActiveCount, activeCount)
+				return false
+			}
+
+			// Cleanup remaining sessions
+			for i := 1; i < len(dedupedUserIDs); i++ {
+				_ = fsmStorage.Delete(ctx, dedupedUserIDs[i])
+			}
+
+			return true
+		},
+		gen.SliceOf(gen.Int64Range(1, 1000000)),
+		gen.SliceOf(gen.Identifier()),
+	))
+
+	properties.TestingRun(t)
+}

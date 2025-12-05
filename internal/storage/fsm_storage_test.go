@@ -534,3 +534,136 @@ func TestCorruptedSessionCleanup(t *testing.T) {
 
 	properties.TestingRun(t)
 }
+
+// Feature: event-creation-ux-improvement, Property 12: Session isolation by user
+// Validates: Requirements 4.1, 4.4
+func TestSessionIsolationByUser(t *testing.T) {
+	properties := gopter.NewProperties(gopter.DefaultTestParameters())
+
+	properties.Property("concurrent sessions are isolated by user_id with no cross-contamination", prop.ForAll(
+		func(userIDs []int64, questions []string, eventTypes []string) bool {
+			if len(userIDs) == 0 || len(questions) == 0 || len(eventTypes) == 0 {
+				return true // Skip empty case
+			}
+
+			// Deduplicate user IDs to avoid overwriting sessions
+			uniqueUserIDs := make(map[int64]bool)
+			var dedupedUserIDs []int64
+			for _, userID := range userIDs {
+				if userID > 0 && !uniqueUserIDs[userID] {
+					uniqueUserIDs[userID] = true
+					dedupedUserIDs = append(dedupedUserIDs, userID)
+				}
+			}
+
+			if len(dedupedUserIDs) == 0 {
+				return true // Skip if no valid user IDs
+			}
+
+			// Setup in-memory database
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				t.Logf("Failed to open database: %v", err)
+				return false
+			}
+			defer db.Close()
+
+			queue := NewDBQueue(db)
+			defer queue.Close()
+
+			// Initialize schema
+			if err := InitSchema(queue); err != nil {
+				t.Logf("Failed to initialize schema: %v", err)
+				return false
+			}
+
+			log := logger.New(logger.ERROR)
+			storage := NewFSMStorage(queue, log)
+			ctx := context.Background()
+
+			// Create sessions for each user with unique data
+			sessionData := make(map[int64]map[string]interface{})
+			for i, userID := range dedupedUserIDs {
+				question := questions[i%len(questions)]
+				eventType := eventTypes[i%len(eventTypes)]
+				state := "ask_question"
+
+				context := map[string]interface{}{
+					"question":   question,
+					"event_type": eventType,
+					"user_id":    userID, // Store user_id in context to verify isolation
+				}
+
+				err = storage.Set(ctx, userID, state, context)
+				if err != nil {
+					t.Logf("Failed to set session for user %d: %v", userID, err)
+					return false
+				}
+
+				// Store expected data for verification
+				sessionData[userID] = context
+			}
+
+			// Verify each session is isolated and contains correct data
+			for _, userID := range dedupedUserIDs {
+				state, data, err := storage.Get(ctx, userID)
+				if err != nil {
+					t.Logf("Failed to get session for user %d: %v", userID, err)
+					return false
+				}
+
+				// Verify state
+				if state != "ask_question" {
+					t.Logf("State mismatch for user %d: expected ask_question, got %s", userID, state)
+					return false
+				}
+
+				// Verify context data matches what we stored for this user
+				expectedData := sessionData[userID]
+				if data["question"] != expectedData["question"] {
+					t.Logf("Question mismatch for user %d: expected %v, got %v", userID, expectedData["question"], data["question"])
+					return false
+				}
+
+				if data["event_type"] != expectedData["event_type"] {
+					t.Logf("Event type mismatch for user %d: expected %v, got %v", userID, expectedData["event_type"], data["event_type"])
+					return false
+				}
+
+				// Verify user_id in context matches (no cross-contamination)
+				contextUserID, ok := data["user_id"].(float64) // JSON unmarshals numbers as float64
+				if !ok {
+					t.Logf("user_id not found in context for user %d", userID)
+					return false
+				}
+
+				if int64(contextUserID) != userID {
+					t.Logf("Cross-contamination detected: user %d has context with user_id %d", userID, int64(contextUserID))
+					return false
+				}
+			}
+
+			// Verify total number of sessions matches number of unique users
+			var count int
+			err = queue.Execute(func(db *sql.DB) error {
+				return db.QueryRowContext(ctx, "SELECT COUNT(*) FROM fsm_sessions").Scan(&count)
+			})
+			if err != nil {
+				t.Logf("Failed to count sessions: %v", err)
+				return false
+			}
+
+			if count != len(dedupedUserIDs) {
+				t.Logf("Session count mismatch: expected %d, got %d", len(dedupedUserIDs), count)
+				return false
+			}
+
+			return true
+		},
+		gen.SliceOf(gen.Int64Range(1, 1000000)),
+		gen.SliceOf(gen.AlphaString()),
+		gen.SliceOf(gen.OneConstOf("binary", "multi_option", "probability")),
+	))
+
+	properties.TestingRun(t)
+}
