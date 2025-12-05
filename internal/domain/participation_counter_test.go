@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
@@ -66,7 +67,7 @@ func (m *mockEventRepo) GetEventByPollID(ctx context.Context, pollID string) (*E
 	return nil, nil
 }
 
-func (m *mockEventRepo) GetActiveEvents(ctx context.Context) ([]*Event, error) {
+func (m *mockEventRepo) GetActiveEvents(ctx context.Context, groupID int64) ([]*Event, error) {
 	return nil, nil
 }
 
@@ -82,8 +83,12 @@ func (m *mockEventRepo) ResolveEvent(ctx context.Context, eventID int64, correct
 	return nil
 }
 
-func (m *mockEventRepo) GetUserCreatedEventsCount(ctx context.Context, userID int64) (int, error) {
+func (m *mockEventRepo) GetUserCreatedEventsCount(ctx context.Context, userID int64, groupID int64) (int, error) {
 	return 0, nil
+}
+
+func (m *mockEventRepo) GetEventsByDeadlineRange(ctx context.Context, start, end time.Time) ([]*Event, error) {
+	return nil, nil
 }
 
 // TestParticipationRequirementCheck tests: Participation requirement check
@@ -101,8 +106,8 @@ func TestParticipationRequirementCheck(t *testing.T) {
 
 			counter := NewParticipationCounter(mockRepo, &mockEventRepo{}, &mockLogger{})
 
-			// Count participation
-			count, err := counter.CountCompletedEventParticipation(context.Background(), userID)
+			// Count participation (using groupID 1 for testing)
+			count, err := counter.CountCompletedEventParticipation(context.Background(), userID, 1)
 			if err != nil {
 				t.Logf("Unexpected error: %v", err)
 				return false
@@ -157,7 +162,7 @@ func TestCountCompletedEventParticipation_Success(t *testing.T) {
 
 			counter := NewParticipationCounter(mockRepo, &mockEventRepo{}, &mockLogger{})
 
-			count, err := counter.CountCompletedEventParticipation(context.Background(), 12345)
+			count, err := counter.CountCompletedEventParticipation(context.Background(), 12345, 1)
 			if err != nil {
 				t.Fatalf("Expected no error, got: %v", err)
 			}
@@ -178,7 +183,7 @@ func TestCountCompletedEventParticipation_Error(t *testing.T) {
 
 	counter := NewParticipationCounter(mockRepo, &mockEventRepo{}, &mockLogger{})
 
-	count, err := counter.CountCompletedEventParticipation(context.Background(), 12345)
+	count, err := counter.CountCompletedEventParticipation(context.Background(), 12345, 1)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}

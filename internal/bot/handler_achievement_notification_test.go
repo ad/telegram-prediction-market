@@ -61,11 +61,13 @@ func TestUsernameInAchievementNotification(t *testing.T) {
 			}
 
 			ctx := context.Background()
+			groupID := int64(1)
 
 			// Create rating with or without username
 			rating := &domain.Rating{
-				UserID: userID,
-				Score:  100,
+				UserID:  userID,
+				Score:   100,
+				GroupID: groupID,
 			}
 			if hasUsername && username != "" {
 				rating.Username = username
@@ -77,7 +79,7 @@ func TestUsernameInAchievementNotification(t *testing.T) {
 			}
 
 			// Get the display name that would be used in the notification
-			displayName := handler.getUserDisplayName(ctx, userID)
+			displayName := handler.getUserDisplayName(ctx, userID, groupID)
 
 			// Verify the display name contains user identification
 			if hasUsername && username != "" {
@@ -184,7 +186,7 @@ func TestAchievementMessageFormat(t *testing.T) {
 			}
 
 			// Get the display name
-			displayName := handler.getUserDisplayName(ctx, userID)
+			displayName := handler.getUserDisplayName(ctx, userID, 1)
 
 			// Build the expected message format
 			expectedMessage := fmt.Sprintf("🎉 %s получил ачивку: %s!", displayName, expectedName)
@@ -259,10 +261,12 @@ func TestSendAchievementNotification_WithUsername(t *testing.T) {
 
 	// Create rating with username
 	userID := int64(12345)
+	groupID := int64(1)
 	rating := &domain.Rating{
 		UserID:   userID,
 		Username: "testuser",
 		Score:    100,
+		GroupID:  groupID,
 	}
 
 	if err := ratingRepo.UpdateRating(ctx, rating); err != nil {
@@ -270,7 +274,7 @@ func TestSendAchievementNotification_WithUsername(t *testing.T) {
 	}
 
 	// Get display name
-	displayName := handler.getUserDisplayName(ctx, userID)
+	displayName := handler.getUserDisplayName(ctx, userID, groupID)
 
 	// Verify display name contains username
 	if !strings.Contains(displayName, "@testuser") && !strings.Contains(displayName, "testuser") {
@@ -327,7 +331,7 @@ func TestSendAchievementNotification_WithoutUsername(t *testing.T) {
 	}
 
 	// Get display name
-	displayName := handler.getUserDisplayName(ctx, userID)
+	displayName := handler.getUserDisplayName(ctx, userID, 1)
 
 	// Verify display name contains user ID format
 	if !strings.Contains(displayName, "User id") {
@@ -384,7 +388,7 @@ func TestSendAchievementNotification_EmojiAndName(t *testing.T) {
 	}
 
 	// Get display name
-	displayName := handler.getUserDisplayName(ctx, userID)
+	displayName := handler.getUserDisplayName(ctx, userID, 1)
 
 	// Test different achievements
 	testCases := []struct {

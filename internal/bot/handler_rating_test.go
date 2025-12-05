@@ -50,6 +50,7 @@ func TestRatingDisplayCompleteness(t *testing.T) {
 			ratingCalc := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, logger)
 
 			ctx := context.Background()
+			groupID := int64(1)
 
 			// Create ratings (between 1 and 25 to test both < 10 and > 10 cases)
 			actualCount := 1 + (ratingCount % 25)
@@ -66,6 +67,7 @@ func TestRatingDisplayCompleteness(t *testing.T) {
 					CorrectCount: 10,
 					WrongCount:   5,
 					Streak:       2,
+					GroupID:      groupID,
 				}
 				if err := ratingRepo.UpdateRating(ctx, rating); err != nil {
 					t.Logf("Failed to create rating: %v", err)
@@ -74,7 +76,7 @@ func TestRatingDisplayCompleteness(t *testing.T) {
 			}
 
 			// Get top ratings
-			topRatings, err := ratingCalc.GetTopRatings(ctx, 10)
+			topRatings, err := ratingCalc.GetTopRatings(ctx, groupID, 10)
 			if err != nil {
 				t.Logf("Failed to get top ratings: %v", err)
 				return false
@@ -127,6 +129,7 @@ func TestRatingOrderingConsistency(t *testing.T) {
 			ratingCalc := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, logger)
 
 			ctx := context.Background()
+			groupID := int64(1)
 
 			// Create ratings with random scores
 			for i, score := range scores {
@@ -136,6 +139,7 @@ func TestRatingOrderingConsistency(t *testing.T) {
 					CorrectCount: 10,
 					WrongCount:   5,
 					Streak:       2,
+					GroupID:      groupID,
 				}
 				if err := ratingRepo.UpdateRating(ctx, rating); err != nil {
 					t.Logf("Failed to create rating: %v", err)
@@ -144,7 +148,7 @@ func TestRatingOrderingConsistency(t *testing.T) {
 			}
 
 			// Get top ratings
-			topRatings, err := ratingCalc.GetTopRatings(ctx, 10)
+			topRatings, err := ratingCalc.GetTopRatings(ctx, groupID, 10)
 			if err != nil {
 				t.Logf("Failed to get top ratings: %v", err)
 				return false

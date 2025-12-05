@@ -274,3 +274,261 @@ func TestDefaultGroupNameCustomValue(t *testing.T) {
 		})
 	}
 }
+
+// TestMaxGroupsPerAdminDefault tests that default value is used when not set
+func TestMaxGroupsPerAdminDefault(t *testing.T) {
+	// Save original env vars
+	origToken := os.Getenv("TELEGRAM_TOKEN")
+	origGroupID := os.Getenv("GROUP_ID")
+	origAdminIDs := os.Getenv("ADMIN_USER_IDS")
+	origMaxGroups := os.Getenv("MAX_GROUPS_PER_ADMIN")
+
+	defer func() {
+		// Restore original env vars
+		os.Setenv("TELEGRAM_TOKEN", origToken)
+		os.Setenv("GROUP_ID", origGroupID)
+		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		os.Setenv("MAX_GROUPS_PER_ADMIN", origMaxGroups)
+	}()
+
+	// Set required valid env vars
+	os.Setenv("TELEGRAM_TOKEN", "test_token")
+	os.Setenv("GROUP_ID", "123456")
+	os.Setenv("ADMIN_USER_IDS", "111,222")
+
+	// Unset MAX_GROUPS_PER_ADMIN to test default
+	os.Unsetenv("MAX_GROUPS_PER_ADMIN")
+
+	config, err := Load()
+	if err != nil {
+		t.Fatalf("Expected no error when MAX_GROUPS_PER_ADMIN not set, got: %v", err)
+	}
+
+	if config.MaxGroupsPerAdmin != 10 {
+		t.Errorf("Expected default MaxGroupsPerAdmin to be 10, got: %d", config.MaxGroupsPerAdmin)
+	}
+}
+
+// TestMaxGroupsPerAdminValidValues tests that valid positive integer values are accepted
+func TestMaxGroupsPerAdminValidValues(t *testing.T) {
+	// Save original env vars
+	origToken := os.Getenv("TELEGRAM_TOKEN")
+	origGroupID := os.Getenv("GROUP_ID")
+	origAdminIDs := os.Getenv("ADMIN_USER_IDS")
+	origMaxGroups := os.Getenv("MAX_GROUPS_PER_ADMIN")
+
+	defer func() {
+		// Restore original env vars
+		os.Setenv("TELEGRAM_TOKEN", origToken)
+		os.Setenv("GROUP_ID", origGroupID)
+		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		os.Setenv("MAX_GROUPS_PER_ADMIN", origMaxGroups)
+	}()
+
+	// Set required valid env vars
+	os.Setenv("TELEGRAM_TOKEN", "test_token")
+	os.Setenv("GROUP_ID", "123456")
+	os.Setenv("ADMIN_USER_IDS", "111,222")
+
+	testCases := []struct {
+		name     string
+		value    string
+		expected int
+	}{
+		{"one", "1", 1},
+		{"five", "5", 5},
+		{"ten", "10", 10},
+		{"fifty", "50", 50},
+		{"large value", "1000", 1000},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Setenv("MAX_GROUPS_PER_ADMIN", tc.value)
+
+			config, err := Load()
+			if err != nil {
+				t.Fatalf("Expected no error for valid value '%s', got: %v", tc.value, err)
+			}
+
+			if config.MaxGroupsPerAdmin != tc.expected {
+				t.Errorf("Expected MaxGroupsPerAdmin to be %d, got: %d", tc.expected, config.MaxGroupsPerAdmin)
+			}
+		})
+	}
+}
+
+// TestMaxGroupsPerAdminInvalidValues tests that invalid values are rejected
+func TestMaxGroupsPerAdminInvalidValues(t *testing.T) {
+	// Save original env vars
+	origToken := os.Getenv("TELEGRAM_TOKEN")
+	origGroupID := os.Getenv("GROUP_ID")
+	origAdminIDs := os.Getenv("ADMIN_USER_IDS")
+	origMaxGroups := os.Getenv("MAX_GROUPS_PER_ADMIN")
+
+	defer func() {
+		// Restore original env vars
+		os.Setenv("TELEGRAM_TOKEN", origToken)
+		os.Setenv("GROUP_ID", origGroupID)
+		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		os.Setenv("MAX_GROUPS_PER_ADMIN", origMaxGroups)
+	}()
+
+	// Set required valid env vars
+	os.Setenv("TELEGRAM_TOKEN", "test_token")
+	os.Setenv("GROUP_ID", "123456")
+	os.Setenv("ADMIN_USER_IDS", "111,222")
+
+	testCases := []struct {
+		name  string
+		value string
+	}{
+		{"zero", "0"},
+		{"negative", "-1"},
+		{"negative large", "-100"},
+		{"non-integer", "abc"},
+		{"float", "3.14"},
+		{"whitespace", "  "},
+		{"special chars", "!@#"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Setenv("MAX_GROUPS_PER_ADMIN", tc.value)
+
+			config, err := Load()
+			if err == nil {
+				t.Errorf("Expected error for invalid value '%s', but got valid config: %+v", tc.value, config)
+			}
+		})
+	}
+}
+
+// TestMaxMembershipsPerUserDefault tests that default value is used when not set
+func TestMaxMembershipsPerUserDefault(t *testing.T) {
+	// Save original env vars
+	origToken := os.Getenv("TELEGRAM_TOKEN")
+	origGroupID := os.Getenv("GROUP_ID")
+	origAdminIDs := os.Getenv("ADMIN_USER_IDS")
+	origMaxMemberships := os.Getenv("MAX_MEMBERSHIPS_PER_USER")
+
+	defer func() {
+		// Restore original env vars
+		os.Setenv("TELEGRAM_TOKEN", origToken)
+		os.Setenv("GROUP_ID", origGroupID)
+		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		os.Setenv("MAX_MEMBERSHIPS_PER_USER", origMaxMemberships)
+	}()
+
+	// Set required valid env vars
+	os.Setenv("TELEGRAM_TOKEN", "test_token")
+	os.Setenv("GROUP_ID", "123456")
+	os.Setenv("ADMIN_USER_IDS", "111,222")
+
+	// Unset MAX_MEMBERSHIPS_PER_USER to test default
+	os.Unsetenv("MAX_MEMBERSHIPS_PER_USER")
+
+	config, err := Load()
+	if err != nil {
+		t.Fatalf("Expected no error when MAX_MEMBERSHIPS_PER_USER not set, got: %v", err)
+	}
+
+	if config.MaxMembershipsPerUser != 20 {
+		t.Errorf("Expected default MaxMembershipsPerUser to be 20, got: %d", config.MaxMembershipsPerUser)
+	}
+}
+
+// TestMaxMembershipsPerUserValidValues tests that valid positive integer values are accepted
+func TestMaxMembershipsPerUserValidValues(t *testing.T) {
+	// Save original env vars
+	origToken := os.Getenv("TELEGRAM_TOKEN")
+	origGroupID := os.Getenv("GROUP_ID")
+	origAdminIDs := os.Getenv("ADMIN_USER_IDS")
+	origMaxMemberships := os.Getenv("MAX_MEMBERSHIPS_PER_USER")
+
+	defer func() {
+		// Restore original env vars
+		os.Setenv("TELEGRAM_TOKEN", origToken)
+		os.Setenv("GROUP_ID", origGroupID)
+		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		os.Setenv("MAX_MEMBERSHIPS_PER_USER", origMaxMemberships)
+	}()
+
+	// Set required valid env vars
+	os.Setenv("TELEGRAM_TOKEN", "test_token")
+	os.Setenv("GROUP_ID", "123456")
+	os.Setenv("ADMIN_USER_IDS", "111,222")
+
+	testCases := []struct {
+		name     string
+		value    string
+		expected int
+	}{
+		{"one", "1", 1},
+		{"ten", "10", 10},
+		{"twenty", "20", 20},
+		{"fifty", "50", 50},
+		{"large value", "1000", 1000},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Setenv("MAX_MEMBERSHIPS_PER_USER", tc.value)
+
+			config, err := Load()
+			if err != nil {
+				t.Fatalf("Expected no error for valid value '%s', got: %v", tc.value, err)
+			}
+
+			if config.MaxMembershipsPerUser != tc.expected {
+				t.Errorf("Expected MaxMembershipsPerUser to be %d, got: %d", tc.expected, config.MaxMembershipsPerUser)
+			}
+		})
+	}
+}
+
+// TestMaxMembershipsPerUserInvalidValues tests that invalid values are rejected
+func TestMaxMembershipsPerUserInvalidValues(t *testing.T) {
+	// Save original env vars
+	origToken := os.Getenv("TELEGRAM_TOKEN")
+	origGroupID := os.Getenv("GROUP_ID")
+	origAdminIDs := os.Getenv("ADMIN_USER_IDS")
+	origMaxMemberships := os.Getenv("MAX_MEMBERSHIPS_PER_USER")
+
+	defer func() {
+		// Restore original env vars
+		os.Setenv("TELEGRAM_TOKEN", origToken)
+		os.Setenv("GROUP_ID", origGroupID)
+		os.Setenv("ADMIN_USER_IDS", origAdminIDs)
+		os.Setenv("MAX_MEMBERSHIPS_PER_USER", origMaxMemberships)
+	}()
+
+	// Set required valid env vars
+	os.Setenv("TELEGRAM_TOKEN", "test_token")
+	os.Setenv("GROUP_ID", "123456")
+	os.Setenv("ADMIN_USER_IDS", "111,222")
+
+	testCases := []struct {
+		name  string
+		value string
+	}{
+		{"zero", "0"},
+		{"negative", "-1"},
+		{"negative large", "-100"},
+		{"non-integer", "abc"},
+		{"float", "3.14"},
+		{"whitespace", "  "},
+		{"special chars", "!@#"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Setenv("MAX_MEMBERSHIPS_PER_USER", tc.value)
+
+			config, err := Load()
+			if err == nil {
+				t.Errorf("Expected error for invalid value '%s', but got valid config: %+v", tc.value, config)
+			}
+		})
+	}
+}

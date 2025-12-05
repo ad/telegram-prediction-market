@@ -49,8 +49,12 @@ func (c *EventCreationContext) FromMap(data map[string]interface{}) error {
 		return ErrInvalidContextData
 	}
 
-	// Parse group_id
+	// Parse group_id (handle both int64 and float64 from JSON)
 	if groupID, ok := data["group_id"].(float64); ok {
+		c.GroupID = int64(groupID)
+	} else if groupID, ok := data["group_id"].(int64); ok {
+		c.GroupID = groupID
+	} else if groupID, ok := data["group_id"].(int); ok {
 		c.GroupID = int64(groupID)
 	}
 
@@ -103,8 +107,12 @@ func (c *EventCreationContext) FromMap(data map[string]interface{}) error {
 		c.ConfirmationMessageID = int(confirmMsgID)
 	}
 
-	// Parse chat_id
+	// Parse chat_id (handle both int64 and float64 from JSON)
 	if chatID, ok := data["chat_id"].(float64); ok {
+		c.ChatID = int64(chatID)
+	} else if chatID, ok := data["chat_id"].(int64); ok {
+		c.ChatID = chatID
+	} else if chatID, ok := data["chat_id"].(int); ok {
 		c.ChatID = int64(chatID)
 	}
 

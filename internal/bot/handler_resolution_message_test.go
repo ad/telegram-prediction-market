@@ -62,11 +62,13 @@ func TestResolverInformationInMessage(t *testing.T) {
 			}
 
 			ctx := context.Background()
+			groupID := int64(1)
 
 			// Create rating with or without username
 			rating := &domain.Rating{
-				UserID: resolverID,
-				Score:  100,
+				UserID:  resolverID,
+				Score:   100,
+				GroupID: groupID,
 			}
 			if hasUsername && username != "" {
 				rating.Username = username
@@ -86,6 +88,7 @@ func TestResolverInformationInMessage(t *testing.T) {
 				Status:    domain.EventStatusActive,
 				EventType: domain.EventTypeBinary,
 				CreatedBy: resolverID,
+				GroupID:   groupID,
 			}
 
 			if err := eventRepo.CreateEvent(ctx, event); err != nil {
@@ -94,10 +97,10 @@ func TestResolverInformationInMessage(t *testing.T) {
 			}
 
 			// Build the resolution message (simulating what publishEventResults would create)
-			displayName := handler.getUserDisplayName(ctx, resolverID)
-			
+			displayName := handler.getUserDisplayName(ctx, resolverID, groupID)
+
 			// The message should contain resolver information
-			message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил: %s\n", 
+			message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил: %s\n",
 				event.Question, event.Options[correctOption], displayName)
 
 			// Verify the message contains resolver identification
@@ -231,16 +234,16 @@ func TestCreatorVsAdminDistinction(t *testing.T) {
 			}
 
 			// Build the resolution message (simulating what publishEventResults would create)
-			displayName := handler.getUserDisplayName(ctx, resolverID)
-			
+			displayName := handler.getUserDisplayName(ctx, resolverID, 1)
+
 			var message string
 			if isAdmin && resolverID != creatorID {
 				// Admin resolution
-				message = fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (администратор): %s\n", 
+				message = fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (администратор): %s\n",
 					event.Question, event.Options[correctOption], displayName)
 			} else {
 				// Creator resolution
-				message = fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (создатель): %s\n", 
+				message = fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (создатель): %s\n",
 					event.Question, event.Options[correctOption], displayName)
 			}
 
@@ -321,10 +324,12 @@ func TestCreatorResolutionMessage(t *testing.T) {
 
 	// Create creator rating
 	creatorID := int64(11111)
+	groupID := int64(1)
 	creatorRating := &domain.Rating{
 		UserID:   creatorID,
 		Username: "creator_user",
 		Score:    100,
+		GroupID:  groupID,
 	}
 	if err := ratingRepo.UpdateRating(ctx, creatorRating); err != nil {
 		t.Fatalf("Failed to create creator rating: %v", err)
@@ -339,6 +344,7 @@ func TestCreatorResolutionMessage(t *testing.T) {
 		Status:    domain.EventStatusActive,
 		EventType: domain.EventTypeBinary,
 		CreatedBy: creatorID,
+		GroupID:   groupID,
 	}
 
 	if err := eventRepo.CreateEvent(ctx, event); err != nil {
@@ -346,8 +352,8 @@ func TestCreatorResolutionMessage(t *testing.T) {
 	}
 
 	// Build creator resolution message
-	displayName := handler.getUserDisplayName(ctx, creatorID)
-	message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (создатель): %s\n", 
+	displayName := handler.getUserDisplayName(ctx, creatorID, groupID)
+	message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (создатель): %s\n",
 		event.Question, event.Options[0], displayName)
 
 	// Verify message contains "создатель"
@@ -406,10 +412,12 @@ func TestAdminResolutionMessage(t *testing.T) {
 
 	// Create creator rating
 	creatorID := int64(11111)
+	groupID := int64(1)
 	creatorRating := &domain.Rating{
 		UserID:   creatorID,
 		Username: "creator_user",
 		Score:    100,
+		GroupID:  groupID,
 	}
 	if err := ratingRepo.UpdateRating(ctx, creatorRating); err != nil {
 		t.Fatalf("Failed to create creator rating: %v", err)
@@ -420,6 +428,7 @@ func TestAdminResolutionMessage(t *testing.T) {
 		UserID:   adminID,
 		Username: "admin_user",
 		Score:    200,
+		GroupID:  groupID,
 	}
 	if err := ratingRepo.UpdateRating(ctx, adminRating); err != nil {
 		t.Fatalf("Failed to create admin rating: %v", err)
@@ -434,6 +443,7 @@ func TestAdminResolutionMessage(t *testing.T) {
 		Status:    domain.EventStatusActive,
 		EventType: domain.EventTypeBinary,
 		CreatedBy: creatorID,
+		GroupID:   groupID,
 	}
 
 	if err := eventRepo.CreateEvent(ctx, event); err != nil {
@@ -441,8 +451,8 @@ func TestAdminResolutionMessage(t *testing.T) {
 	}
 
 	// Build admin resolution message
-	displayName := handler.getUserDisplayName(ctx, adminID)
-	message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (администратор): %s\n", 
+	displayName := handler.getUserDisplayName(ctx, adminID, groupID)
+	message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (администратор): %s\n",
 		event.Question, event.Options[0], displayName)
 
 	// Verify message contains "администратор"
@@ -519,11 +529,13 @@ func TestResolverNameInclusion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			groupID := int64(1)
 			// Create rating
 			rating := &domain.Rating{
 				UserID:   tc.userID,
 				Username: tc.username,
 				Score:    100,
+				GroupID:  groupID,
 			}
 			if err := ratingRepo.UpdateRating(ctx, rating); err != nil {
 				t.Fatalf("Failed to create rating: %v", err)
@@ -538,6 +550,7 @@ func TestResolverNameInclusion(t *testing.T) {
 				Status:    domain.EventStatusActive,
 				EventType: domain.EventTypeBinary,
 				CreatedBy: tc.userID,
+				GroupID:   groupID,
 			}
 
 			if err := eventRepo.CreateEvent(ctx, event); err != nil {
@@ -545,8 +558,8 @@ func TestResolverNameInclusion(t *testing.T) {
 			}
 
 			// Build resolution message
-			displayName := handler.getUserDisplayName(ctx, tc.userID)
-			message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил: %s\n", 
+			displayName := handler.getUserDisplayName(ctx, tc.userID, groupID)
+			message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил: %s\n",
 				event.Question, event.Options[0], displayName)
 
 			// Verify message contains expected name format

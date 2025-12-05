@@ -103,6 +103,31 @@ CREATE INDEX IF NOT EXISTS idx_ratings_group_id ON ratings(group_id);
 	},
 }
 
+// columnExists checks if a column exists in a table
+func columnExists(db *sql.DB, tableName, columnName string) (bool, error) {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var typ string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); err != nil {
+			return false, err
+		}
+		if name == columnName {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
 // RunMigrations executes all pending migrations
 func RunMigrations(queue *DBQueue) error {
 	return queue.Execute(func(db *sql.DB) error {
@@ -130,17 +155,40 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 				continue
 			}
 
+			// Special handling for migration 3 - check if columns already exist
+			if migration.Version == 3 {
+				// Check if group_id already exists in events table
+				exists, err := columnExists(db, "events", "group_id")
+				if err != nil {
+					return fmt.Errorf("failed to check column existence: %w", err)
+				}
+				if exists {
+					// Columns already exist, just mark migration as complete
+					_, err = db.Exec(
+						"INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)",
+						migration.Version,
+						migration.Description,
+					)
+					if err != nil {
+						return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+					}
+					continue
+				}
+			}
+
 			// Start transaction
 			tx, err := db.Begin()
 			if err != nil {
 				return fmt.Errorf("failed to begin transaction for migration %d: %w", migration.Version, err)
 			}
 
-			// Execute migration SQL
-			_, err = tx.Exec(migration.SQL)
-			if err != nil {
-				_ = tx.Rollback()
-				return fmt.Errorf("failed to execute migration %d (%s): %w", migration.Version, migration.Description, err)
+			// Execute migration SQL (skip if empty)
+			if migration.SQL != "" && len(migration.SQL) > 10 {
+				_, err = tx.Exec(migration.SQL)
+				if err != nil {
+					_ = tx.Rollback()
+					return fmt.Errorf("failed to execute migration %d (%s): %w", migration.Version, migration.Description, err)
+				}
 			}
 
 			// Record migration

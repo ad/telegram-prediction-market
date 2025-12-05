@@ -50,6 +50,7 @@ func TestGetUserDisplayName_WithUsername(t *testing.T) {
 	rating := &domain.Rating{
 		UserID:   userID,
 		Username: "testuser",
+		GroupID:  1,
 		Score:    100,
 	}
 
@@ -58,7 +59,7 @@ func TestGetUserDisplayName_WithUsername(t *testing.T) {
 	}
 
 	// Test getUserDisplayName
-	displayName := handler.getUserDisplayName(ctx, userID)
+	displayName := handler.getUserDisplayName(ctx, userID, 1)
 
 	// Should return @username format
 	expected := "@testuser"
@@ -104,6 +105,7 @@ func TestGetUserDisplayName_WithUsernameWithAtSign(t *testing.T) {
 	userID := int64(12346)
 	rating := &domain.Rating{
 		UserID:   userID,
+		GroupID:  1,
 		Username: "@testuser2",
 		Score:    100,
 	}
@@ -113,7 +115,7 @@ func TestGetUserDisplayName_WithUsernameWithAtSign(t *testing.T) {
 	}
 
 	// Test getUserDisplayName
-	displayName := handler.getUserDisplayName(ctx, userID)
+	displayName := handler.getUserDisplayName(ctx, userID, 1)
 
 	// Should return username as-is (already has @)
 	expected := "@testuser2"
@@ -168,7 +170,7 @@ func TestGetUserDisplayName_WithOnlyUserID(t *testing.T) {
 	}
 
 	// Test getUserDisplayName
-	displayName := handler.getUserDisplayName(ctx, userID)
+	displayName := handler.getUserDisplayName(ctx, userID, 1)
 
 	// Should return "User [UserID]" format
 	expected := "User id67890"
@@ -215,6 +217,7 @@ func TestGetUserDisplayName_WithOnlyFirstName(t *testing.T) {
 	userID := int64(54321)
 	rating := &domain.Rating{
 		UserID:   userID,
+		GroupID:  1,
 		Username: "John", // First name stored in Username field
 		Score:    75,
 	}
@@ -224,7 +227,7 @@ func TestGetUserDisplayName_WithOnlyFirstName(t *testing.T) {
 	}
 
 	// Test getUserDisplayName
-	displayName := handler.getUserDisplayName(ctx, userID)
+	displayName := handler.getUserDisplayName(ctx, userID, 1)
 
 	// Should return @FirstName format (system treats it as username)
 	expected := "@John"
@@ -268,7 +271,7 @@ func TestGetUserDisplayName_UserNotFound(t *testing.T) {
 
 	// Test getUserDisplayName with non-existent user
 	userID := int64(99999)
-	displayName := handler.getUserDisplayName(ctx, userID)
+	displayName := handler.getUserDisplayName(ctx, userID, 1)
 
 	// Should return "User [UserID]" format as fallback
 	expected := "User id99999"

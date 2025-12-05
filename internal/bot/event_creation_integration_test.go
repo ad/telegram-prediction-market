@@ -57,23 +57,45 @@ func (m *MockBotForIntegration) DeleteMessage(ctx context.Context, params *bot.D
 	return true, nil
 }
 
-// Integration test for complete event creation flow
-func TestIntegration_CompleteEventCreationFlow(t *testing.T) {
-	// Setup in-memory database
+// setupTestGroupAndDB creates a test database with a group and returns the group ID
+func setupTestGroupAndDB(t *testing.T, chatID, userID int64) (*storage.DBQueue, int64) {
 	ctx := context.Background()
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
 
 	queue := storage.NewDBQueue(db)
-	defer queue.Close()
 
 	// Initialize schema
 	if err := storage.InitSchema(queue); err != nil {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
+
+	// Create test group
+	groupRepo := storage.NewGroupRepository(queue)
+	group := &domain.Group{
+		TelegramChatID: chatID,
+		Name:           "Test Group",
+		CreatedBy:      userID,
+		CreatedAt:      time.Now(),
+	}
+	if err := groupRepo.CreateGroup(ctx, group); err != nil {
+		t.Fatalf("Failed to create test group: %v", err)
+	}
+
+	return queue, group.ID
+}
+
+// Integration test for complete event creation flow
+func TestIntegration_CompleteEventCreationFlow(t *testing.T) {
+	// Setup in-memory database
+	ctx := context.Background()
+	userID := int64(12345)
+	chatID := int64(67890)
+
+	queue, groupID := setupTestGroupAndDB(t, chatID, userID)
+	defer queue.Close()
 
 	// Create dependencies
 	log := logger.New(logger.ERROR)
@@ -89,8 +111,6 @@ func TestIntegration_CompleteEventCreationFlow(t *testing.T) {
 	fsmStorage := storage.NewFSMStorage(queue, log)
 
 	// Test data
-	userID := int64(12345)
-	chatID := int64(67890)
 	question := "Will it snow in December?"
 	eventType := domain.EventTypeBinary
 	deadline := time.Now().Add(48 * time.Hour)
@@ -127,6 +147,7 @@ func TestIntegration_CompleteEventCreationFlow(t *testing.T) {
 	// Step 5: Create event (simulating confirmation)
 	event := &domain.Event{
 		Question:  initialContext.Question,
+		GroupID:   groupID,
 		EventType: initialContext.EventType,
 		Options:   initialContext.Options,
 		Deadline:  initialContext.Deadline,
@@ -145,7 +166,8 @@ func TestIntegration_CompleteEventCreationFlow(t *testing.T) {
 	}
 
 	// Verify event was created in database
-	events, err := eventManager.GetActiveEvents(ctx)
+	// Using groupID 1 as default for tests without multi-group setup
+	events, err := eventManager.GetActiveEvents(ctx, 1)
 	if err != nil {
 		t.Fatalf("Failed to get active events: %v", err)
 	}
@@ -178,19 +200,11 @@ func TestIntegration_CompleteEventCreationFlow(t *testing.T) {
 func TestIntegration_ConcurrentSessions(t *testing.T) {
 	// Setup in-memory database
 	ctx := context.Background()
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open database: %v", err)
-	}
-	defer db.Close()
+	chatID := int64(67890)
+	admin1ID := int64(11111)
 
-	queue := storage.NewDBQueue(db)
+	queue, groupID := setupTestGroupAndDB(t, chatID, admin1ID)
 	defer queue.Close()
-
-	// Initialize schema
-	if err := storage.InitSchema(queue); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
 
 	// Create dependencies
 	log := logger.New(logger.ERROR)
@@ -206,10 +220,8 @@ func TestIntegration_ConcurrentSessions(t *testing.T) {
 	fsmStorage := storage.NewFSMStorage(queue, log)
 
 	// Test data for 3 concurrent admins
-	admin1ID := int64(11111)
 	admin2ID := int64(22222)
 	admin3ID := int64(33333)
-	chatID := int64(67890)
 
 	question1 := "Will it rain tomorrow?"
 	question2 := "Will it snow next week?"
@@ -296,6 +308,7 @@ func TestIntegration_ConcurrentSessions(t *testing.T) {
 		CreatedAt: time.Now(),
 		Status:    domain.EventStatusActive,
 		CreatedBy: admin1ID,
+		GroupID:   groupID,
 	}
 	if err := eventManager.CreateEvent(ctx, event1); err != nil {
 		t.Fatalf("Failed to create event for admin1: %v", err)
@@ -335,7 +348,8 @@ func TestIntegration_ConcurrentSessions(t *testing.T) {
 	}
 
 	// Verify event was created for admin1
-	events, err := eventManager.GetActiveEvents(ctx)
+	// Using groupID 1 as default for tests without multi-group setup
+	events, err := eventManager.GetActiveEvents(ctx, 1)
 	if err != nil {
 		t.Fatalf("Failed to get active events: %v", err)
 	}
@@ -351,19 +365,11 @@ func TestIntegration_ConcurrentSessions(t *testing.T) {
 func TestIntegration_RestartRecovery(t *testing.T) {
 	// Setup in-memory database
 	ctx := context.Background()
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open database: %v", err)
-	}
-	defer db.Close()
+	userID := int64(12345)
+	chatID := int64(67890)
 
-	queue := storage.NewDBQueue(db)
+	queue, groupID := setupTestGroupAndDB(t, chatID, userID)
 	defer queue.Close()
-
-	// Initialize schema
-	if err := storage.InitSchema(queue); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
 
 	// Create dependencies
 	log := logger.New(logger.ERROR)
@@ -377,10 +383,6 @@ func TestIntegration_RestartRecovery(t *testing.T) {
 
 	// Create FSM storage (before "restart")
 	fsmStorage1 := storage.NewFSMStorage(queue, log)
-
-	// Test data
-	userID := int64(12345)
-	chatID := int64(67890)
 	question := "Will it be sunny tomorrow?"
 
 	// Create a session in ask_event_type state
@@ -392,6 +394,7 @@ func TestIntegration_RestartRecovery(t *testing.T) {
 		LastBotMessageID:  100,
 		LastUserMessageID: 101,
 		ChatID:            chatID,
+		GroupID:           groupID,
 	}
 	if err := fsmStorage1.Set(ctx, userID, StateAskEventType, sessionContext.ToMap()); err != nil {
 		t.Fatalf("Failed to create session: %v", err)
@@ -463,6 +466,7 @@ func TestIntegration_RestartRecovery(t *testing.T) {
 		CreatedAt: time.Now(),
 		Status:    domain.EventStatusActive,
 		CreatedBy: userID,
+		GroupID:   groupID,
 	}
 	if err := eventManager.CreateEvent(ctx, event); err != nil {
 		t.Fatalf("Failed to create event after restart: %v", err)
@@ -474,7 +478,8 @@ func TestIntegration_RestartRecovery(t *testing.T) {
 	}
 
 	// Verify event was created successfully
-	events, err := eventManager.GetActiveEvents(ctx)
+	// Using groupID 1 as default for tests without multi-group setup
+	events, err := eventManager.GetActiveEvents(ctx, 1)
 	if err != nil {
 		t.Fatalf("Failed to get active events: %v", err)
 	}
@@ -564,7 +569,8 @@ func TestIntegration_CancellationFlow(t *testing.T) {
 	}
 
 	// Verify no event was created
-	events, err := eventManager.GetActiveEvents(ctx)
+	// Using groupID 1 as default for tests without multi-group setup
+	events, err := eventManager.GetActiveEvents(ctx, 1)
 	if err != nil {
 		t.Fatalf("Failed to get active events: %v", err)
 	}
@@ -603,6 +609,46 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 	eventRepo := storage.NewEventRepository(queue)
 	predictionRepo := storage.NewPredictionRepository(queue)
 	groupMembershipRepo := storage.NewGroupMembershipRepository(queue)
+	groupRepo := storage.NewGroupRepository(queue)
+
+	// Test data
+	regularUserID := int64(11111)
+	adminUserID := int64(99999)
+	adminIDs := []int64{adminUserID}
+	chatID := int64(67890)
+
+	// Create test group
+	group := &domain.Group{
+		TelegramChatID: chatID,
+		Name:           "Test Group",
+		CreatedBy:      adminUserID,
+		CreatedAt:      time.Now(),
+	}
+	if err := groupRepo.CreateGroup(ctx, group); err != nil {
+		t.Fatalf("Failed to create test group: %v", err)
+	}
+	groupID := group.ID
+
+	// Add users to group
+	regularMembership := &domain.GroupMembership{
+		GroupID:  groupID,
+		UserID:   regularUserID,
+		JoinedAt: time.Now(),
+		Status:   domain.MembershipStatusActive,
+	}
+	if err := groupMembershipRepo.CreateMembership(ctx, regularMembership); err != nil {
+		t.Fatalf("Failed to create regular user membership: %v", err)
+	}
+
+	adminMembership := &domain.GroupMembership{
+		GroupID:  groupID,
+		UserID:   adminUserID,
+		JoinedAt: time.Now(),
+		Status:   domain.MembershipStatusActive,
+	}
+	if err := groupMembershipRepo.CreateMembership(ctx, adminMembership); err != nil {
+		t.Fatalf("Failed to create admin membership: %v", err)
+	}
 
 	// Create event manager
 	eventManager := domain.NewEventManager(eventRepo, predictionRepo, log)
@@ -617,14 +663,9 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 		log,
 	)
 
-	// Test data
-	regularUserID := int64(11111)
-	adminUserID := int64(99999)
-	adminIDs := []int64{adminUserID}
-
 	// Test 1: Regular user with insufficient participation (0 events)
 	t.Run("Rejection with insufficient participation", func(t *testing.T) {
-		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, regularUserID, adminIDs)
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, regularUserID, groupID, adminIDs)
 		if err != nil {
 			t.Fatalf("Failed to check event creation permission: %v", err)
 		}
@@ -647,6 +688,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 			CreatedAt: time.Now(),
 			Status:    domain.EventStatusActive,
 			CreatedBy: adminUserID,
+			GroupID:   groupID,
 		}
 		if err := eventManager.CreateEvent(ctx, event); err != nil {
 			t.Fatalf("Failed to create test event %d: %v", i+1, err)
@@ -666,7 +708,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 
 	// Test 3: User still can't create events (events not resolved yet)
 	t.Run("Rejection when events not resolved", func(t *testing.T) {
-		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, regularUserID, adminIDs)
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, regularUserID, groupID, adminIDs)
 		if err != nil {
 			t.Fatalf("Failed to check event creation permission: %v", err)
 		}
@@ -679,7 +721,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 	})
 
 	// Test 4: Resolve the events
-	events, err := eventManager.GetActiveEvents(ctx)
+	events, err := eventManager.GetActiveEvents(ctx, groupID)
 	if err != nil {
 		t.Fatalf("Failed to get active events: %v", err)
 	}
@@ -691,7 +733,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 
 	// Test 5: User now has sufficient participation
 	t.Run("Success with sufficient participation", func(t *testing.T) {
-		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, regularUserID, adminIDs)
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, regularUserID, groupID, adminIDs)
 		if err != nil {
 			t.Fatalf("Failed to check event creation permission: %v", err)
 		}
@@ -705,7 +747,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 
 	// Test 6: Admin exemption (admin can create without participation)
 	t.Run("Admin exemption", func(t *testing.T) {
-		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, adminUserID, adminIDs)
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, adminUserID, groupID, adminIDs)
 		if err != nil {
 			t.Fatalf("Failed to check event creation permission for admin: %v", err)
 		}
@@ -723,6 +765,17 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 		// Create a new user
 		newUserID := int64(22222)
 
+		// Add new user to group
+		newMembership := &domain.GroupMembership{
+			GroupID:  groupID,
+			UserID:   newUserID,
+			JoinedAt: time.Now(),
+			Status:   domain.MembershipStatusActive,
+		}
+		if err := groupMembershipRepo.CreateMembership(ctx, newMembership); err != nil {
+			t.Fatalf("Failed to create new user membership: %v", err)
+		}
+
 		// Create exactly 3 resolved events with this user's participation
 		for i := 0; i < 3; i++ {
 			event := &domain.Event{
@@ -733,6 +786,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 				CreatedAt: time.Now(),
 				Status:    domain.EventStatusActive,
 				CreatedBy: adminUserID,
+				GroupID:   groupID,
 			}
 			if err := eventManager.CreateEvent(ctx, event); err != nil {
 				t.Fatalf("Failed to create exact test event %d: %v", i+1, err)
@@ -756,7 +810,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 		}
 
 		// Check permission
-		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, newUserID, adminIDs)
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, newUserID, groupID, adminIDs)
 		if err != nil {
 			t.Fatalf("Failed to check event creation permission: %v", err)
 		}
@@ -773,6 +827,17 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 		// Create a new user
 		almostUserID := int64(33333)
 
+		// Add almost user to group
+		almostMembership := &domain.GroupMembership{
+			GroupID:  groupID,
+			UserID:   almostUserID,
+			JoinedAt: time.Now(),
+			Status:   domain.MembershipStatusActive,
+		}
+		if err := groupMembershipRepo.CreateMembership(ctx, almostMembership); err != nil {
+			t.Fatalf("Failed to create almost user membership: %v", err)
+		}
+
 		// Create exactly 2 resolved events with this user's participation
 		for i := 0; i < 2; i++ {
 			event := &domain.Event{
@@ -783,6 +848,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 				CreatedAt: time.Now(),
 				Status:    domain.EventStatusActive,
 				CreatedBy: adminUserID,
+				GroupID:   groupID,
 			}
 			if err := eventManager.CreateEvent(ctx, event); err != nil {
 				t.Fatalf("Failed to create almost test event %d: %v", i+1, err)
@@ -806,7 +872,7 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 		}
 
 		// Check permission
-		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, almostUserID, adminIDs)
+		canCreate, count, err := eventPermissionValidator.CanCreateEvent(ctx, almostUserID, groupID, adminIDs)
 		if err != nil {
 			t.Fatalf("Failed to check event creation permission: %v", err)
 		}
@@ -823,19 +889,11 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 func TestIntegration_EventResolutionPermissions(t *testing.T) {
 	// Setup in-memory database
 	ctx := context.Background()
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open database: %v", err)
-	}
-	defer db.Close()
+	creatorUserID := int64(11111)
+	chatID := int64(67890)
 
-	queue := storage.NewDBQueue(db)
+	queue, groupID := setupTestGroupAndDB(t, chatID, creatorUserID)
 	defer queue.Close()
-
-	// Initialize schema
-	if err := storage.InitSchema(queue); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
 
 	// Run migrations to ensure all tables exist
 	if err := storage.RunMigrations(queue); err != nil {
@@ -863,10 +921,40 @@ func TestIntegration_EventResolutionPermissions(t *testing.T) {
 	)
 
 	// Test data
-	creatorUserID := int64(11111)
 	adminUserID := int64(99999)
 	otherUserID := int64(22222)
 	adminIDs := []int64{adminUserID}
+
+	// Add users to group
+	creatorMembership := &domain.GroupMembership{
+		GroupID:  groupID,
+		UserID:   creatorUserID,
+		JoinedAt: time.Now(),
+		Status:   domain.MembershipStatusActive,
+	}
+	if err := groupMembershipRepo.CreateMembership(ctx, creatorMembership); err != nil {
+		t.Fatalf("Failed to create creator membership: %v", err)
+	}
+
+	adminMembership := &domain.GroupMembership{
+		GroupID:  groupID,
+		UserID:   adminUserID,
+		JoinedAt: time.Now(),
+		Status:   domain.MembershipStatusActive,
+	}
+	if err := groupMembershipRepo.CreateMembership(ctx, adminMembership); err != nil {
+		t.Fatalf("Failed to create admin membership: %v", err)
+	}
+
+	otherMembership := &domain.GroupMembership{
+		GroupID:  groupID,
+		UserID:   otherUserID,
+		JoinedAt: time.Now(),
+		Status:   domain.MembershipStatusActive,
+	}
+	if err := groupMembershipRepo.CreateMembership(ctx, otherMembership); err != nil {
+		t.Fatalf("Failed to create other user membership: %v", err)
+	}
 
 	// Create an event by the creator
 	event := &domain.Event{
@@ -877,6 +965,7 @@ func TestIntegration_EventResolutionPermissions(t *testing.T) {
 		CreatedAt: time.Now(),
 		Status:    domain.EventStatusActive,
 		CreatedBy: creatorUserID,
+		GroupID:   groupID,
 	}
 	if err := eventManager.CreateEvent(ctx, event); err != nil {
 		t.Fatalf("Failed to create test event: %v", err)
@@ -926,6 +1015,7 @@ func TestIntegration_EventResolutionPermissions(t *testing.T) {
 			CreatedAt: time.Now(),
 			Status:    domain.EventStatusActive,
 			CreatedBy: adminUserID,
+			GroupID:   groupID,
 		}
 		if err := eventManager.CreateEvent(ctx, adminEvent); err != nil {
 			t.Fatalf("Failed to create admin event: %v", err)
@@ -966,6 +1056,23 @@ func TestIntegration_EventResolutionPermissions(t *testing.T) {
 	// Test 7: Multiple admins can all resolve
 	t.Run("Multiple admins can all resolve", func(t *testing.T) {
 		multipleAdminIDs := []int64{adminUserID, 88888, 77777}
+
+		// Add other admins to group
+		for _, adminID := range multipleAdminIDs {
+			if adminID == adminUserID {
+				continue // Already added
+			}
+			membership := &domain.GroupMembership{
+				GroupID:  groupID,
+				UserID:   adminID,
+				JoinedAt: time.Now(),
+				Status:   domain.MembershipStatusActive,
+			}
+			if err := groupMembershipRepo.CreateMembership(ctx, membership); err != nil {
+				t.Fatalf("Failed to create admin %d membership: %v", adminID, err)
+			}
+		}
+
 		for _, adminID := range multipleAdminIDs {
 			canManage, err := eventPermissionValidator.CanManageEvent(ctx, adminID, event.ID, multipleAdminIDs)
 			if err != nil {
@@ -1024,6 +1131,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 
 	// Test data
 	creatorUserID := int64(11111)
+	groupID := int64(1) // Default group for testing
 
 	// Test 1: Achievement awarded after first event
 	t.Run("Achievement awarded after first event", func(t *testing.T) {
@@ -1036,13 +1144,14 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 			CreatedAt: time.Now(),
 			Status:    domain.EventStatusActive,
 			CreatedBy: creatorUserID,
+			GroupID:   groupID,
 		}
 		if err := eventManager.CreateEvent(ctx, event1); err != nil {
 			t.Fatalf("Failed to create first event: %v", err)
 		}
 
 		// Check and award creator achievements
-		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID)
+		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to check creator achievements: %v", err)
 		}
@@ -1056,7 +1165,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 		}
 
 		// Verify achievement is persisted
-		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID)
+		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to get user achievements: %v", err)
 		}
@@ -1077,6 +1186,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 				CreatedAt: time.Now(),
 				Status:    domain.EventStatusActive,
 				CreatedBy: creatorUserID,
+				GroupID:   groupID,
 			}
 			if err := eventManager.CreateEvent(ctx, event); err != nil {
 				t.Fatalf("Failed to create event %d: %v", i, err)
@@ -1084,7 +1194,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 		}
 
 		// Check and award creator achievements
-		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID)
+		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to check creator achievements: %v", err)
 		}
@@ -1098,7 +1208,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 		}
 
 		// Verify both achievements are persisted
-		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID)
+		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to get user achievements: %v", err)
 		}
@@ -1131,6 +1241,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 				CreatedAt: time.Now(),
 				Status:    domain.EventStatusActive,
 				CreatedBy: creatorUserID,
+				GroupID:   groupID,
 			}
 			if err := eventManager.CreateEvent(ctx, event); err != nil {
 				t.Fatalf("Failed to create event %d: %v", i, err)
@@ -1138,7 +1249,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 		}
 
 		// Check and award creator achievements
-		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID)
+		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to check creator achievements: %v", err)
 		}
@@ -1152,7 +1263,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 		}
 
 		// Verify all three achievements are persisted
-		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID)
+		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to get user achievements: %v", err)
 		}
@@ -1179,7 +1290,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 	// Test 4: No duplicate achievements
 	t.Run("No duplicate achievements", func(t *testing.T) {
 		// Check achievements again - should return empty list (no new achievements)
-		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID)
+		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, creatorUserID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to check creator achievements: %v", err)
 		}
@@ -1189,7 +1300,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 		}
 
 		// Verify still only 3 achievements in database
-		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID)
+		userAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to get user achievements: %v", err)
 		}
@@ -1211,13 +1322,14 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 			CreatedAt: time.Now(),
 			Status:    domain.EventStatusActive,
 			CreatedBy: anotherUserID,
+			GroupID:   groupID,
 		}
 		if err := eventManager.CreateEvent(ctx, event); err != nil {
 			t.Fatalf("Failed to create event by another user: %v", err)
 		}
 
 		// Check achievements for another user
-		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, anotherUserID)
+		achievements, err := achievementTracker.CheckCreatorAchievements(ctx, anotherUserID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to check creator achievements for another user: %v", err)
 		}
@@ -1231,7 +1343,7 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 		}
 
 		// Verify original user still has 3 achievements
-		originalUserAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID)
+		originalUserAchievements, err := achievementTracker.GetUserAchievements(ctx, creatorUserID, groupID)
 		if err != nil {
 			t.Fatalf("Failed to get original user achievements: %v", err)
 		}

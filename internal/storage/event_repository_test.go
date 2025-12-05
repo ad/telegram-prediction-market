@@ -28,6 +28,11 @@ func TestEventDataRoundTrip(t *testing.T) {
 
 	// Initialize schema
 	if err := InitSchema(queue); err != nil {
+
+// Run migrations to add group_id columns
+if err := RunMigrations(queue); err != nil {
+t.Fatalf("Failed to run migrations: %v", err)
+}
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
@@ -165,6 +170,11 @@ func TestCreatorIDPersistence(t *testing.T) {
 
 	// Initialize schema
 	if err := InitSchema(queue); err != nil {
+
+// Run migrations to add group_id columns
+if err := RunMigrations(queue); err != nil {
+t.Fatalf("Failed to run migrations: %v", err)
+}
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
@@ -253,6 +263,11 @@ func TestCreatorEventCounting(t *testing.T) {
 
 	// Initialize schema
 	if err := InitSchema(queue); err != nil {
+
+// Run migrations to add group_id columns
+if err := RunMigrations(queue); err != nil {
+t.Fatalf("Failed to run migrations: %v", err)
+}
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
@@ -346,6 +361,11 @@ func TestGetUserCreatedEventsCount(t *testing.T) {
 
 	// Initialize schema
 	if err := InitSchema(queue); err != nil {
+
+// Run migrations to add group_id columns
+if err := RunMigrations(queue); err != nil {
+t.Fatalf("Failed to run migrations: %v", err)
+}
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 

@@ -91,7 +91,7 @@ func TestPersonalStatsCompleteness(t *testing.T) {
 			}
 
 			// Get user rating
-			retrievedRating, err := ratingCalc.GetUserRating(ctx, userID)
+			retrievedRating, err := ratingCalc.GetUserRating(ctx, userID, 1)
 			if err != nil {
 				t.Logf("Failed to get user rating: %v", err)
 				return false
@@ -120,7 +120,7 @@ func TestPersonalStatsCompleteness(t *testing.T) {
 			}
 
 			// Get user achievements
-			retrievedAchievements, err := achievementTracker.GetUserAchievements(ctx, userID)
+			retrievedAchievements, err := achievementTracker.GetUserAchievements(ctx, userID, 1)
 			if err != nil {
 				t.Logf("Failed to get user achievements: %v", err)
 				return false

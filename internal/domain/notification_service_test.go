@@ -144,7 +144,7 @@ func (m *MockEventRepo) GetEventByPollID(ctx context.Context, pollID string) (*E
 	return &Event{}, nil
 }
 
-func (m *MockEventRepo) GetActiveEvents(ctx context.Context) ([]*Event, error) {
+func (m *MockEventRepo) GetActiveEvents(ctx context.Context, groupID int64) ([]*Event, error) {
 	return []*Event{}, nil
 }
 
@@ -160,8 +160,12 @@ func (m *MockEventRepo) GetResolvedEvents(ctx context.Context) ([]*Event, error)
 	return []*Event{}, nil
 }
 
-func (m *MockEventRepo) GetUserCreatedEventsCount(ctx context.Context, userID int64) (int, error) {
+func (m *MockEventRepo) GetUserCreatedEventsCount(ctx context.Context, userID int64, groupID int64) (int, error) {
 	return 0, nil
+}
+
+func (m *MockEventRepo) GetEventsByDeadlineRange(ctx context.Context, start, end time.Time) ([]*Event, error) {
+	return []*Event{}, nil
 }
 
 type MockPredictionRepo struct{}
@@ -192,7 +196,7 @@ func (m *MockPredictionRepo) GetUserCompletedEventCount(ctx context.Context, use
 
 type MockRatingRepo struct{}
 
-func (m *MockRatingRepo) GetRating(ctx context.Context, userID int64) (*Rating, error) {
+func (m *MockRatingRepo) GetRating(ctx context.Context, userID int64, groupID int64) (*Rating, error) {
 	return &Rating{}, nil
 }
 
@@ -200,11 +204,11 @@ func (m *MockRatingRepo) UpdateRating(ctx context.Context, rating *Rating) error
 	return nil
 }
 
-func (m *MockRatingRepo) GetTopRatings(ctx context.Context, limit int) ([]*Rating, error) {
+func (m *MockRatingRepo) GetTopRatings(ctx context.Context, groupID int64, limit int) ([]*Rating, error) {
 	return []*Rating{}, nil
 }
 
-func (m *MockRatingRepo) UpdateStreak(ctx context.Context, userID int64, streak int) error {
+func (m *MockRatingRepo) UpdateStreak(ctx context.Context, userID int64, groupID int64, streak int) error {
 	return nil
 }
 
@@ -424,7 +428,7 @@ func (m *MockEventRepoWithData) GetEventByPollID(ctx context.Context, pollID str
 	return m.event, nil
 }
 
-func (m *MockEventRepoWithData) GetActiveEvents(ctx context.Context) ([]*Event, error) {
+func (m *MockEventRepoWithData) GetActiveEvents(ctx context.Context, groupID int64) ([]*Event, error) {
 	return []*Event{m.event}, nil
 }
 
@@ -440,8 +444,12 @@ func (m *MockEventRepoWithData) GetResolvedEvents(ctx context.Context) ([]*Event
 	return []*Event{m.event}, nil
 }
 
-func (m *MockEventRepoWithData) GetUserCreatedEventsCount(ctx context.Context, userID int64) (int, error) {
+func (m *MockEventRepoWithData) GetUserCreatedEventsCount(ctx context.Context, userID int64, groupID int64) (int, error) {
 	return 0, nil
+}
+
+func (m *MockEventRepoWithData) GetEventsByDeadlineRange(ctx context.Context, start, end time.Time) ([]*Event, error) {
+	return []*Event{m.event}, nil
 }
 
 type MockPredictionRepoWithData struct {
@@ -476,7 +484,7 @@ type MockRatingRepoWithData struct {
 	topRatings []*Rating
 }
 
-func (m *MockRatingRepoWithData) GetRating(ctx context.Context, userID int64) (*Rating, error) {
+func (m *MockRatingRepoWithData) GetRating(ctx context.Context, userID int64, groupID int64) (*Rating, error) {
 	return &Rating{}, nil
 }
 
@@ -484,11 +492,11 @@ func (m *MockRatingRepoWithData) UpdateRating(ctx context.Context, rating *Ratin
 	return nil
 }
 
-func (m *MockRatingRepoWithData) GetTopRatings(ctx context.Context, limit int) ([]*Rating, error) {
+func (m *MockRatingRepoWithData) GetTopRatings(ctx context.Context, groupID int64, limit int) ([]*Rating, error) {
 	return m.topRatings, nil
 }
 
-func (m *MockRatingRepoWithData) UpdateStreak(ctx context.Context, userID int64, streak int) error {
+func (m *MockRatingRepoWithData) UpdateStreak(ctx context.Context, userID int64, groupID int64, streak int) error {
 	return nil
 }
 

@@ -28,6 +28,7 @@ type BotHandler struct {
 	groupRepo                domain.GroupRepository
 	groupMembershipRepo      domain.GroupMembershipRepository
 	deepLinkService          *domain.DeepLinkService
+	groupContextResolver     *domain.GroupContextResolver
 	ratingRepo               domain.RatingRepository
 	createGroupState         map[int64]bool // Tracks users in create_group flow
 }
@@ -46,6 +47,7 @@ func NewBotHandler(
 	groupRepo domain.GroupRepository,
 	groupMembershipRepo domain.GroupMembershipRepository,
 	deepLinkService *domain.DeepLinkService,
+	groupContextResolver *domain.GroupContextResolver,
 	ratingRepo domain.RatingRepository,
 ) *BotHandler {
 	return &BotHandler{
@@ -61,6 +63,7 @@ func NewBotHandler(
 		groupRepo:                groupRepo,
 		groupMembershipRepo:      groupMembershipRepo,
 		deepLinkService:          deepLinkService,
+		groupContextResolver:     groupContextResolver,
 		ratingRepo:               ratingRepo,
 		createGroupState:         make(map[int64]bool),
 	}
@@ -408,8 +411,7 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 	chatID := update.Message.Chat.ID
 
 	// Determine user's current group context
-	groupContextResolver := domain.NewGroupContextResolver(h.groupRepo)
-	groupID, err := groupContextResolver.ResolveGroupForUser(ctx, userID)
+	groupID, err := h.groupContextResolver.ResolveGroupForUser(ctx, userID)
 	if err != nil {
 		if err == domain.ErrNoGroupMembership {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -514,8 +516,7 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 	chatID := update.Message.Chat.ID
 
 	// Determine user's current group context
-	groupContextResolver := domain.NewGroupContextResolver(h.groupRepo)
-	groupID, err := groupContextResolver.ResolveGroupForUser(ctx, userID)
+	groupID, err := h.groupContextResolver.ResolveGroupForUser(ctx, userID)
 	if err != nil {
 		if err == domain.ErrNoGroupMembership {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{

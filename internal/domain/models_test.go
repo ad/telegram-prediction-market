@@ -16,6 +16,7 @@ func TestAchievementValidation(t *testing.T) {
 			name: "valid event organizer achievement",
 			achievement: Achievement{
 				UserID:    123,
+				GroupID:   1,
 				Code:      AchievementEventOrganizer,
 				Timestamp: time.Now(),
 			},
@@ -25,6 +26,7 @@ func TestAchievementValidation(t *testing.T) {
 			name: "valid active organizer achievement",
 			achievement: Achievement{
 				UserID:    456,
+				GroupID:   1,
 				Code:      AchievementActiveOrganizer,
 				Timestamp: time.Now(),
 			},
@@ -34,6 +36,7 @@ func TestAchievementValidation(t *testing.T) {
 			name: "valid master organizer achievement",
 			achievement: Achievement{
 				UserID:    789,
+				GroupID:   1,
 				Code:      AchievementMasterOrganizer,
 				Timestamp: time.Now(),
 			},
@@ -43,6 +46,7 @@ func TestAchievementValidation(t *testing.T) {
 			name: "valid existing achievement - sharpshooter",
 			achievement: Achievement{
 				UserID:    100,
+				GroupID:   1,
 				Code:      AchievementSharpshooter,
 				Timestamp: time.Now(),
 			},
@@ -52,6 +56,7 @@ func TestAchievementValidation(t *testing.T) {
 			name: "valid existing achievement - veteran",
 			achievement: Achievement{
 				UserID:    200,
+				GroupID:   1,
 				Code:      AchievementVeteran,
 				Timestamp: time.Now(),
 			},
@@ -61,6 +66,7 @@ func TestAchievementValidation(t *testing.T) {
 			name: "invalid achievement code",
 			achievement: Achievement{
 				UserID:    123,
+				GroupID:   1,
 				Code:      "invalid_code",
 				Timestamp: time.Now(),
 			},
@@ -71,6 +77,7 @@ func TestAchievementValidation(t *testing.T) {
 			name: "empty achievement code",
 			achievement: Achievement{
 				UserID:    123,
+				GroupID:   1,
 				Code:      "",
 				Timestamp: time.Now(),
 			},
@@ -81,6 +88,7 @@ func TestAchievementValidation(t *testing.T) {
 			name: "invalid user ID",
 			achievement: Achievement{
 				UserID:    0,
+				GroupID:   1,
 				Code:      AchievementEventOrganizer,
 				Timestamp: time.Now(),
 			},
@@ -115,6 +123,7 @@ func TestNewAchievementCodes(t *testing.T) {
 		t.Run(string(code), func(t *testing.T) {
 			achievement := Achievement{
 				UserID:    123,
+				GroupID:   1,
 				Code:      code,
 				Timestamp: time.Now(),
 			}
@@ -140,6 +149,7 @@ func TestInvalidAchievementCodes(t *testing.T) {
 		t.Run(string(code), func(t *testing.T) {
 			achievement := Achievement{
 				UserID:    123,
+				GroupID:   1,
 				Code:      code,
 				Timestamp: time.Now(),
 			}

@@ -10,14 +10,16 @@ import (
 
 // Config holds application configuration
 type Config struct {
-	TelegramToken     string
-	AdminUserIDs      []int64
-	DatabasePath      string
-	LogLevel          string
-	Timezone          *time.Location
-	MinEventsToCreate int    // Minimum completed events to create new events
-	GroupID           int64
-	DefaultGroupName  string // Name for default group during migration
+	TelegramToken         string
+	AdminUserIDs          []int64
+	DatabasePath          string
+	LogLevel              string
+	Timezone              *time.Location
+	MinEventsToCreate     int // Minimum completed events to create new events
+	GroupID               int64
+	DefaultGroupName      string // Name for default group during migration
+	MaxGroupsPerAdmin     int    // Maximum groups an admin can create
+	MaxMembershipsPerUser int    // Maximum groups a user can join
 }
 
 // Load loads configuration from environment variables
@@ -85,15 +87,45 @@ func Load() (*Config, error) {
 		defaultGroupName = "Default Group"
 	}
 
+	// Load max groups per admin (default to 10)
+	maxGroupsPerAdmin := 10 // default value
+	maxGroupsStr := os.Getenv("MAX_GROUPS_PER_ADMIN")
+	if maxGroupsStr != "" {
+		maxGroups, err := strconv.Atoi(maxGroupsStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid MAX_GROUPS_PER_ADMIN '%s': must be a valid integer", maxGroupsStr)
+		}
+		if maxGroups <= 0 {
+			return nil, fmt.Errorf("invalid MAX_GROUPS_PER_ADMIN '%d': must be positive", maxGroups)
+		}
+		maxGroupsPerAdmin = maxGroups
+	}
+
+	// Load max memberships per user (default to 20)
+	maxMembershipsPerUser := 20 // default value
+	maxMembershipsStr := os.Getenv("MAX_MEMBERSHIPS_PER_USER")
+	if maxMembershipsStr != "" {
+		maxMemberships, err := strconv.Atoi(maxMembershipsStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid MAX_MEMBERSHIPS_PER_USER '%s': must be a valid integer", maxMembershipsStr)
+		}
+		if maxMemberships <= 0 {
+			return nil, fmt.Errorf("invalid MAX_MEMBERSHIPS_PER_USER '%d': must be positive", maxMemberships)
+		}
+		maxMembershipsPerUser = maxMemberships
+	}
+
 	return &Config{
-		TelegramToken:     token,
-		AdminUserIDs:      adminIDs,
-		DatabasePath:      dbPath,
-		LogLevel:          logLevel,
-		Timezone:          timezone,
-		MinEventsToCreate: minEventsToCreate,
-		GroupID:           groupID,
-		DefaultGroupName:  defaultGroupName,
+		TelegramToken:         token,
+		AdminUserIDs:          adminIDs,
+		DatabasePath:          dbPath,
+		LogLevel:              logLevel,
+		Timezone:              timezone,
+		MinEventsToCreate:     minEventsToCreate,
+		GroupID:               groupID,
+		DefaultGroupName:      defaultGroupName,
+		MaxGroupsPerAdmin:     maxGroupsPerAdmin,
+		MaxMembershipsPerUser: maxMembershipsPerUser,
 	}, nil
 }
 

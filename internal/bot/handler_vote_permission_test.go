@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/storage"
 )
 
 // Feature: multi-group-support, Property 25: Vote Permission Validation
@@ -14,13 +15,12 @@ func TestVotePermissionValidation_Property(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup test database
-	db, cleanup := setupTestDB(t)
+	dbQueue, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	queue := setupTestDBQueue(db)
-	groupRepo := setupGroupRepository(queue)
-	membershipRepo := setupGroupMembershipRepository(queue)
-	eventRepo := setupEventRepository(queue)
+	groupRepo := storage.NewGroupRepository(dbQueue)
+	membershipRepo := storage.NewGroupMembershipRepository(dbQueue)
+	eventRepo := storage.NewEventRepository(dbQueue)
 
 	// Create test groups
 	group1 := &domain.Group{

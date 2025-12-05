@@ -192,6 +192,7 @@ func main() {
 		groupRepo,
 		groupMembershipRepo,
 		deepLinkService,
+		groupContextResolver,
 		ratingRepo,
 	)
 

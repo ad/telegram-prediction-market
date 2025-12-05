@@ -678,3 +678,786 @@ func TestHasActiveMembership(t *testing.T) {
 		t.Error("Expected no active membership for removed user")
 	}
 }
+
+// TestMembershipRemoval tests Property 18: Membership Removal
+// Validates: Requirements 6.1
+func TestMembershipRemoval(t *testing.T) {
+	parameters := gopter.DefaultTestParameters()
+	parameters.MinSuccessfulTests = 100
+	properties := gopter.NewProperties(parameters)
+
+	properties.Property("removing a member marks membership as removed instead of deleting", prop.ForAll(
+		func(userID int64, groupCreatorID int64) bool {
+			// Ensure valid IDs
+			if userID == 0 {
+				userID = 1
+			}
+			if groupCreatorID == 0 {
+				groupCreatorID = 1
+			}
+
+			// Setup in-memory database
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				t.Logf("Failed to open database: %v", err)
+				return false
+			}
+			defer func() { _ = db.Close() }()
+
+			queue := NewDBQueue(db)
+			defer queue.Close()
+
+			// Initialize schema
+			if err := InitSchema(queue); err != nil {
+				t.Logf("Failed to initialize schema: %v", err)
+				return false
+			}
+
+			// Run migrations to create tables
+			if err := RunMigrations(queue); err != nil {
+				t.Logf("Failed to run migrations: %v", err)
+				return false
+			}
+
+			groupRepo := NewGroupRepository(queue)
+			membershipRepo := NewGroupMembershipRepository(queue)
+			ctx := context.Background()
+
+			// Create a group
+			group := &domain.Group{
+				TelegramChatID: -1001234567890,
+				Name:           "Test Group",
+				CreatedAt:      time.Now().Truncate(time.Second),
+				CreatedBy:      groupCreatorID,
+			}
+
+			if err := groupRepo.CreateGroup(ctx, group); err != nil {
+				t.Logf("Failed to create group: %v", err)
+				return false
+			}
+
+			// Create an active membership
+			membership := &domain.GroupMembership{
+				GroupID:  group.ID,
+				UserID:   userID,
+				JoinedAt: time.Now().Truncate(time.Second),
+				Status:   domain.MembershipStatusActive,
+			}
+
+			if err := membershipRepo.CreateMembership(ctx, membership); err != nil {
+				t.Logf("Failed to create membership: %v", err)
+				return false
+			}
+
+			originalID := membership.ID
+			originalJoinedAt := membership.JoinedAt
+
+			// Remove the member by updating status
+			if err := membershipRepo.UpdateMembershipStatus(ctx, group.ID, userID, domain.MembershipStatusRemoved); err != nil {
+				t.Logf("Failed to update membership status: %v", err)
+				return false
+			}
+
+			// Verify membership still exists but is marked as removed
+			retrieved, err := membershipRepo.GetMembership(ctx, group.ID, userID)
+			if err != nil {
+				t.Logf("Failed to get membership: %v", err)
+				return false
+			}
+
+			if retrieved == nil {
+				t.Logf("Membership was deleted instead of marked as removed")
+				return false
+			}
+
+			if retrieved.Status != domain.MembershipStatusRemoved {
+				t.Logf("Expected removed status, got %s", retrieved.Status)
+				return false
+			}
+
+			// Verify the membership ID and join date are preserved
+			if retrieved.ID != originalID {
+				t.Logf("Membership ID changed after removal")
+				return false
+			}
+
+			if !retrieved.JoinedAt.Equal(originalJoinedAt) {
+				t.Logf("Join date changed after removal")
+				return false
+			}
+
+			// Verify HasActiveMembership returns false
+			hasActive, err := membershipRepo.HasActiveMembership(ctx, group.ID, userID)
+			if err != nil {
+				t.Logf("Failed to check active membership: %v", err)
+				return false
+			}
+
+			if hasActive {
+				t.Logf("HasActiveMembership returned true for removed member")
+				return false
+			}
+
+			return true
+		},
+		gen.Int64Range(1, 100000),
+		gen.Int64Range(1, 100000),
+	))
+
+	properties.TestingRun(t)
+}
+
+// TestHistoricalDataPreservation tests Property 20: Historical Data Preservation
+// Validates: Requirements 6.3
+func TestHistoricalDataPreservation(t *testing.T) {
+	parameters := gopter.DefaultTestParameters()
+	parameters.MinSuccessfulTests = 100
+	properties := gopter.NewProperties(parameters)
+
+	properties.Property("removing a member preserves membership record with historical data", prop.ForAll(
+		func(userID int64, groupCreatorID int64) bool {
+			// Ensure valid IDs
+			if userID == 0 {
+				userID = 1
+			}
+			if groupCreatorID == 0 {
+				groupCreatorID = 1
+			}
+
+			// Setup in-memory database
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				t.Logf("Failed to open database: %v", err)
+				return false
+			}
+			defer func() { _ = db.Close() }()
+
+			queue := NewDBQueue(db)
+			defer queue.Close()
+
+			// Initialize schema
+			if err := InitSchema(queue); err != nil {
+				t.Logf("Failed to initialize schema: %v", err)
+				return false
+			}
+
+			// Run migrations to create tables
+			if err := RunMigrations(queue); err != nil {
+				t.Logf("Failed to run migrations: %v", err)
+				return false
+			}
+
+			groupRepo := NewGroupRepository(queue)
+			membershipRepo := NewGroupMembershipRepository(queue)
+			ctx := context.Background()
+
+			// Create a group
+			group := &domain.Group{
+				TelegramChatID: -1001234567890,
+				Name:           "Test Group",
+				CreatedAt:      time.Now().Truncate(time.Second),
+				CreatedBy:      groupCreatorID,
+			}
+
+			if err := groupRepo.CreateGroup(ctx, group); err != nil {
+				t.Logf("Failed to create group: %v", err)
+				return false
+			}
+
+			// Create an active membership
+			membership := &domain.GroupMembership{
+				GroupID:  group.ID,
+				UserID:   userID,
+				JoinedAt: time.Now().Truncate(time.Second),
+				Status:   domain.MembershipStatusActive,
+			}
+
+			if err := membershipRepo.CreateMembership(ctx, membership); err != nil {
+				t.Logf("Failed to create membership: %v", err)
+				return false
+			}
+
+			originalID := membership.ID
+			originalJoinedAt := membership.JoinedAt
+
+			// Remove the member
+			if err := membershipRepo.UpdateMembershipStatus(ctx, group.ID, userID, domain.MembershipStatusRemoved); err != nil {
+				t.Logf("Failed to update membership status: %v", err)
+				return false
+			}
+
+			// Verify membership record is still present (not deleted)
+			retrievedMembership, err := membershipRepo.GetMembership(ctx, group.ID, userID)
+			if err != nil {
+				t.Logf("Failed to get membership after removal: %v", err)
+				return false
+			}
+
+			if retrievedMembership == nil {
+				t.Logf("Membership was deleted instead of marked as removed")
+				return false
+			}
+
+			// Verify membership is marked as removed
+			if retrievedMembership.Status != domain.MembershipStatusRemoved {
+				t.Logf("Expected removed status, got %s", retrievedMembership.Status)
+				return false
+			}
+
+			// Verify historical data is preserved (ID and join date unchanged)
+			if retrievedMembership.ID != originalID {
+				t.Logf("Membership ID changed after removal")
+				return false
+			}
+
+			if !retrievedMembership.JoinedAt.Equal(originalJoinedAt) {
+				t.Logf("Join date changed after removal")
+				return false
+			}
+
+			// Verify the membership is still retrievable via GetGroupMembers
+			// (which returns all members including removed ones)
+			allMembers, err := membershipRepo.GetGroupMembers(ctx, group.ID)
+			if err != nil {
+				t.Logf("Failed to get group members: %v", err)
+				return false
+			}
+
+			found := false
+			for _, member := range allMembers {
+				if member.UserID == userID && member.Status == domain.MembershipStatusRemoved {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				t.Logf("Removed membership not found in group members list")
+				return false
+			}
+
+			return true
+		},
+		gen.Int64Range(1, 100000),
+		gen.Int64Range(1, 100000),
+	))
+
+	properties.TestingRun(t)
+}
+
+// TestRejoinAfterRemoval tests Property 22: Rejoin After Removal
+// Validates: Requirements 6.5
+func TestRejoinAfterRemoval(t *testing.T) {
+	parameters := gopter.DefaultTestParameters()
+	parameters.MinSuccessfulTests = 100
+	properties := gopter.NewProperties(parameters)
+
+	properties.Property("removed user can rejoin group by reactivating membership", prop.ForAll(
+		func(userID int64, groupCreatorID int64) bool {
+			// Ensure valid IDs
+			if userID == 0 {
+				userID = 1
+			}
+			if groupCreatorID == 0 {
+				groupCreatorID = 1
+			}
+
+			// Setup in-memory database
+			db, err := sql.Open("sqlite", ":memory:")
+			if err != nil {
+				t.Logf("Failed to open database: %v", err)
+				return false
+			}
+			defer func() { _ = db.Close() }()
+
+			queue := NewDBQueue(db)
+			defer queue.Close()
+
+			// Initialize schema
+			if err := InitSchema(queue); err != nil {
+				t.Logf("Failed to initialize schema: %v", err)
+				return false
+			}
+
+			// Run migrations to create tables
+			if err := RunMigrations(queue); err != nil {
+				t.Logf("Failed to run migrations: %v", err)
+				return false
+			}
+
+			groupRepo := NewGroupRepository(queue)
+			membershipRepo := NewGroupMembershipRepository(queue)
+			ctx := context.Background()
+
+			// Create a group
+			group := &domain.Group{
+				TelegramChatID: -1001234567890,
+				Name:           "Test Group",
+				CreatedAt:      time.Now().Truncate(time.Second),
+				CreatedBy:      groupCreatorID,
+			}
+
+			if err := groupRepo.CreateGroup(ctx, group); err != nil {
+				t.Logf("Failed to create group: %v", err)
+				return false
+			}
+
+			// Create an active membership
+			membership := &domain.GroupMembership{
+				GroupID:  group.ID,
+				UserID:   userID,
+				JoinedAt: time.Now().Truncate(time.Second),
+				Status:   domain.MembershipStatusActive,
+			}
+
+			if err := membershipRepo.CreateMembership(ctx, membership); err != nil {
+				t.Logf("Failed to create membership: %v", err)
+				return false
+			}
+
+			originalID := membership.ID
+			originalJoinedAt := membership.JoinedAt
+
+			// Remove the member
+			if err := membershipRepo.UpdateMembershipStatus(ctx, group.ID, userID, domain.MembershipStatusRemoved); err != nil {
+				t.Logf("Failed to update membership status: %v", err)
+				return false
+			}
+
+			// Verify membership is removed
+			removed, err := membershipRepo.GetMembership(ctx, group.ID, userID)
+			if err != nil {
+				t.Logf("Failed to get membership: %v", err)
+				return false
+			}
+
+			if removed == nil || removed.Status != domain.MembershipStatusRemoved {
+				t.Logf("Membership not properly removed")
+				return false
+			}
+
+			// Verify user cannot access group (no active membership)
+			hasActive, err := membershipRepo.HasActiveMembership(ctx, group.ID, userID)
+			if err != nil {
+				t.Logf("Failed to check active membership: %v", err)
+				return false
+			}
+
+			if hasActive {
+				t.Logf("User still has active membership after removal")
+				return false
+			}
+
+			// Rejoin by reactivating membership
+			if err := membershipRepo.UpdateMembershipStatus(ctx, group.ID, userID, domain.MembershipStatusActive); err != nil {
+				t.Logf("Failed to reactivate membership: %v", err)
+				return false
+			}
+
+			// Verify membership is now active
+			rejoined, err := membershipRepo.GetMembership(ctx, group.ID, userID)
+			if err != nil {
+				t.Logf("Failed to get membership after rejoin: %v", err)
+				return false
+			}
+
+			if rejoined == nil {
+				t.Logf("Membership not found after rejoin")
+				return false
+			}
+
+			if rejoined.Status != domain.MembershipStatusActive {
+				t.Logf("Expected active status after rejoin, got %s", rejoined.Status)
+				return false
+			}
+
+			// Verify the same membership record is used (ID preserved)
+			if rejoined.ID != originalID {
+				t.Logf("Membership ID changed after rejoin")
+				return false
+			}
+
+			// Verify original join date is preserved
+			if !rejoined.JoinedAt.Equal(originalJoinedAt) {
+				t.Logf("Join date changed after rejoin")
+				return false
+			}
+
+			// Verify user now has active membership
+			hasActiveAfterRejoin, err := membershipRepo.HasActiveMembership(ctx, group.ID, userID)
+			if err != nil {
+				t.Logf("Failed to check active membership after rejoin: %v", err)
+				return false
+			}
+
+			if !hasActiveAfterRejoin {
+				t.Logf("User does not have active membership after rejoin")
+				return false
+			}
+
+			return true
+		},
+		gen.Int64Range(1, 100000),
+		gen.Int64Range(1, 100000),
+	))
+
+	properties.TestingRun(t)
+}
+
+// Unit tests for removal and rejoin functionality
+
+func TestMembershipMarkedAsRemoved(t *testing.T) {
+	// Setup in-memory database
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	queue := NewDBQueue(db)
+	defer queue.Close()
+
+	// Initialize schema
+	if err := InitSchema(queue); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to create tables
+	if err := RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	groupRepo := NewGroupRepository(queue)
+	membershipRepo := NewGroupMembershipRepository(queue)
+	ctx := context.Background()
+
+	// Create a group
+	group := &domain.Group{
+		TelegramChatID: -1001234567890,
+		Name:           "Test Group",
+		CreatedAt:      time.Now().Truncate(time.Second),
+		CreatedBy:      12345,
+	}
+
+	err = groupRepo.CreateGroup(ctx, group)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+
+	// Create an active membership
+	membership := &domain.GroupMembership{
+		GroupID:  group.ID,
+		UserID:   67890,
+		JoinedAt: time.Now().Truncate(time.Second),
+		Status:   domain.MembershipStatusActive,
+	}
+
+	err = membershipRepo.CreateMembership(ctx, membership)
+	if err != nil {
+		t.Fatalf("Failed to create membership: %v", err)
+	}
+
+	// Remove the member
+	err = membershipRepo.UpdateMembershipStatus(ctx, group.ID, membership.UserID, domain.MembershipStatusRemoved)
+	if err != nil {
+		t.Fatalf("Failed to update membership status: %v", err)
+	}
+
+	// Verify membership is marked as removed
+	retrieved, err := membershipRepo.GetMembership(ctx, group.ID, membership.UserID)
+	if err != nil {
+		t.Fatalf("Failed to retrieve membership: %v", err)
+	}
+
+	if retrieved == nil {
+		t.Fatal("Membership was deleted instead of marked as removed")
+	}
+
+	if retrieved.Status != domain.MembershipStatusRemoved {
+		t.Errorf("Expected removed status, got %s", retrieved.Status)
+	}
+}
+
+func TestHistoricalDataPreservedAfterRemoval(t *testing.T) {
+	// Setup in-memory database
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	queue := NewDBQueue(db)
+	defer queue.Close()
+
+	// Initialize schema
+	if err := InitSchema(queue); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to create tables
+	if err := RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	groupRepo := NewGroupRepository(queue)
+	membershipRepo := NewGroupMembershipRepository(queue)
+	ctx := context.Background()
+
+	// Create a group
+	group := &domain.Group{
+		TelegramChatID: -1001234567890,
+		Name:           "Test Group",
+		CreatedAt:      time.Now().Truncate(time.Second),
+		CreatedBy:      12345,
+	}
+
+	err = groupRepo.CreateGroup(ctx, group)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+
+	// Create an active membership
+	joinTime := time.Now().Truncate(time.Second)
+	membership := &domain.GroupMembership{
+		GroupID:  group.ID,
+		UserID:   67890,
+		JoinedAt: joinTime,
+		Status:   domain.MembershipStatusActive,
+	}
+
+	err = membershipRepo.CreateMembership(ctx, membership)
+	if err != nil {
+		t.Fatalf("Failed to create membership: %v", err)
+	}
+
+	originalID := membership.ID
+
+	// Remove the member
+	err = membershipRepo.UpdateMembershipStatus(ctx, group.ID, membership.UserID, domain.MembershipStatusRemoved)
+	if err != nil {
+		t.Fatalf("Failed to update membership status: %v", err)
+	}
+
+	// Verify historical data is preserved
+	retrieved, err := membershipRepo.GetMembership(ctx, group.ID, membership.UserID)
+	if err != nil {
+		t.Fatalf("Failed to retrieve membership: %v", err)
+	}
+
+	if retrieved == nil {
+		t.Fatal("Membership was deleted")
+	}
+
+	if retrieved.ID != originalID {
+		t.Errorf("Membership ID changed: expected %d, got %d", originalID, retrieved.ID)
+	}
+
+	if !retrieved.JoinedAt.Equal(joinTime) {
+		t.Errorf("Join date changed: expected %v, got %v", joinTime, retrieved.JoinedAt)
+	}
+
+	// Verify membership appears in group members list
+	members, err := membershipRepo.GetGroupMembers(ctx, group.ID)
+	if err != nil {
+		t.Fatalf("Failed to get group members: %v", err)
+	}
+
+	found := false
+	for _, member := range members {
+		if member.UserID == membership.UserID && member.Status == domain.MembershipStatusRemoved {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Removed membership not found in group members list")
+	}
+}
+
+func TestRemovedUserCannotAccessGroup(t *testing.T) {
+	// Setup in-memory database
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	queue := NewDBQueue(db)
+	defer queue.Close()
+
+	// Initialize schema
+	if err := InitSchema(queue); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to create tables
+	if err := RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	groupRepo := NewGroupRepository(queue)
+	membershipRepo := NewGroupMembershipRepository(queue)
+	ctx := context.Background()
+
+	// Create a group
+	group := &domain.Group{
+		TelegramChatID: -1001234567890,
+		Name:           "Test Group",
+		CreatedAt:      time.Now().Truncate(time.Second),
+		CreatedBy:      12345,
+	}
+
+	err = groupRepo.CreateGroup(ctx, group)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+
+	// Create an active membership
+	membership := &domain.GroupMembership{
+		GroupID:  group.ID,
+		UserID:   67890,
+		JoinedAt: time.Now().Truncate(time.Second),
+		Status:   domain.MembershipStatusActive,
+	}
+
+	err = membershipRepo.CreateMembership(ctx, membership)
+	if err != nil {
+		t.Fatalf("Failed to create membership: %v", err)
+	}
+
+	// Verify user has active membership
+	hasActive, err := membershipRepo.HasActiveMembership(ctx, group.ID, membership.UserID)
+	if err != nil {
+		t.Fatalf("Failed to check active membership: %v", err)
+	}
+
+	if !hasActive {
+		t.Error("Expected active membership before removal")
+	}
+
+	// Remove the member
+	err = membershipRepo.UpdateMembershipStatus(ctx, group.ID, membership.UserID, domain.MembershipStatusRemoved)
+	if err != nil {
+		t.Fatalf("Failed to update membership status: %v", err)
+	}
+
+	// Verify user no longer has active membership
+	hasActive, err = membershipRepo.HasActiveMembership(ctx, group.ID, membership.UserID)
+	if err != nil {
+		t.Fatalf("Failed to check active membership after removal: %v", err)
+	}
+
+	if hasActive {
+		t.Error("User still has active membership after removal")
+	}
+}
+
+func TestRemovedUserCanRejoin(t *testing.T) {
+	// Setup in-memory database
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	queue := NewDBQueue(db)
+	defer queue.Close()
+
+	// Initialize schema
+	if err := InitSchema(queue); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to create tables
+	if err := RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	groupRepo := NewGroupRepository(queue)
+	membershipRepo := NewGroupMembershipRepository(queue)
+	ctx := context.Background()
+
+	// Create a group
+	group := &domain.Group{
+		TelegramChatID: -1001234567890,
+		Name:           "Test Group",
+		CreatedAt:      time.Now().Truncate(time.Second),
+		CreatedBy:      12345,
+	}
+
+	err = groupRepo.CreateGroup(ctx, group)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+
+	// Create an active membership
+	joinTime := time.Now().Truncate(time.Second)
+	membership := &domain.GroupMembership{
+		GroupID:  group.ID,
+		UserID:   67890,
+		JoinedAt: joinTime,
+		Status:   domain.MembershipStatusActive,
+	}
+
+	err = membershipRepo.CreateMembership(ctx, membership)
+	if err != nil {
+		t.Fatalf("Failed to create membership: %v", err)
+	}
+
+	originalID := membership.ID
+
+	// Remove the member
+	err = membershipRepo.UpdateMembershipStatus(ctx, group.ID, membership.UserID, domain.MembershipStatusRemoved)
+	if err != nil {
+		t.Fatalf("Failed to update membership status: %v", err)
+	}
+
+	// Verify user cannot access group
+	hasActive, err := membershipRepo.HasActiveMembership(ctx, group.ID, membership.UserID)
+	if err != nil {
+		t.Fatalf("Failed to check active membership: %v", err)
+	}
+
+	if hasActive {
+		t.Error("User still has active membership after removal")
+	}
+
+	// Rejoin by reactivating membership
+	err = membershipRepo.UpdateMembershipStatus(ctx, group.ID, membership.UserID, domain.MembershipStatusActive)
+	if err != nil {
+		t.Fatalf("Failed to reactivate membership: %v", err)
+	}
+
+	// Verify user can now access group
+	hasActive, err = membershipRepo.HasActiveMembership(ctx, group.ID, membership.UserID)
+	if err != nil {
+		t.Fatalf("Failed to check active membership after rejoin: %v", err)
+	}
+
+	if !hasActive {
+		t.Error("User does not have active membership after rejoin")
+	}
+
+	// Verify membership record is the same (ID and join date preserved)
+	rejoined, err := membershipRepo.GetMembership(ctx, group.ID, membership.UserID)
+	if err != nil {
+		t.Fatalf("Failed to retrieve membership after rejoin: %v", err)
+	}
+
+	if rejoined == nil {
+		t.Fatal("Membership not found after rejoin")
+	}
+
+	if rejoined.ID != originalID {
+		t.Errorf("Membership ID changed after rejoin: expected %d, got %d", originalID, rejoined.ID)
+	}
+
+	if !rejoined.JoinedAt.Equal(joinTime) {
+		t.Errorf("Join date changed after rejoin: expected %v, got %v", joinTime, rejoined.JoinedAt)
+	}
+
+	if rejoined.Status != domain.MembershipStatusActive {
+		t.Errorf("Expected active status after rejoin, got %s", rejoined.Status)
+	}
+}

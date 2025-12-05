@@ -251,9 +251,61 @@ func TestMigrateExistingDataToDefaultGroup(t *testing.T) {
 	queue := NewDBQueue(db)
 	defer queue.Close()
 
-	// Initialize base schema
-	if err := InitSchema(queue); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
+	// Create OLD schema (without group_id) to simulate pre-migration state
+	err = queue.Execute(func(db *sql.DB) error {
+		_, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question TEXT NOT NULL,
+    options_json TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    deadline TIMESTAMP NOT NULL,
+    status TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    correct_option INTEGER,
+    created_by INTEGER NOT NULL,
+    poll_id TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ratings (
+    user_id INTEGER PRIMARY KEY,
+    username TEXT NOT NULL DEFAULT '',
+    score INTEGER NOT NULL DEFAULT 0,
+    correct_count INTEGER NOT NULL DEFAULT 0,
+    wrong_count INTEGER NOT NULL DEFAULT 0,
+    streak INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS achievements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    UNIQUE(user_id, code)
+);
+
+CREATE TABLE IF NOT EXISTS predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    option INTEGER NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    FOREIGN KEY (event_id) REFERENCES events(id),
+    UNIQUE(event_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS fsm_sessions (
+    user_id INTEGER PRIMARY KEY,
+    state TEXT NOT NULL,
+    context_json TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("Failed to create old schema: %v", err)
 	}
 
 	// Insert some test data before migration
