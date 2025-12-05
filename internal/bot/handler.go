@@ -113,51 +113,77 @@ func (h *BotHandler) logAdminAction(userID int64, action string, eventID int64, 
 
 // HandleHelp handles the /help command
 func (h *BotHandler) HandleHelp(ctx context.Context, b *bot.Bot, update *models.Update) {
-	helpText := `🤖 *Telegram Prediction Market Bot*
+	helpText := `🤖 Telegram Prediction Market Bot
 
-*Доступные команды:*
+═══════════════════════════
+📋 ДОСТУПНЫЕ КОМАНДЫ
+═══════════════════════════
 
-👤 *Для всех пользователей:*
-/help - Показать эту справку
-/rating - Топ-10 участников по очкам
-/my - Ваша статистика и ачивки
-/events - Список активных событий
+👤 Для всех пользователей:
+  /help — Показать эту справку
+  /rating — Топ-10 участников по очкам
+  /my — Ваша статистика и ачивки
+  /events — Список активных событий
 
-👑 *Для администраторов:*
-/create_event - Создать новое событие
-/resolve_event - Завершить событие и подвести итоги
-/edit_event - Редактировать событие (только без голосов)
+👑 Для администраторов:
+  /create_event — Создать новое событие
+  /resolve_event — Завершить событие и подвести итоги
+  /edit_event — Редактировать событие (только без голосов)
 
-*Правила начисления очков:*
+═══════════════════════════
+💰 ПРАВИЛА НАЧИСЛЕНИЯ ОЧКОВ
+═══════════════════════════
 
-✅ *За правильный прогноз:*
-• Бинарное событие (Да/Нет): +10 очков
-• Множественный выбор (3-6 вариантов): +15 очков
-• Вероятностное событие: +15 очков
+✅ За правильный прогноз:
+  • Бинарное событие (Да/Нет): +10 очков
+  • Множественный выбор (3-6 вариантов): +15 очков
+  • Вероятностное событие: +15 очков
 
-🎁 *Бонусы:*
-• Меньшинство (<40% голосов): +5 очков
-• Ранний голос (первые 12 часов): +3 очка
-• Участие в любом событии: +1 очко
+🎁 Бонусы:
+  • Меньшинство (<40% голосов): +5 очков
+  • Ранний голос (первые 12 часов): +3 очка
+  • Участие в любом событии: +1 очко
 
-❌ *Штрафы:*
-• Неправильный прогноз: -3 очка
+❌ Штрафы:
+  • Неправильный прогноз: -3 очка
 
-*Ачивки:*
+═══════════════════════════
+🏆 АЧИВКИ
+═══════════════════════════
 
-🎯 *Меткий стрелок* - 3 правильных прогноза подряд
-🔮 *Провидец* - 10 правильных прогнозов подряд
-🎲 *Риск-мейкер* - 3 правильных прогноза в меньшинстве подряд
-📊 *Аналитик недели* - Больше всех очков за неделю
-🏆 *Старожил* - Участие в 50 событиях
+🎯 Меткий стрелок
+   → 3 правильных прогноза подряд
 
-*Типы событий:*
+🔮 Провидец
+   → 10 правильных прогнозов подряд
 
-1️⃣ *Бинарное* - Да/Нет вопросы
-2️⃣ *Множественный выбор* - 2-6 вариантов ответа
-3️⃣ *Вероятностное* - Диапазоны вероятности (0-25%, 25-50%, 50-75%, 75-100%)
+🎲 Риск-мейкер
+   → 3 правильных прогноза в меньшинстве подряд
 
-Голосуйте до дедлайна! За 24 часа до окончания придёт напоминание. 🔔`
+📊 Аналитик недели
+   → Больше всех очков за неделю
+
+🏆 Старожил
+   → Участие в 50 событиях
+
+═══════════════════════════
+🎲 ТИПЫ СОБЫТИЙ
+═══════════════════════════
+
+1️⃣ Бинарное
+   → Да/Нет вопросы
+
+2️⃣ Множественный выбор
+   → 2-6 вариантов ответа
+
+3️⃣ Вероятностное
+   → Диапазоны вероятности
+   (0-25%, 25-50%, 50-75%, 75-100%)
+
+═══════════════════════════
+
+⏰ Голосуйте до дедлайна!
+За 24 часа до окончания придёт напоминание 🔔`
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
@@ -191,7 +217,8 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 
 	// Build rating message
 	var sb strings.Builder
-	sb.WriteString("🏆 *Топ-10 участников*\n\n")
+	sb.WriteString("🏆 ТОП-10 УЧАСТНИКОВ\n")
+	sb.WriteString("═══════════════════════════\n\n")
 
 	medals := []string{"🥇", "🥈", "🥉"}
 	for i, rating := range ratings {
@@ -208,10 +235,9 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 			accuracy = float64(rating.CorrectCount) / float64(total) * 100
 		}
 
-		sb.WriteString(fmt.Sprintf("%s*%d очков* | Точность: %.1f%% | Серия: %d\n",
-			medal, rating.Score, accuracy, rating.Streak))
-		sb.WriteString(fmt.Sprintf("   ✅ %d  ❌ %d\n\n",
-			rating.CorrectCount, rating.WrongCount))
+		sb.WriteString(fmt.Sprintf("%s%d очков\n", medal, rating.Score))
+		sb.WriteString(fmt.Sprintf("   📊 Точность: %.1f%%  |  🔥 Серия: %d\n", accuracy, rating.Streak))
+		sb.WriteString(fmt.Sprintf("   ✅ %d  ❌ %d\n\n", rating.CorrectCount, rating.WrongCount))
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -247,7 +273,8 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 
 	// Build stats message
 	var sb strings.Builder
-	sb.WriteString("📊 *Ваша статистика*\n\n")
+	sb.WriteString("📊 ВАША СТАТИСТИКА\n")
+	sb.WriteString("═══════════════════════════\n\n")
 
 	total := rating.CorrectCount + rating.WrongCount
 	accuracy := 0.0
@@ -255,16 +282,18 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 		accuracy = float64(rating.CorrectCount) / float64(total) * 100
 	}
 
-	sb.WriteString(fmt.Sprintf("💰 *Очки:* %d\n", rating.Score))
-	sb.WriteString(fmt.Sprintf("✅ *Правильных:* %d\n", rating.CorrectCount))
-	sb.WriteString(fmt.Sprintf("❌ *Неправильных:* %d\n", rating.WrongCount))
-	sb.WriteString(fmt.Sprintf("📈 *Точность:* %.1f%%\n", accuracy))
-	sb.WriteString(fmt.Sprintf("🔥 *Текущая серия:* %d\n", rating.Streak))
-	sb.WriteString(fmt.Sprintf("📝 *Всего прогнозов:* %d\n\n", total))
+	sb.WriteString(fmt.Sprintf("💰 Очки: %d\n", rating.Score))
+	sb.WriteString(fmt.Sprintf("✅ Правильных: %d\n", rating.CorrectCount))
+	sb.WriteString(fmt.Sprintf("❌ Неправильных: %d\n", rating.WrongCount))
+	sb.WriteString(fmt.Sprintf("📈 Точность: %.1f%%\n", accuracy))
+	sb.WriteString(fmt.Sprintf("🔥 Текущая серия: %d\n", rating.Streak))
+	sb.WriteString(fmt.Sprintf("📝 Всего прогнозов: %d\n\n", total))
 
 	// Add achievements
+	sb.WriteString("═══════════════════════════\n")
 	if len(achievements) > 0 {
-		sb.WriteString("🏆 *Ваши ачивки:*\n")
+		sb.WriteString("🏆 ВАШИ АЧИВКИ\n")
+		sb.WriteString("═══════════════════════════\n\n")
 		achievementNames := map[domain.AchievementCode]string{
 			domain.AchievementSharpshooter:  "🎯 Меткий стрелок",
 			domain.AchievementProphet:       "🔮 Провидец",
@@ -277,10 +306,12 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 			if name == "" {
 				name = string(ach.Code)
 			}
-			sb.WriteString(fmt.Sprintf("• %s\n", name))
+			sb.WriteString(fmt.Sprintf("  • %s\n", name))
 		}
 	} else {
-		sb.WriteString("🏆 *Ачивки:* Пока нет. Продолжайте делать прогнозы!")
+		sb.WriteString("🏆 АЧИВКИ\n")
+		sb.WriteString("═══════════════════════════\n\n")
+		sb.WriteString("Пока нет. Продолжайте делать прогнозы!")
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -315,22 +346,27 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 
 	// Build events list message
 	var sb strings.Builder
-	sb.WriteString("📋 *Активные события*\n\n")
+	sb.WriteString("📋 АКТИВНЫЕ СОБЫТИЯ\n")
+	sb.WriteString("═══════════════════════════\n\n")
 
 	for i, event := range events {
-		sb.WriteString(fmt.Sprintf("*%d. %s*\n", i+1, event.Question))
+		sb.WriteString(fmt.Sprintf("▸ %d. %s\n\n", i+1, event.Question))
 
 		// Event type
 		typeStr := ""
+		typeIcon := ""
 		switch event.EventType {
 		case domain.EventTypeBinary:
 			typeStr = "Бинарное"
+			typeIcon = "1️⃣"
 		case domain.EventTypeMultiOption:
 			typeStr = "Множественный выбор"
+			typeIcon = "2️⃣"
 		case domain.EventTypeProbability:
 			typeStr = "Вероятностное"
+			typeIcon = "3️⃣"
 		}
-		sb.WriteString(fmt.Sprintf("Тип: %s\n", typeStr))
+		sb.WriteString(fmt.Sprintf("%s Тип: %s\n", typeIcon, typeStr))
 
 		// Get vote distribution for this event
 		predictions, err := h.predictionRepo.GetPredictionsByEvent(ctx, event.ID)
@@ -344,12 +380,18 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 		totalVotes := len(predictions)
 
 		// Options with vote percentages
-		sb.WriteString("Варианты:\n")
+		sb.WriteString("\n📊 Варианты:\n")
 		for j, opt := range event.Options {
 			percentage := voteDistribution[j]
-			sb.WriteString(fmt.Sprintf("  %d) %s - %.1f%%\n", j+1, opt, percentage))
+			// Create a simple progress bar
+			barLength := int(percentage / 10)
+			if barLength > 10 {
+				barLength = 10
+			}
+			bar := strings.Repeat("▰", barLength) + strings.Repeat("▱", 10-barLength)
+			sb.WriteString(fmt.Sprintf("  %d) %s\n     %s %.1f%%\n", j+1, opt, bar, percentage))
 		}
-		sb.WriteString(fmt.Sprintf("👥 Всего проголосовало: %d\n", totalVotes))
+		sb.WriteString(fmt.Sprintf("\n👥 Всего проголосовало: %d\n", totalVotes))
 
 		// Deadline
 		timeUntil := time.Until(event.Deadline)
@@ -371,7 +413,8 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 		} else {
 			deadlineStr = "⏰ Дедлайн истёк"
 		}
-		sb.WriteString(deadlineStr + "\n\n")
+		sb.WriteString(deadlineStr + "\n")
+		sb.WriteString("\n───────────────────────────\n\n")
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -512,7 +555,7 @@ func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   "📝 Создание нового события\n\nВведите вопрос для прогноза:",
+		Text:   "📝 СОЗДАНИЕ НОВОГО СОБЫТИЯ\n═══════════════════════════\n\nВведите вопрос для прогноза:",
 	})
 	if err != nil {
 		h.logger.Error("failed to send create event message", "error", err)
@@ -646,7 +689,7 @@ func (h *BotHandler) handleOptionsInput(ctx context.Context, b *bot.Bot, update 
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   "📅 Введите дедлайн в формате:\nДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00",
+		Text:   "📅 Введите дедлайн в формате:\n   ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00",
 	})
 	if err != nil {
 		h.logger.Error("failed to send deadline request", "error", err)
@@ -728,7 +771,7 @@ func (h *BotHandler) handleDeadlineInput(ctx context.Context, b *bot.Bot, update
 	localDeadline := state.EventData.Deadline.In(h.config.Timezone)
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   fmt.Sprintf("✅ Событие создано!\n\nID: %d\nВопрос: %s\nДедлайн: %s", state.EventData.ID, state.EventData.Question, localDeadline.Format("02.01.2006 15:04")),
+		Text:   fmt.Sprintf("✅ СОБЫТИЕ СОЗДАНО!\n\n▸ ID: %d\n▸ Вопрос: %s\n▸ Дедлайн: %s", state.EventData.ID, state.EventData.Question, localDeadline.Format("02.01.2006 15:04")),
 	})
 
 	// Clean up conversation state
@@ -785,7 +828,7 @@ func (h *BotHandler) handleEventTypeCallback(ctx context.Context, b *bot.Bot, ca
 
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   "✅ Выбран бинарный тип (Да/Нет)\n\n📅 Введите дедлайн в формате:\nДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00",
+			Text:   "✅ Выбран бинарный тип (Да/Нет)\n\n📅 Введите дедлайн в формате:\n   ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00",
 		})
 
 	case "multi":
@@ -804,7 +847,7 @@ func (h *BotHandler) handleEventTypeCallback(ctx context.Context, b *bot.Bot, ca
 
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   "✅ Выбран вероятностный тип\n\n📅 Введите дедлайн в формате:\nДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00",
+			Text:   "✅ Выбран вероятностный тип\n\n📅 Введите дедлайн в формате:\n   ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00",
 		})
 	}
 
@@ -854,7 +897,7 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      update.Message.Chat.ID,
-		Text:        "🏁 Выберите событие для завершения:",
+		Text:        "🏁 ЗАВЕРШЕНИЕ СОБЫТИЯ\n═══════════════════════════\n\nВыберите событие для завершения:",
 		ReplyMarkup: kb,
 	})
 	if err != nil {
@@ -986,7 +1029,7 @@ func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, call
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      callback.Message.Message.Chat.ID,
-		Text:        fmt.Sprintf("🎯 Событие: %s\n\nВыберите правильный ответ:", event.Question),
+		Text:        fmt.Sprintf("🎯 ВЫБОР ПРАВИЛЬНОГО ОТВЕТА\n═══════════════════════════\n\n▸ Событие: %s\n\nВыберите правильный ответ:", event.Question),
 		ReplyMarkup: kb,
 	})
 	if err != nil {
@@ -1019,13 +1062,16 @@ func (h *BotHandler) publishEventResults(ctx context.Context, b *bot.Bot, event 
 
 	// Build results message
 	var sb strings.Builder
-	sb.WriteString("🏁 *Событие завершено!*\n\n")
-	sb.WriteString(fmt.Sprintf("❓ *Вопрос:* %s\n\n", event.Question))
-	sb.WriteString(fmt.Sprintf("✅ *Правильный ответ:* %s\n\n", event.Options[correctOption]))
-	sb.WriteString(fmt.Sprintf("📊 *Угадали:* %d из %d участников\n\n", correctCount, len(predictions)))
+	sb.WriteString("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n")
+	sb.WriteString("═══════════════════════════\n\n")
+	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
+	sb.WriteString(fmt.Sprintf("✅ Правильный ответ:\n%s\n\n", event.Options[correctOption]))
+	sb.WriteString(fmt.Sprintf("📊 Угадали: %d из %d участников\n", correctCount, len(predictions)))
 
 	if len(topRatings) > 0 {
-		sb.WriteString("🏆 *Топ-5 участников:*\n")
+		sb.WriteString("\n═══════════════════════════\n")
+		sb.WriteString("🏆 ТОП-5 УЧАСТНИКОВ\n")
+		sb.WriteString("═══════════════════════════\n\n")
 		medals := []string{"🥇", "🥈", "🥉", "4.", "5."}
 		for i, rating := range topRatings {
 			sb.WriteString(fmt.Sprintf("%s %d очков\n", medals[i], rating.Score))
@@ -1117,7 +1163,7 @@ func (h *BotHandler) HandleEditEvent(ctx context.Context, b *bot.Bot, update *mo
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      update.Message.Chat.ID,
-		Text:        "✏️ Выберите событие для редактирования:",
+		Text:        "✏️ РЕДАКТИРОВАНИЕ СОБЫТИЯ\n═══════════════════════════\n\nВыберите событие для редактирования:",
 		ReplyMarkup: kb,
 	})
 	if err != nil {
@@ -1184,7 +1230,7 @@ func (h *BotHandler) handleEditCallback(ctx context.Context, b *bot.Bot, callbac
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: callback.Message.Message.Chat.ID,
-		Text:   fmt.Sprintf("✏️ Редактирование события\n\nТекущий вопрос: %s\n\nВведите новый вопрос или отправьте /cancel для отмены:", event.Question),
+		Text:   fmt.Sprintf("✏️ РЕДАКТИРОВАНИЕ СОБЫТИЯ\n═══════════════════════════\n\n▸ Текущий вопрос:\n%s\n\nВведите новый вопрос или отправьте /cancel для отмены:", event.Question),
 	})
 	if err != nil {
 		h.logger.Error("failed to send edit question prompt", "error", err)
@@ -1242,7 +1288,7 @@ func (h *BotHandler) handleEditQuestionInput(ctx context.Context, b *bot.Bot, up
 	optionsText := strings.Join(state.EventData.Options, "\n")
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   fmt.Sprintf("Текущие варианты:\n%s\n\nВведите новые варианты (каждый с новой строки) или отправьте /cancel:", optionsText),
+		Text:   fmt.Sprintf("▸ Текущие варианты:\n%s\n\nВведите новые варианты (каждый с новой строки) или отправьте /cancel:", optionsText),
 	})
 }
 

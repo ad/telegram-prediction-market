@@ -375,8 +375,8 @@ func TestResultsContainTop5(t *testing.T) {
 
 			message := mockBot.sentMessages[0].Text
 
-			// Verify message contains "Топ-5" section
-			if !strings.Contains(message, "Топ-5") {
+			// Verify message contains "ТОП-5" section
+			if !strings.Contains(message, "ТОП-5") {
 				return false
 			}
 
