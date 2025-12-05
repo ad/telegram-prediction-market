@@ -129,6 +129,18 @@ func main() {
 
 	log.Info("Telegram bot created")
 
+	// Get bot info for deep-link service
+	botInfo, err := b.GetMe(ctx)
+	if err != nil {
+		log.Error("Failed to get bot info", "error", err)
+		os.Exit(1)
+	}
+	log.Info("Bot info retrieved", "username", botInfo.Username)
+
+	// Create deep-link service
+	deepLinkService := domain.NewDeepLinkService(botInfo.Username)
+	log.Info("Deep-link service created")
+
 	// Create notification service
 	notificationService := domain.NewNotificationService(
 		b,
@@ -174,6 +186,10 @@ func main() {
 		log,
 		eventCreationFSM,
 		eventPermissionValidator,
+		groupRepo,
+		groupMembershipRepo,
+		deepLinkService,
+		ratingRepo,
 	)
 
 	log.Info("Bot handler created")
@@ -186,6 +202,12 @@ func main() {
 	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/create_event", tgbot.MatchTypeExact, handler.HandleCreateEvent)
 	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/resolve_event", tgbot.MatchTypeExact, handler.HandleResolveEvent)
 	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/edit_event", tgbot.MatchTypeExact, handler.HandleEditEvent)
+
+	// Register admin group management commands
+	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/create_group", tgbot.MatchTypeExact, handler.HandleCreateGroup)
+	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/list_groups", tgbot.MatchTypeExact, handler.HandleListGroups)
+	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/group_members", tgbot.MatchTypeExact, handler.HandleGroupMembers)
+	b.RegisterHandler(tgbot.HandlerTypeMessageText, "/remove_member", tgbot.MatchTypeExact, handler.HandleRemoveMember)
 
 	// Register callback query handler
 	b.RegisterHandler(tgbot.HandlerTypeCallbackQueryData, "", tgbot.MatchTypePrefix, handler.HandleCallback)

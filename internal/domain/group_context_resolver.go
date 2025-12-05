@@ -12,7 +12,20 @@ var (
 
 // GroupRepository interface for group operations
 type GroupRepository interface {
+	CreateGroup(ctx context.Context, group *Group) error
+	GetGroup(ctx context.Context, groupID int64) (*Group, error)
+	GetAllGroups(ctx context.Context) ([]*Group, error)
 	GetUserGroups(ctx context.Context, userID int64) ([]*Group, error)
+	DeleteGroup(ctx context.Context, groupID int64) error
+}
+
+// GroupMembershipRepository interface for group membership operations
+type GroupMembershipRepository interface {
+	CreateMembership(ctx context.Context, membership *GroupMembership) error
+	GetMembership(ctx context.Context, groupID int64, userID int64) (*GroupMembership, error)
+	GetGroupMembers(ctx context.Context, groupID int64) ([]*GroupMembership, error)
+	UpdateMembershipStatus(ctx context.Context, groupID int64, userID int64, status MembershipStatus) error
+	HasActiveMembership(ctx context.Context, groupID int64, userID int64) (bool, error)
 }
 
 // GroupContextResolver determines the active group context for a user

@@ -25,6 +25,11 @@ type BotHandler struct {
 	logger                   domain.Logger
 	eventCreationFSM         *EventCreationFSM
 	eventPermissionValidator *domain.EventPermissionValidator
+	groupRepo                domain.GroupRepository
+	groupMembershipRepo      domain.GroupMembershipRepository
+	deepLinkService          *domain.DeepLinkService
+	ratingRepo               domain.RatingRepository
+	createGroupState         map[int64]bool // Tracks users in create_group flow
 }
 
 // NewBotHandler creates a new BotHandler with all dependencies
@@ -38,6 +43,10 @@ func NewBotHandler(
 	logger domain.Logger,
 	eventCreationFSM *EventCreationFSM,
 	eventPermissionValidator *domain.EventPermissionValidator,
+	groupRepo domain.GroupRepository,
+	groupMembershipRepo domain.GroupMembershipRepository,
+	deepLinkService *domain.DeepLinkService,
+	ratingRepo domain.RatingRepository,
 ) *BotHandler {
 	return &BotHandler{
 		bot:                      b,
@@ -49,6 +58,11 @@ func NewBotHandler(
 		logger:                   logger,
 		eventCreationFSM:         eventCreationFSM,
 		eventPermissionValidator: eventPermissionValidator,
+		groupRepo:                groupRepo,
+		groupMembershipRepo:      groupMembershipRepo,
+		deepLinkService:          deepLinkService,
+		ratingRepo:               ratingRepo,
+		createGroupState:         make(map[int64]bool),
 	}
 }
 
@@ -642,6 +656,12 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 
 	userID := update.Message.From.ID
 
+	// Check if user is in create_group flow
+	if h.createGroupState[userID] {
+		h.handleCreateGroupInput(ctx, b, update)
+		return
+	}
+
 	// Check if user has active FSM session
 	hasSession, err := h.eventCreationFSM.HasSession(ctx, userID)
 	if err != nil {
@@ -664,6 +684,72 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 	}
 
 	// No active conversation - ignore message
+}
+
+// handleCreateGroupInput handles the group name input for create_group flow
+func (h *BotHandler) handleCreateGroupInput(ctx context.Context, b *bot.Bot, update *models.Update) {
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+	groupName := strings.TrimSpace(update.Message.Text)
+
+	// Clear state
+	delete(h.createGroupState, userID)
+
+	// Validate group name
+	if groupName == "" {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Название группы не может быть пустым.",
+		})
+		return
+	}
+
+	// Create group
+	group := &domain.Group{
+		TelegramChatID: chatID,
+		Name:           groupName,
+		CreatedAt:      time.Now(),
+		CreatedBy:      userID,
+	}
+
+	if err := group.Validate(); err != nil {
+		h.logger.Error("group validation failed", "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка валидации группы.",
+		})
+		return
+	}
+
+	if err := h.groupRepo.CreateGroup(ctx, group); err != nil {
+		h.logger.Error("failed to create group", "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при создании группы.",
+		})
+		return
+	}
+
+	// Log the action
+	h.logAdminAction(userID, "create_group", group.ID, fmt.Sprintf("Created group: %s", groupName))
+
+	// Generate deep-link
+	deepLink := h.deepLinkService.GenerateGroupInviteLink(group.ID)
+
+	// Send success message
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: chatID,
+		Text: fmt.Sprintf("✅ Группа создана!\n\n"+
+			"📋 Название: %s\n"+
+			"🆔 ID: %d\n"+
+			"🔗 Ссылка для приглашения:\n%s",
+			groupName, group.ID, deepLink),
+	})
+	if err != nil {
+		h.logger.Error("failed to send success message", "error", err)
+	}
+
+	h.logger.Info("group created", "group_id", group.ID, "name", groupName, "created_by", userID)
 }
 
 // HandleCallback handles callback queries (button clicks)
@@ -696,6 +782,18 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 			}
 			return
 		}
+	}
+
+	// Handle group_members callbacks
+	if strings.HasPrefix(data, "group_members:") {
+		h.handleGroupMembersCallback(ctx, b, callback, userID, data)
+		return
+	}
+
+	// Handle remove_member callbacks
+	if strings.HasPrefix(data, "remove_member_group:") || strings.HasPrefix(data, "remove_member_user:") {
+		h.handleRemoveMemberCallback(ctx, b, callback, userID, data)
+		return
 	}
 
 	// Answer callback query to remove loading state (for non-FSM callbacks)
@@ -1013,14 +1111,14 @@ func (h *BotHandler) publishEventResults(ctx context.Context, b *bot.Bot, event 
 
 func (h *BotHandler) sendAchievementNotification(ctx context.Context, b *bot.Bot, userID int64, achievement *domain.Achievement) {
 	achievementNames := map[domain.AchievementCode]string{
-		domain.AchievementSharpshooter:     "🎯 Меткий стрелок",
-		domain.AchievementProphet:          "🔮 Провидец",
-		domain.AchievementRiskTaker:        "🎲 Риск-мейкер",
-		domain.AchievementWeeklyAnalyst:    "📊 Аналитик недели",
-		domain.AchievementVeteran:          "🏆 Старожил",
-		domain.AchievementEventOrganizer:   "🎪 Организатор событий",
-		domain.AchievementActiveOrganizer:  "🎭 Активный организатор",
-		domain.AchievementMasterOrganizer:  "🎬 Мастер организатор",
+		domain.AchievementSharpshooter:    "🎯 Меткий стрелок",
+		domain.AchievementProphet:         "🔮 Провидец",
+		domain.AchievementRiskTaker:       "🎲 Риск-мейкер",
+		domain.AchievementWeeklyAnalyst:   "📊 Аналитик недели",
+		domain.AchievementVeteran:         "🏆 Старожил",
+		domain.AchievementEventOrganizer:  "🎪 Организатор событий",
+		domain.AchievementActiveOrganizer: "🎭 Активный организатор",
+		domain.AchievementMasterOrganizer: "🎬 Мастер организатор",
 	}
 
 	name := achievementNames[achievement.Code]
@@ -1063,4 +1161,490 @@ func (h *BotHandler) HandleEditEvent(ctx context.Context, b *bot.Bot, update *mo
 		ChatID: update.Message.Chat.ID,
 		Text:   "ℹ️ Редактирование событий временно недоступно. Пожалуйста, создайте новое событие с /create_event",
 	})
+}
+
+// HandleCreateGroup handles the /create_group command
+func (h *BotHandler) HandleCreateGroup(ctx context.Context, b *bot.Bot, update *models.Update) {
+	// Check admin authorization
+	if !h.requireAdmin(ctx, update) {
+		return
+	}
+
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+
+	// Prompt for group name
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: chatID,
+		Text:   "🏗️ СОЗДАНИЕ ГРУППЫ\n\nВведите название новой группы:",
+	})
+	if err != nil {
+		h.logger.Error("failed to send create group prompt", "error", err)
+		return
+	}
+
+	// Store state for this admin to expect group name input
+	h.createGroupState[userID] = true
+	h.logger.Info("create_group command initiated", "admin_user_id", userID)
+}
+
+// HandleListGroups handles the /list_groups command
+func (h *BotHandler) HandleListGroups(ctx context.Context, b *bot.Bot, update *models.Update) {
+	// Check admin authorization
+	if !h.requireAdmin(ctx, update) {
+		return
+	}
+
+	// Retrieve all groups
+	groups, err := h.groupRepo.GetAllGroups(ctx)
+	if err != nil {
+		h.logger.Error("failed to get all groups", "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "❌ Ошибка при получении списка групп.",
+		})
+		return
+	}
+
+	if len(groups) == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "📋 Нет созданных групп.",
+		})
+		return
+	}
+
+	// Build groups list message with deep-links
+	var sb strings.Builder
+	sb.WriteString("📋 СПИСОК ГРУПП\n")
+	sb.WriteString("════════════════════\n\n")
+
+	for i, group := range groups {
+		// Get member count
+		members, err := h.groupMembershipRepo.GetGroupMembers(ctx, group.ID)
+		if err != nil {
+			h.logger.Error("failed to get group members", "group_id", group.ID, "error", err)
+			continue
+		}
+
+		// Count active members
+		activeCount := 0
+		for _, member := range members {
+			if member.Status == domain.MembershipStatusActive {
+				activeCount++
+			}
+		}
+
+		// Generate deep-link
+		deepLink := h.deepLinkService.GenerateGroupInviteLink(group.ID)
+
+		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, group.Name))
+		sb.WriteString(fmt.Sprintf("   👥 Участников: %d\n", activeCount))
+		sb.WriteString(fmt.Sprintf("   🔗 Ссылка: %s\n", deepLink))
+		sb.WriteString(fmt.Sprintf("   🆔 ID: %d\n\n", group.ID))
+	}
+
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: update.Message.Chat.ID,
+		Text:   sb.String(),
+	})
+	if err != nil {
+		h.logger.Error("failed to send groups list", "error", err)
+	}
+}
+
+// HandleGroupMembers handles the /group_members command
+func (h *BotHandler) HandleGroupMembers(ctx context.Context, b *bot.Bot, update *models.Update) {
+	// Check admin authorization
+	if !h.requireAdmin(ctx, update) {
+		return
+	}
+
+	// Get all groups
+	groups, err := h.groupRepo.GetAllGroups(ctx)
+	if err != nil {
+		h.logger.Error("failed to get all groups", "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "❌ Ошибка при получении списка групп.",
+		})
+		return
+	}
+
+	if len(groups) == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "📋 Нет созданных групп.",
+		})
+		return
+	}
+
+	// Build inline keyboard with groups
+	var buttons [][]models.InlineKeyboardButton
+	for _, group := range groups {
+		buttons = append(buttons, []models.InlineKeyboardButton{
+			{
+				Text:         group.Name,
+				CallbackData: fmt.Sprintf("group_members:%d", group.ID),
+			},
+		})
+	}
+
+	kb := &models.InlineKeyboardMarkup{
+		InlineKeyboard: buttons,
+	}
+
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      update.Message.Chat.ID,
+		Text:        "👥 УЧАСТНИКИ ГРУППЫ\n\nВыберите группу:",
+		ReplyMarkup: kb,
+	})
+	if err != nil {
+		h.logger.Error("failed to send group selection", "error", err)
+	}
+}
+
+// HandleRemoveMember handles the /remove_member command
+func (h *BotHandler) HandleRemoveMember(ctx context.Context, b *bot.Bot, update *models.Update) {
+	// Check admin authorization
+	if !h.requireAdmin(ctx, update) {
+		return
+	}
+
+	// Get all groups
+	groups, err := h.groupRepo.GetAllGroups(ctx)
+	if err != nil {
+		h.logger.Error("failed to get all groups", "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "❌ Ошибка при получении списка групп.",
+		})
+		return
+	}
+
+	if len(groups) == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "📋 Нет созданных групп.",
+		})
+		return
+	}
+
+	// Build inline keyboard with groups
+	var buttons [][]models.InlineKeyboardButton
+	for _, group := range groups {
+		buttons = append(buttons, []models.InlineKeyboardButton{
+			{
+				Text:         group.Name,
+				CallbackData: fmt.Sprintf("remove_member_group:%d", group.ID),
+			},
+		})
+	}
+
+	kb := &models.InlineKeyboardMarkup{
+		InlineKeyboard: buttons,
+	}
+
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      update.Message.Chat.ID,
+		Text:        "🚫 УДАЛЕНИЕ УЧАСТНИКА\n\nВыберите группу:",
+		ReplyMarkup: kb,
+	})
+	if err != nil {
+		h.logger.Error("failed to send group selection for removal", "error", err)
+	}
+}
+
+// handleGroupMembersCallback handles the callback for viewing group members
+func (h *BotHandler) handleGroupMembersCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
+	// Check admin authorization
+	if !h.isAdmin(userID) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ У вас нет прав для выполнения этой команды.",
+		})
+		return
+	}
+
+	// Parse group ID
+	parts := strings.Split(data, ":")
+	if len(parts) != 2 {
+		h.logger.Error("invalid group_members callback data", "data", data)
+		return
+	}
+
+	groupID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		h.logger.Error("failed to parse group ID", "error", err)
+		return
+	}
+
+	// Get group
+	group, err := h.groupRepo.GetGroup(ctx, groupID)
+	if err != nil {
+		h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   "❌ Ошибка при получении группы.",
+		})
+		return
+	}
+
+	if group == nil {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   "❌ Группа не найдена.",
+		})
+		return
+	}
+
+	// Get group members
+	members, err := h.groupMembershipRepo.GetGroupMembers(ctx, groupID)
+	if err != nil {
+		h.logger.Error("failed to get group members", "group_id", groupID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   "❌ Ошибка при получении участников группы.",
+		})
+		return
+	}
+
+	if len(members) == 0 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   fmt.Sprintf("📋 В группе \"%s\" пока нет участников.", group.Name),
+		})
+		return
+	}
+
+	// Build members list message
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("👥 УЧАСТНИКИ ГРУППЫ \"%s\"\n", group.Name))
+	sb.WriteString("════════════════════\n\n")
+
+	for i, member := range members {
+		// Get user rating for this group
+		rating, err := h.ratingRepo.GetRating(ctx, member.UserID, groupID)
+		if err != nil {
+			h.logger.Error("failed to get user rating", "user_id", member.UserID, "group_id", groupID, "error", err)
+			// Continue with default values
+			rating = &domain.Rating{
+				UserID:  member.UserID,
+				GroupID: groupID,
+				Score:   0,
+			}
+		}
+
+		// Get achievements count (note: achievements are currently not group-scoped in the tracker)
+		achievements, err := h.achievementTracker.GetUserAchievements(ctx, member.UserID)
+		if err != nil {
+			h.logger.Error("failed to get user achievements", "user_id", member.UserID, "error", err)
+			achievements = []*domain.Achievement{}
+		}
+
+		// Get display name
+		displayName := h.getUserDisplayName(ctx, member.UserID)
+
+		// Status indicator
+		statusIcon := "✅"
+		if member.Status == domain.MembershipStatusRemoved {
+			statusIcon = "🚫"
+		}
+
+		sb.WriteString(fmt.Sprintf("%d. %s %s\n", i+1, statusIcon, displayName))
+		sb.WriteString(fmt.Sprintf("   💰 Очки: %d\n", rating.Score))
+		sb.WriteString(fmt.Sprintf("   🏆 Ачивки: %d\n", len(achievements)))
+		sb.WriteString(fmt.Sprintf("   📅 Присоединился: %s\n\n", member.JoinedAt.Format("02.01.2006")))
+	}
+
+	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: callback.Message.Message.Chat.ID,
+		Text:   sb.String(),
+	})
+	if err != nil {
+		h.logger.Error("failed to send members list", "error", err)
+	}
+
+	// Answer callback query
+	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: callback.ID,
+	})
+}
+
+// handleRemoveMemberCallback handles the callback for removing a member
+func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
+	// Check admin authorization
+	if !h.isAdmin(userID) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ У вас нет прав для выполнения этой команды.",
+		})
+		return
+	}
+
+	// Check if this is group selection or user selection
+	if strings.HasPrefix(data, "remove_member_group:") {
+		// Parse group ID
+		parts := strings.Split(data, ":")
+		if len(parts) != 2 {
+			h.logger.Error("invalid remove_member_group callback data", "data", data)
+			return
+		}
+
+		groupID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			h.logger.Error("failed to parse group ID", "error", err)
+			return
+		}
+
+		// Get group
+		group, err := h.groupRepo.GetGroup(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении группы.",
+			})
+			return
+		}
+
+		if group == nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Группа не найдена.",
+			})
+			return
+		}
+
+		// Get active members
+		members, err := h.groupMembershipRepo.GetGroupMembers(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to get group members", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении участников группы.",
+			})
+			return
+		}
+
+		// Filter active members
+		var activeMembers []*domain.GroupMembership
+		for _, member := range members {
+			if member.Status == domain.MembershipStatusActive {
+				activeMembers = append(activeMembers, member)
+			}
+		}
+
+		if len(activeMembers) == 0 {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   fmt.Sprintf("📋 В группе \"%s\" нет активных участников.", group.Name),
+			})
+			return
+		}
+
+		// Build inline keyboard with members
+		var buttons [][]models.InlineKeyboardButton
+		for _, member := range activeMembers {
+			displayName := h.getUserDisplayName(ctx, member.UserID)
+			buttons = append(buttons, []models.InlineKeyboardButton{
+				{
+					Text:         displayName,
+					CallbackData: fmt.Sprintf("remove_member_user:%d:%d", groupID, member.UserID),
+				},
+			})
+		}
+
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: buttons,
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      callback.Message.Message.Chat.ID,
+			Text:        fmt.Sprintf("🚫 УДАЛЕНИЕ УЧАСТНИКА ИЗ \"%s\"\n\nВыберите участника:", group.Name),
+			ReplyMarkup: kb,
+		})
+		if err != nil {
+			h.logger.Error("failed to send member selection", "error", err)
+		}
+
+		// Answer callback query
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+
+	// This is user selection
+	if strings.HasPrefix(data, "remove_member_user:") {
+		// Parse group ID and user ID
+		parts := strings.Split(data, ":")
+		if len(parts) != 3 {
+			h.logger.Error("invalid remove_member_user callback data", "data", data)
+			return
+		}
+
+		groupID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			h.logger.Error("failed to parse group ID", "error", err)
+			return
+		}
+
+		memberUserID, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil {
+			h.logger.Error("failed to parse user ID", "error", err)
+			return
+		}
+
+		// Get group
+		group, err := h.groupRepo.GetGroup(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении группы.",
+			})
+			return
+		}
+
+		if group == nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Группа не найдена.",
+			})
+			return
+		}
+
+		// Update membership status to removed
+		err = h.groupMembershipRepo.UpdateMembershipStatus(ctx, groupID, memberUserID, domain.MembershipStatusRemoved)
+		if err != nil {
+			h.logger.Error("failed to update membership status", "group_id", groupID, "user_id", memberUserID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при удалении участника.",
+			})
+			return
+		}
+
+		// Log the action
+		h.logAdminAction(userID, "remove_member", groupID, fmt.Sprintf("Removed user %d from group %s", memberUserID, group.Name))
+
+		// Get display name
+		displayName := h.getUserDisplayName(ctx, memberUserID)
+
+		// Send confirmation
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   fmt.Sprintf("✅ Участник %s удален из группы \"%s\".", displayName, group.Name),
+		})
+		if err != nil {
+			h.logger.Error("failed to send confirmation", "error", err)
+		}
+
+		// Answer callback query
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
 }

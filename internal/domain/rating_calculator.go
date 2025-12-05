@@ -19,10 +19,10 @@ const (
 
 // RatingRepository interface for rating operations
 type RatingRepository interface {
-	GetRating(ctx context.Context, userID int64) (*Rating, error)
+	GetRating(ctx context.Context, userID int64, groupID int64) (*Rating, error)
 	UpdateRating(ctx context.Context, rating *Rating) error
-	GetTopRatings(ctx context.Context, limit int) ([]*Rating, error)
-	UpdateStreak(ctx context.Context, userID int64, streak int) error
+	GetTopRatings(ctx context.Context, groupID int64, limit int) ([]*Rating, error)
+	UpdateStreak(ctx context.Context, userID int64, groupID int64, streak int) error
 }
 
 // RatingCalculator handles rating calculations and updates
