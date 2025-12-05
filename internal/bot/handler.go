@@ -474,7 +474,7 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 
 	// Build rating message
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("🏆 ТОП-10 УЧАСТНИКОВ\n"))
+	sb.WriteString("🏆 ТОП-10 УЧАСТНИКОВ\n")
 	sb.WriteString(fmt.Sprintf("📍 Группа: %s\n\n", group.Name))
 
 	medals := []string{"🥇", "🥈", "🥉"}
