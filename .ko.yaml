@@ -1,0 +1,13 @@
+defaultBaseImage: registry.hub.docker.com/hassioaddons/base-aarch64:8.0.6
+defaultPlatforms:
+- linux/arm64
+- linux/amd64
+builds:
+- id: app
+  main: .
+  env:
+  - BUILD_VERSION
+  ldflags:
+  - "-s"
+  - "-w"
+  - "-X main.version={{.Env.BUILD_VERSION}}"

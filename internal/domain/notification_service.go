@@ -39,7 +39,6 @@ func NewNotificationService(
 	predictionRepo PredictionRepository,
 	ratingRepo RatingRepository,
 	reminderRepo ReminderRepository,
-	groupID int64,
 	logger Logger,
 ) *NotificationService {
 	return &NotificationService{
@@ -48,7 +47,6 @@ func NewNotificationService(
 		predictionRepo: predictionRepo,
 		ratingRepo:     ratingRepo,
 		reminderRepo:   reminderRepo,
-		groupID:        groupID,
 		logger:         logger,
 	}
 }

@@ -858,7 +858,7 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 
 		isAnonymous := false
 		pollMsg, err := f.bot.SendPoll(ctx, &bot.SendPollParams{
-			ChatID:                f.config.GroupID,
+			ChatID:                context.GroupID,
 			Question:              event.Question,
 			Options:               pollOptions,
 			IsAnonymous:           &isAnonymous,
@@ -984,8 +984,8 @@ func (f *EventCreationFSM) sendAchievementNotification(ctx context.Context, user
 	if group != nil {
 		telegramChatID = group.TelegramChatID
 	} else {
-		// Fallback to config group ID if we couldn't get group info
-		telegramChatID = f.config.GroupID
+		f.logger.Error("failed to send achievement announcement to group, group not provided", "error")
+		return nil
 	}
 
 	// Announce in group

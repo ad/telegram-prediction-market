@@ -50,9 +50,7 @@ func TestUsernameInAchievementNotification(t *testing.T) {
 
 			ratingCalc := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, logger)
 
-			cfg := &config.Config{
-				GroupID: 12345,
-			}
+			cfg := &config.Config{}
 
 			handler := &BotHandler{
 				ratingCalculator: ratingCalc,
@@ -161,9 +159,7 @@ func TestAchievementMessageFormat(t *testing.T) {
 
 			ratingCalc := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, logger)
 
-			cfg := &config.Config{
-				GroupID: 12345,
-			}
+			cfg := &config.Config{}
 
 			handler := &BotHandler{
 				ratingCalculator: ratingCalc,
@@ -247,9 +243,7 @@ func TestSendAchievementNotification_WithUsername(t *testing.T) {
 
 	ratingCalc := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, logger)
 
-	cfg := &config.Config{
-		GroupID: 12345,
-	}
+	cfg := &config.Config{}
 
 	handler := &BotHandler{
 		ratingCalculator: ratingCalc,
@@ -306,9 +300,7 @@ func TestSendAchievementNotification_WithoutUsername(t *testing.T) {
 
 	ratingCalc := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, logger)
 
-	cfg := &config.Config{
-		GroupID: 12345,
-	}
+	cfg := &config.Config{}
 
 	handler := &BotHandler{
 		ratingCalculator: ratingCalc,
@@ -363,9 +355,7 @@ func TestSendAchievementNotification_EmojiAndName(t *testing.T) {
 
 	ratingCalc := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, logger)
 
-	cfg := &config.Config{
-		GroupID: 12345,
-	}
+	cfg := &config.Config{}
 
 	handler := &BotHandler{
 		ratingCalculator: ratingCalc,

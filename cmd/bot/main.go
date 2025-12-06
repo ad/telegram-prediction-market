@@ -148,7 +148,6 @@ func main() {
 		predictionRepo,
 		ratingRepo,
 		reminderRepo,
-		cfg.GroupID,
 		log,
 	)
 

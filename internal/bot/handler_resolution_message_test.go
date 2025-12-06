@@ -51,9 +51,7 @@ func TestResolverInformationInMessage(t *testing.T) {
 
 			ratingCalc := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, logger)
 
-			cfg := &config.Config{
-				GroupID: 12345,
-			}
+			cfg := &config.Config{}
 
 			handler := &BotHandler{
 				ratingCalculator: ratingCalc,
@@ -173,7 +171,6 @@ func TestCreatorVsAdminDistinction(t *testing.T) {
 			ratingCalc := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, logger)
 
 			cfg := &config.Config{
-				GroupID:      12345,
 				AdminUserIDs: []int64{adminID},
 			}
 
@@ -310,7 +307,6 @@ func TestCreatorResolutionMessage(t *testing.T) {
 	ratingCalc := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, logger)
 
 	cfg := &config.Config{
-		GroupID:      12345,
 		AdminUserIDs: []int64{99999},
 	}
 
@@ -398,7 +394,6 @@ func TestAdminResolutionMessage(t *testing.T) {
 
 	adminID := int64(99999)
 	cfg := &config.Config{
-		GroupID:      12345,
 		AdminUserIDs: []int64{adminID},
 	}
 
@@ -495,9 +490,7 @@ func TestResolverNameInclusion(t *testing.T) {
 
 	ratingCalc := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, logger)
 
-	cfg := &config.Config{
-		GroupID: 12345,
-	}
+	cfg := &config.Config{}
 
 	handler := &BotHandler{
 		ratingCalculator: ratingCalc,

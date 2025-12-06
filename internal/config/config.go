@@ -1,131 +1,108 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
+const ConfigFileName = "/data/options.json"
+
 // Config holds application configuration
 type Config struct {
-	TelegramToken         string
+	TelegramToken         string `json:"TELEGRAM_TOKEN"`
 	AdminUserIDs          []int64
-	DatabasePath          string
-	LogLevel              string
+	AdminIDsStr           string `json:"ADMIN_USER_IDS"`
+	DatabasePath          string `json:"DATABASE"`
+	LogLevel              string `json:"LOG_LEVEL"`
 	Timezone              *time.Location
-	MinEventsToCreate     int // Minimum completed events to create new events
-	GroupID               int64
-	DefaultGroupName      string // Name for default group during migration
-	MaxGroupsPerAdmin     int    // Maximum groups an admin can create
-	MaxMembershipsPerUser int    // Maximum groups a user can join
+	TimezoneStr           string `json:"TIMEZONE"`
+	MinEventsToCreate     int    `json:"MIN_EVENTS_TO_CREATE"`
+	MaxGroupsPerAdmin     int    `json:"MAX_GROUPS_PER_ADMIN"`
+	MaxMembershipsPerUser int    `json:"MAX_MEMBERSHIPS_PER_USER"`
 }
 
 // Load loads configuration from environment variables
 func Load() (*Config, error) {
-	token := os.Getenv("TELEGRAM_TOKEN")
-	if token == "" {
+	config := &Config{
+		TelegramToken:         os.Getenv("TELEGRAM_TOKEN"),
+		AdminIDsStr:           os.Getenv("ADMIN_USER_IDS"),
+		DatabasePath:          os.Getenv("DATABASE_PATH"),
+		LogLevel:              os.Getenv("LOG_LEVEL"),
+		TimezoneStr:           os.Getenv("TIMEZONE"),
+		MinEventsToCreate:     lookupEnvOrInt("MIN_EVENTS_TO_CREATE", 0),
+		MaxGroupsPerAdmin:     lookupEnvOrInt("MAX_GROUPS_PER_ADMIN", 0),
+		MaxMembershipsPerUser: lookupEnvOrInt("MAX_MEMBERSHIPS_PER_USER", 0),
+	}
+
+	if _, err := os.Stat(ConfigFileName); err == nil {
+		jsonFile, err := os.Open(ConfigFileName)
+		if err == nil {
+			byteValue, _ := io.ReadAll(jsonFile)
+			if err = json.Unmarshal(byteValue, &config); err != nil {
+				fmt.Printf("error on unmarshal config from file %s\n", err.Error())
+			}
+		}
+	}
+
+	if config.TelegramToken == "" {
 		return nil, fmt.Errorf("TELEGRAM_TOKEN environment variable is required")
 	}
 
-	groupIDStr := os.Getenv("GROUP_ID")
-	if groupIDStr == "" {
-		return nil, fmt.Errorf("GROUP_ID environment variable is required")
-	}
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid GROUP_ID: %w", err)
-	}
-
-	adminIDsStr := os.Getenv("ADMIN_USER_IDS")
-	if adminIDsStr == "" {
+	if config.AdminIDsStr == "" {
 		return nil, fmt.Errorf("ADMIN_USER_IDS environment variable is required")
 	}
-	adminIDs, err := parseAdminIDs(adminIDsStr)
+
+	adminIDs, err := parseAdminIDs(config.AdminIDsStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid ADMIN_USER_IDS: %w", err)
 	}
 
-	dbPath := os.Getenv("DATABASE_PATH")
-	if dbPath == "" {
-		dbPath = "./data/bot.db" // default value
+	if config.DatabasePath == "" {
+		config.DatabasePath = "/config/telegram-prediction-market.db" // default value
 	}
 
-	logLevel := os.Getenv("LOG_LEVEL")
-	if logLevel == "" {
-		logLevel = "INFO" // default value
+	if config.LogLevel == "" {
+		config.LogLevel = "INFO" // default value
 	}
 
 	// Load timezone (default to UTC)
-	timezoneStr := os.Getenv("TIMEZONE")
-	if timezoneStr == "" {
-		timezoneStr = "UTC" // default value
+	if config.TimezoneStr == "" {
+		config.TimezoneStr = "UTC" // default value
 	}
-	timezone, err := time.LoadLocation(timezoneStr)
+	timezone, err := time.LoadLocation(config.TimezoneStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid TIMEZONE '%s': %w", timezoneStr, err)
+		return nil, fmt.Errorf("invalid TIMEZONE '%s': %w", config.TimezoneStr, err)
 	}
 
 	// Load minimum events to create (default to 3)
-	minEventsToCreate := 3 // default value
-	minEventsStr := os.Getenv("MIN_EVENTS_TO_CREATE")
-	if minEventsStr != "" {
-		minEvents, err := strconv.Atoi(minEventsStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid MIN_EVENTS_TO_CREATE '%s': must be a valid integer", minEventsStr)
-		}
-		if minEvents < 0 {
-			return nil, fmt.Errorf("invalid MIN_EVENTS_TO_CREATE '%d': must be non-negative", minEvents)
-		}
-		minEventsToCreate = minEvents
-	}
-
-	// Load default group name (default to "Default Group")
-	defaultGroupName := os.Getenv("DEFAULT_GROUP_NAME")
-	if defaultGroupName == "" {
-		defaultGroupName = "Default Group"
+	if config.MinEventsToCreate < 0 {
+		config.MinEventsToCreate = 3
 	}
 
 	// Load max groups per admin (default to 10)
-	maxGroupsPerAdmin := 10 // default value
-	maxGroupsStr := os.Getenv("MAX_GROUPS_PER_ADMIN")
-	if maxGroupsStr != "" {
-		maxGroups, err := strconv.Atoi(maxGroupsStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid MAX_GROUPS_PER_ADMIN '%s': must be a valid integer", maxGroupsStr)
-		}
-		if maxGroups <= 0 {
-			return nil, fmt.Errorf("invalid MAX_GROUPS_PER_ADMIN '%d': must be positive", maxGroups)
-		}
-		maxGroupsPerAdmin = maxGroups
+	if config.MaxGroupsPerAdmin <= 0 {
+		config.MaxGroupsPerAdmin = 10
 	}
 
 	// Load max memberships per user (default to 20)
-	maxMembershipsPerUser := 20 // default value
-	maxMembershipsStr := os.Getenv("MAX_MEMBERSHIPS_PER_USER")
-	if maxMembershipsStr != "" {
-		maxMemberships, err := strconv.Atoi(maxMembershipsStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid MAX_MEMBERSHIPS_PER_USER '%s': must be a valid integer", maxMembershipsStr)
-		}
-		if maxMemberships <= 0 {
-			return nil, fmt.Errorf("invalid MAX_MEMBERSHIPS_PER_USER '%d': must be positive", maxMemberships)
-		}
-		maxMembershipsPerUser = maxMemberships
+	if config.MaxMembershipsPerUser <= 0 {
+		config.MaxMembershipsPerUser = 20
 	}
 
 	return &Config{
-		TelegramToken:         token,
+		TelegramToken:         config.TelegramToken,
 		AdminUserIDs:          adminIDs,
-		DatabasePath:          dbPath,
-		LogLevel:              logLevel,
+		DatabasePath:          config.DatabasePath,
+		LogLevel:              config.LogLevel,
 		Timezone:              timezone,
-		MinEventsToCreate:     minEventsToCreate,
-		GroupID:               groupID,
-		DefaultGroupName:      defaultGroupName,
-		MaxGroupsPerAdmin:     maxGroupsPerAdmin,
-		MaxMembershipsPerUser: maxMembershipsPerUser,
+		MinEventsToCreate:     config.MinEventsToCreate,
+		MaxGroupsPerAdmin:     config.MaxGroupsPerAdmin,
+		MaxMembershipsPerUser: config.MaxMembershipsPerUser,
 	}, nil
 }
 

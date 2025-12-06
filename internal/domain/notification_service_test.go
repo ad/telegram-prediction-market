@@ -46,8 +46,6 @@ func TestAchievementNotification(t *testing.T) {
 			mockReminderRepo := &MockReminderRepo{}
 			mockLogger := &MockLogger{}
 
-			groupID := int64(12345)
-
 			// Create notification service
 			ns := NewNotificationService(
 				mockBot,
@@ -55,7 +53,6 @@ func TestAchievementNotification(t *testing.T) {
 				mockPredictionRepo,
 				mockRatingRepo,
 				mockReminderRepo,
-				groupID,
 				mockLogger,
 			)
 
@@ -81,11 +78,6 @@ func TestAchievementNotification(t *testing.T) {
 
 			// Verify first message was sent to user
 			if mockBot.sentMessages[0].ChatID != userID {
-				return false
-			}
-
-			// Verify second message was sent to group
-			if mockBot.sentMessages[1].ChatID != groupID {
 				return false
 			}
 
@@ -270,8 +262,6 @@ func TestResultsContainCorrectCount(t *testing.T) {
 			mockReminderRepo := &MockReminderRepo{}
 			mockLogger := &MockLogger{}
 
-			groupID := int64(12345)
-
 			// Create notification service
 			ns := NewNotificationService(
 				mockBot,
@@ -279,7 +269,6 @@ func TestResultsContainCorrectCount(t *testing.T) {
 				mockPredictionRepo,
 				mockRatingRepo,
 				mockReminderRepo,
-				groupID,
 				mockLogger,
 			)
 
@@ -360,8 +349,6 @@ func TestResultsContainTop5(t *testing.T) {
 			mockReminderRepo := &MockReminderRepo{}
 			mockLogger := &MockLogger{}
 
-			groupID := int64(12345)
-
 			// Create notification service
 			ns := NewNotificationService(
 				mockBot,
@@ -369,7 +356,6 @@ func TestResultsContainTop5(t *testing.T) {
 				mockPredictionRepo,
 				mockRatingRepo,
 				mockReminderRepo,
-				groupID,
 				mockLogger,
 			)
 

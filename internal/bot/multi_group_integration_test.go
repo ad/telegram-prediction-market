@@ -1129,7 +1129,6 @@ func TestIntegration_DataMigration(t *testing.T) {
 	user2ID := int64(22222)
 	user3ID := int64(33333)
 	chatID := int64(67890)
-	defaultGroupName := "Default Group"
 
 	// Step 2: Create some "legacy" data before migration
 	// Note: In the actual old schema, these wouldn't have group_id
@@ -1143,7 +1142,7 @@ func TestIntegration_DataMigration(t *testing.T) {
 		// Create a default group (simulating what the migration would do)
 		defaultGroup := &domain.Group{
 			TelegramChatID: chatID,
-			Name:           defaultGroupName,
+			Name:           "Default Group",
 			CreatedBy:      user1ID,
 			CreatedAt:      time.Now(),
 		}
@@ -1288,8 +1287,8 @@ func TestIntegration_DataMigration(t *testing.T) {
 
 		if len(groups) > 0 {
 			defaultGroup := groups[0]
-			if defaultGroup.Name != defaultGroupName {
-				t.Errorf("Expected default group name %q, got %q", defaultGroupName, defaultGroup.Name)
+			if defaultGroup.Name != "Default Group" {
+				t.Errorf("Expected default group name %q, got %q", "Default Group", defaultGroup.Name)
 			}
 		}
 	})

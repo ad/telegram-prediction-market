@@ -1366,7 +1366,7 @@ func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, call
 		// Stop the poll
 		if event.PollID != "" {
 			_, _ = b.StopPoll(ctx, &bot.StopPollParams{
-				ChatID:    h.config.GroupID,
+				ChatID:    event.GroupID,
 				MessageID: 0, // We don't have message ID, poll will just be closed
 			})
 		}
@@ -1500,7 +1500,7 @@ func (h *BotHandler) publishEventResults(ctx context.Context, b *bot.Bot, event 
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: h.config.GroupID,
+		ChatID: event.GroupID,
 		Text:   sb.String(),
 	})
 	if err != nil {
@@ -1555,7 +1555,7 @@ func (h *BotHandler) sendAchievementNotification(ctx context.Context, b *bot.Bot
 		telegramChatID = group.TelegramChatID
 	} else {
 		// Fallback to config group ID if we couldn't get group info
-		telegramChatID = h.config.GroupID
+		telegramChatID = group.TelegramChatID
 	}
 
 	// Announce in group with username
