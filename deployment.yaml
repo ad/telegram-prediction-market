@@ -14,4 +14,4 @@ spec:
     spec:
       containers:
         - name: app
-          image: ko://./cmd/server
+          image: ko://./cmd/bot

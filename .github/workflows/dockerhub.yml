@@ -39,4 +39,4 @@ jobs:
           KO_DOCKER_REPO: ${{ steps.set_var.outputs.docker_image }}
           BUILD_VERSION: ${{ steps.set_var.outputs.version }}
         run: |
-          ko build ./cmd/server --sbom=none --bare --tags="$BUILD_VERSION,latest"
+          ko build ./cmd/bot --sbom=none --bare --tags="$BUILD_VERSION,latest"
