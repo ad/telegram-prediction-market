@@ -850,7 +850,17 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 			return err
 		}
 
-		// Publish poll to group
+		// Get group to retrieve Telegram chat ID
+		group, err := f.groupRepo.GetGroup(ctx, context.GroupID)
+		if err != nil {
+			f.logger.Error("failed to get group for poll", "group_id", context.GroupID, "error", err)
+			_, _ = f.sendMessage(ctx, chatID, "❌ Ошибка при получении информации о группе.", nil)
+			// Delete session
+			_ = f.storage.Delete(ctx, userID)
+			return err
+		}
+
+		// Publish poll to group using Telegram chat ID
 		pollOptions := make([]models.InputPollOption, len(event.Options))
 		for i, opt := range event.Options {
 			pollOptions[i] = models.InputPollOption{Text: opt}
@@ -858,14 +868,14 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 
 		isAnonymous := false
 		pollMsg, err := f.bot.SendPoll(ctx, &bot.SendPollParams{
-			ChatID:                context.GroupID,
+			ChatID:                group.TelegramChatID,
 			Question:              event.Question,
 			Options:               pollOptions,
 			IsAnonymous:           &isAnonymous,
 			AllowsMultipleAnswers: false,
 		})
 		if err != nil {
-			f.logger.Error("failed to send poll", "event_id", event.ID, "error", err)
+			f.logger.Error("failed to send poll", "event_id", event.ID, "group_id", context.GroupID, "telegram_chat_id", group.TelegramChatID, "error", err)
 			_, _ = f.sendMessage(ctx, chatID, "❌ Ошибка при публикации опроса.", nil)
 			// Delete session
 			_ = f.storage.Delete(ctx, userID)

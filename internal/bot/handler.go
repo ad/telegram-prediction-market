@@ -1631,7 +1631,7 @@ func (h *BotHandler) HandleListGroups(ctx context.Context, b *bot.Bot, update *m
 	if len(groups) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
-			Text:   "📋 Нет созданных групп.",
+			Text:   "📋 Нет созданных групп.\n/create_group — для создания новой группы",
 		})
 		return
 	}
@@ -1696,7 +1696,7 @@ func (h *BotHandler) HandleGroupMembers(ctx context.Context, b *bot.Bot, update 
 	if len(groups) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
-			Text:   "📋 Нет созданных групп.",
+			Text:   "📋 Нет созданных групп.\n/create_group — для создания новой группы",
 		})
 		return
 	}
@@ -1747,7 +1747,7 @@ func (h *BotHandler) HandleRemoveMember(ctx context.Context, b *bot.Bot, update 
 	if len(groups) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
-			Text:   "📋 Нет созданных групп.",
+			Text:   "📋 Нет созданных групп.\n/create_group — для создания новой группы",
 		})
 		return
 	}
