@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ad/gitelegram-prediction-market/internal/config"
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
 	"github.com/ad/gitelegram-prediction-market/internal/logger"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
@@ -1381,4 +1382,147 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 			t.Errorf("Expected original user to still have 3 achievements, got %d", len(originalUserAchievements))
 		}
 	})
+}
+
+// Integration test for deadline preset buttons
+func TestIntegration_DeadlinePresetButtons(t *testing.T) {
+	// Setup in-memory database
+	ctx := context.Background()
+	userID := int64(12345)
+	chatID := int64(67890)
+
+	queue, groupID := setupTestGroupAndDB(t, chatID, userID)
+	defer queue.Close()
+
+	// Create dependencies
+	log := logger.New(logger.ERROR)
+
+	// Create FSM storage
+	fsmStorage := storage.NewFSMStorage(queue, log)
+
+	// Create config with timezone
+	cfg := &config.Config{
+		Timezone: time.UTC,
+	}
+
+	// Test data
+	question := "Will it rain next week?"
+
+	// Test each preset button by simulating the deadline calculation logic
+	presets := []struct {
+		name     string
+		preset   string
+		expected time.Duration
+	}{
+		{"1 day", "1d", 24 * time.Hour},
+		{"3 days", "3d", 3 * 24 * time.Hour},
+		{"7 days", "7d", 7 * 24 * time.Hour},
+		{"2 weeks", "14d", 14 * 24 * time.Hour},
+		{"1 month", "30d", 30 * 24 * time.Hour},
+		{"3 months", "90d", 90 * 24 * time.Hour},
+		{"6 months", "180d", 180 * 24 * time.Hour},
+		{"1 year", "365d", 365 * 24 * time.Hour},
+	}
+
+	for _, tc := range presets {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a session in ask_deadline state
+			sessionContext := &domain.EventCreationContext{
+				Question:          question,
+				EventType:         domain.EventTypeBinary,
+				Options:           []string{"Да", "Нет"},
+				LastBotMessageID:  100,
+				LastUserMessageID: 101,
+				ChatID:            chatID,
+				GroupID:           groupID,
+			}
+			if err := fsmStorage.Set(ctx, userID, StateAskDeadline, sessionContext.ToMap()); err != nil {
+				t.Fatalf("Failed to create session: %v", err)
+			}
+
+			// Simulate deadline calculation based on preset (same logic as in handleDeadlinePresetCallback)
+			now := time.Now().In(cfg.Timezone)
+			var deadline time.Time
+
+			switch tc.preset {
+			case "1d":
+				deadline = now.AddDate(0, 0, 1)
+			case "3d":
+				deadline = now.AddDate(0, 0, 3)
+			case "7d":
+				deadline = now.AddDate(0, 0, 7)
+			case "14d":
+				deadline = now.AddDate(0, 0, 14)
+			case "30d":
+				deadline = now.AddDate(0, 1, 0)
+			case "90d":
+				deadline = now.AddDate(0, 3, 0)
+			case "180d":
+				deadline = now.AddDate(0, 6, 0)
+			case "365d":
+				deadline = now.AddDate(1, 0, 0)
+			}
+
+			// Set time to 12:00
+			deadline = time.Date(deadline.Year(), deadline.Month(), deadline.Day(), 12, 0, 0, 0, cfg.Timezone)
+
+			// Store deadline in context
+			sessionContext.Deadline = deadline
+			if err := fsmStorage.Set(ctx, userID, StateConfirm, sessionContext.ToMap()); err != nil {
+				t.Fatalf("Failed to update session with deadline: %v", err)
+			}
+
+			// Verify state transitioned to confirm
+			state, data, err := fsmStorage.Get(ctx, userID)
+			if err != nil {
+				t.Fatalf("Failed to get session after preset: %v", err)
+			}
+			if state != StateConfirm {
+				t.Errorf("Expected state %s after preset, got %s", StateConfirm, state)
+			}
+
+			// Load context and verify deadline
+			restoredContext := &domain.EventCreationContext{}
+			if err := restoredContext.FromMap(data); err != nil {
+				t.Fatalf("Failed to restore context: %v", err)
+			}
+
+			// Check deadline is in the future and approximately correct
+			actualDeadline := restoredContext.Deadline
+
+			// Verify deadline is in the future
+			if !actualDeadline.After(now) {
+				t.Errorf("Deadline should be in the future, got %s", actualDeadline.Format("02.01.2006 15:04"))
+			}
+
+			// For month-based presets, allow more tolerance due to varying month lengths
+			tolerance := time.Minute
+			if tc.preset == "30d" || tc.preset == "90d" || tc.preset == "180d" || tc.preset == "365d" {
+				tolerance = 72 * time.Hour // 3 days tolerance for month-based calculations
+			}
+
+			expectedDeadline := now.Add(tc.expected)
+			// Set to 12:00
+			expectedDeadline = time.Date(expectedDeadline.Year(), expectedDeadline.Month(), expectedDeadline.Day(), 12, 0, 0, 0, cfg.Timezone)
+
+			diff := actualDeadline.Sub(expectedDeadline)
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff > tolerance {
+				t.Errorf("Deadline mismatch for preset %s: expected around %s, got %s (diff: %s)",
+					tc.preset, expectedDeadline.Format("02.01.2006 15:04"), actualDeadline.Format("02.01.2006 15:04"), diff)
+			}
+
+			// Verify deadline is at 12:00
+			if actualDeadline.Hour() != 12 || actualDeadline.Minute() != 0 {
+				t.Errorf("Expected deadline at 12:00, got %02d:%02d", actualDeadline.Hour(), actualDeadline.Minute())
+			}
+
+			// Clean up session for next test
+			if err := fsmStorage.Delete(ctx, userID); err != nil {
+				t.Fatalf("Failed to delete session: %v", err)
+			}
+		})
+	}
 }

@@ -229,6 +229,10 @@ func (f *EventCreationFSM) HandleCallback(ctx context.Context, callback *models.
 		return f.handleEventTypeCallback(ctx, userID, callback, context)
 	}
 
+	if strings.HasPrefix(data, "deadline_preset:") && state == StateAskDeadline {
+		return f.handleDeadlinePresetCallback(ctx, userID, callback, context)
+	}
+
 	if strings.HasPrefix(data, "confirm:") && state == StateConfirm {
 		return f.handleConfirmCallback(ctx, userID, callback, context)
 	}
@@ -530,10 +534,17 @@ func (f *EventCreationFSM) handleEventTypeCallback(ctx context.Context, userID i
 	chatID := callback.Message.Message.Chat.ID
 	var messageID int
 	var err error
+	var replyMarkup models.ReplyMarkup
+
+	// Add deadline preset buttons for states that need deadline
+	if nextState == StateAskDeadline {
+		replyMarkup = f.getDeadlinePresetKeyboard()
+	}
+
 	if useHTML {
-		messageID, err = f.sendMessageHTML(ctx, chatID, messageText, nil)
+		messageID, err = f.sendMessageHTML(ctx, chatID, messageText, replyMarkup)
 	} else {
-		messageID, err = f.sendMessage(ctx, chatID, messageText, nil)
+		messageID, err = f.sendMessage(ctx, chatID, messageText, replyMarkup)
 	}
 	if err != nil {
 		return err
@@ -641,8 +652,8 @@ func (f *EventCreationFSM) handleOptionsInput(ctx context.Context, userID int64,
 	}
 	f.deleteMessages(ctx, chatID, messagesToDelete...)
 
-	// Send deadline request (with HTML for example date)
-	messageID, err := f.sendMessageHTML(ctx, chatID, f.getDeadlinePromptMessage(), nil)
+	// Send deadline request (with HTML for example date and preset buttons)
+	messageID, err := f.sendMessageHTML(ctx, chatID, f.getDeadlinePromptMessage(), f.getDeadlinePresetKeyboard())
 	if err != nil {
 		return err
 	}
@@ -785,7 +796,107 @@ func (f *EventCreationFSM) getDeadlinePromptMessage() string {
 	exampleDate = time.Date(exampleDate.Year(), exampleDate.Month(), exampleDate.Day(), 12, 0, 0, 0, f.config.Timezone)
 	exampleStr := exampleDate.Format("02.01.2006 15:04")
 
-	return fmt.Sprintf("📅 Введите дедлайн в формате:\nДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: <code>%s</code>", exampleStr)
+	return fmt.Sprintf("📅 Введите дедлайн в формате:\nДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: <code>%s</code>\n\nИли выберите готовый период:", exampleStr)
+}
+
+// getDeadlinePresetKeyboard returns inline keyboard with preset deadline options
+func (f *EventCreationFSM) getDeadlinePresetKeyboard() *models.InlineKeyboardMarkup {
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{Text: "1 день", CallbackData: "deadline_preset:1d"},
+				{Text: "3 дня", CallbackData: "deadline_preset:3d"},
+				{Text: "7 дней", CallbackData: "deadline_preset:7d"},
+				{Text: "2 недели", CallbackData: "deadline_preset:14d"},
+				{Text: "1 месяц", CallbackData: "deadline_preset:30d"},
+				{Text: "3 месяца", CallbackData: "deadline_preset:90d"},
+				{Text: "6 месяцев", CallbackData: "deadline_preset:180d"},
+				{Text: "1 год", CallbackData: "deadline_preset:365d"},
+			},
+		},
+	}
+}
+
+// handleDeadlinePresetCallback processes the deadline preset selection
+func (f *EventCreationFSM) handleDeadlinePresetCallback(ctx context.Context, userID int64, callback *models.CallbackQuery, context *domain.EventCreationContext) error {
+	// Answer callback query to remove loading state
+	_, _ = f.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: callback.ID,
+	})
+
+	// Parse preset from callback data
+	preset := strings.TrimPrefix(callback.Data, "deadline_preset:")
+
+	// Calculate deadline based on preset
+	var deadline time.Time
+	now := time.Now().In(f.config.Timezone)
+
+	switch preset {
+	case "1d":
+		deadline = now.AddDate(0, 0, 1)
+	case "3d":
+		deadline = now.AddDate(0, 0, 3)
+	case "7d":
+		deadline = now.AddDate(0, 0, 7)
+	case "14d":
+		deadline = now.AddDate(0, 0, 14)
+	case "30d":
+		deadline = now.AddDate(0, 1, 0)
+	case "90d":
+		deadline = now.AddDate(0, 3, 0)
+	case "180d":
+		deadline = now.AddDate(0, 6, 0)
+	case "365d":
+		deadline = now.AddDate(1, 0, 0)
+	default:
+		f.logger.Error("unknown deadline preset", "user_id", userID, "preset", preset)
+		return fmt.Errorf("unknown deadline preset: %s", preset)
+	}
+
+	// Set time to 12:00
+	deadline = time.Date(deadline.Year(), deadline.Month(), deadline.Day(), 12, 0, 0, 0, f.config.Timezone)
+
+	// Store deadline in context
+	context.Deadline = deadline
+
+	// Delete bot message
+	if callback.Message.Message != nil {
+		f.deleteMessages(ctx, callback.Message.Message.Chat.ID, callback.Message.Message.ID)
+	}
+
+	chatID := callback.Message.Message.Chat.ID
+
+	// Build summary message with all event details
+	summary := f.buildEventSummary(context)
+
+	// Send summary with confirmation keyboard
+	kb := &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{Text: "✅ Подтвердить", CallbackData: "confirm:yes"},
+				{Text: "❌ Отменить", CallbackData: "confirm:no"},
+			},
+		},
+	}
+
+	messageID, err := f.sendMessage(ctx, chatID, summary, kb)
+	if err != nil {
+		return err
+	}
+
+	// Update context with confirmation message ID
+	context.ConfirmationMessageID = messageID
+	context.LastBotMessageID = messageID
+
+	// Transition to confirm state
+	f.logger.Info("state transition", "user_id", userID, "old_state", StateAskDeadline, "new_state", StateConfirm)
+	if err := f.storage.Set(ctx, userID, StateConfirm, context.ToMap()); err != nil {
+		f.logger.Error("failed to transition to confirm", "user_id", userID, "error", err)
+		return err
+	}
+
+	f.logger.Debug("deadline preset selected", "user_id", userID, "preset", preset, "deadline", deadline)
+	return nil
 }
 
 // buildEventSummary creates a summary message with all event details (for confirmation)
