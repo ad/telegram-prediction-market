@@ -1,238 +1,308 @@
-# Telegram Prediction Market Bot
+<div align="center">
 
-A Telegram bot for prediction markets where users can make forecasts on various events and compete in accuracy.
+# 🎯 Telegram Prediction Market Bot
 
-## Features
+**Создайте свой рынок предсказаний прямо в Telegram**
 
-- **Multi-Group Support**: Host multiple independent prediction market communities in a single bot instance
-  - Each group maintains isolated events, ratings, and achievements
-  - Deep-link invitation system for easy group joining
-  - Users can participate in multiple groups simultaneously
-- **Event Creation**: Admins can create binary, multi-option, and probability-based prediction events
-  - FSM-based multi-step creation flow with persistent state
-  - Group selection for multi-group users
-  - Automatic message cleanup for clean chat experience
-  - Session recovery after bot restarts
-  - Confirmation step before publishing
-- **Voting System**: Non-anonymous polls with real-time vote distribution
-- **Rating System**: Points-based scoring with bonuses for minority predictions and early voting
-  - Separate ratings maintained per group
-- **Achievements**: Badges for streaks, participation, and weekly top performers
-  - Group-specific achievement tracking
-  - Same achievements can be earned independently in different groups
-- **Notifications**: Deadline reminders and event announcements
-- **Admin Controls**: Event management with audit logging
-  - Group creation and management
-  - Member management with removal capabilities
-  - Deep-link generation for invitations
+[![Go Version](https://img.shields.io/badge/Go-1.25.5+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?logo=telegram)](https://telegram.org/)
 
-## Requirements
+[Возможности](#-возможности) • [Быстрый старт](#-быстрый-старт) • [Использование](#-использование) • [Архитектура](#-архитектура)
 
-- Go 1.25.5 or higher
-- SQLite (via modernc.org/sqlite)
-- Telegram Bot Token (from @BotFather)
-- Telegram Supergroup with bot as admin
+</div>
 
-## Installation
+---
 
-1. Clone the repository:
+## 🌟 О проекте
+
+Telegram Prediction Market Bot — это полнофункциональный бот для создания рынков предсказаний, где пользователи могут делать прогнозы на различные события и соревноваться в точности. Идеально подходит для команд, сообществ и групп друзей, которые хотят добавить элемент соревнования в свои обсуждения.
+
+### 💡 Зачем это нужно?
+
+- **Для команд**: Прогнозируйте результаты спринтов, релизов, метрик
+- **Для сообществ**: Создавайте турниры предсказаний на любые темы
+- **Для друзей**: Соревнуйтесь в прогнозах на спортивные события, погоду, политику
+- **Для обучения**: Развивайте навыки критического мышления и оценки вероятностей
+
+---
+
+## ✨ Возможности
+
+### 🏢 Мультигрупповая архитектура
+- **Полная изоляция данных** между группами
+- **Deep-link приглашения** для простого присоединения
+- **Неограниченное участие** — пользователь может быть в нескольких группах одновременно
+- **Независимые рейтинги** и достижения в каждой группе
+
+### 🎲 Гибкие типы событий
+- **Бинарные** (Да/Нет) — классические предсказания
+- **Множественный выбор** (2-6 вариантов) — для сложных сценариев
+- **Вероятностные** (диапазоны 0-25%, 25-50%, 50-75%, 75-100%) — для калибровки уверенности
+
+### 🎯 Умная система подсчёта очков
+```
+✅ Правильный прогноз:
+   • Бинарное событие: +10 очков
+   • Множественный выбор: +15 очков
+   • Вероятностное: +15 очков
+
+🎁 Бонусы:
+   • Меньшинство (<40% голосов): +5 очков
+   • Ранний голос (первые 12 часов): +3 очка
+   • Участие: +1 очко
+
+❌ Штрафы:
+   • Неправильный прогноз: -3 очка
+```
+
+### 🏆 Система достижений
+- 🎯 **Меткий стрелок** — 3 правильных прогноза подряд
+- 🔮 **Провидец** — 10 правильных прогнозов подряд
+- 🎲 **Риск-мейкер** — 3 правильных прогноза в меньшинстве подряд
+- 📊 **Аналитик недели** — больше всех очков за неделю
+- 🏆 **Старожил** — участие в 50 событиях
+
+### 🔄 FSM-based создание событий
+- **Интерактивный пошаговый процесс** с валидацией на каждом шаге
+- **Автоматическая очистка сообщений** для чистого чата
+- **Персистентные сессии** — продолжайте после перезапуска бота
+- **Защита от конфликтов** — несколько админов могут создавать события одновременно
+
+### 🔔 Умные уведомления
+- Напоминания за 24 часа до дедлайна
+- Анонсы новых событий
+- Уведомления о достижениях
+
+---
+
+## 🚀 Быстрый старт
+
+### Требования
+
+- Go 1.25.5+
+- SQLite (встроен через modernc.org/sqlite)
+- Telegram Bot Token (получите у [@BotFather](https://t.me/BotFather))
+
+### Установка
+
 ```bash
-git clone <repository-url>
+# Клонируйте репозиторий
+git clone https://github.com/ad/telegram-prediction-market.git
 cd telegram-prediction-market
-```
 
-2. Install dependencies:
-```bash
+# Установите зависимости
 go mod download
-```
 
-3. Build the bot:
-```bash
+# Соберите бот
 go build -o bin/bot ./cmd/bot
 ```
 
-## Configuration
+### Конфигурация
 
-Set the following environment variables:
+Создайте файл `.env` на основе `.env.example`:
 
 ```bash
-# Required
-export TELEGRAM_TOKEN="your-bot-token"
-export GROUP_ID="-1001234567890"  # Your supergroup ID (deprecated, kept for backward compatibility)
-export ADMIN_USER_IDS="123456789,987654321"  # Comma-separated admin user IDs
+# Обязательные параметры
+TELEGRAM_TOKEN="your-bot-token-here"
+ADMIN_USER_IDS="123456789,987654321"
 
-# Optional
-export DATABASE_PATH="./data/bot.db"  # Default: ./data/bot.db
-export LOG_LEVEL="INFO"  # Default: INFO (options: DEBUG, INFO, WARN, ERROR)
-
-# Multi-Group Settings
-export DEFAULT_GROUP_NAME="Default Group"  # Name for default group during migration (default: "Default Group")
-export MAX_GROUPS_PER_ADMIN="10"  # Maximum groups an admin can create (default: 10)
-export MAX_MEMBERSHIPS_PER_USER="20"  # Maximum groups a user can join (default: 20)
+# Опциональные параметры
+DATABASE_PATH="./data/bot.db"
+LOG_LEVEL="INFO"
+DEFAULT_GROUP_NAME="Default Group"
+MAX_GROUPS_PER_ADMIN="10"
+MAX_MEMBERSHIPS_PER_USER="20"
 ```
 
-Or create a `.env` file (see `.env.example`).
-
-## Running
+### Запуск
 
 ```bash
+# Запустите бот
 ./bin/bot
-```
 
-Or run directly with Go:
-```bash
+# Или напрямую через Go
 go run ./cmd/bot
 ```
 
-## Usage
+---
 
-### User Commands
+## 📖 Использование
 
-- `/start` - Entry point: shows help or processes group invitation
-- `/help` - Show help and available commands (role-based display)
-- `/groups` - List all groups you're a member of
-- `/rating` - View top 10 participants in your current group
-- `/my` - View your personal statistics and achievements for your current group
-- `/events` - List all active events from your groups
+### Для пользователей
 
-### Admin Commands
-
-- `/create_group` - Create a new prediction market group
-- `/list_groups` - List all groups with invitation links
-- `/group_members` - View members of a specific group
-- `/remove_member` - Remove a user from a group
-- `/create_event` - Create a new prediction event (interactive multi-step flow with group selection)
-- `/resolve_event` - Resolve an event and calculate scores
-- `/edit_event` - Edit an event (only if no votes exist)
-
-### Multi-Group Features
-
-#### Joining Groups via Deep-Link Invitations
-
-1. Admin creates a group using `/create_group`
-2. Admin generates invitation link using `/list_groups`
-3. Admin shares the deep-link (format: `https://t.me/your_bot?start=group_123`)
-4. User clicks the link and starts the bot
-5. Bot automatically adds user to the group and initializes their rating/achievements
-
-**Group Isolation:**
-- Each group maintains completely separate data:
-  - Events are only visible to group members
-  - Ratings are tracked independently per group
-  - Achievements are earned separately in each group
-  - Users can participate in multiple groups with different standings in each
-
-**Membership Management:**
-- Admins can view group members with `/group_members`
-- Admins can remove members with `/remove_member`
-- Removed users can rejoin via a new invitation link
-- Historical data is preserved when users are removed
-
-### Event Creation Flow
-
-The `/create_event` command starts an interactive, multi-step process:
-
-1. **Group Selection** (if you're in multiple groups): Choose which group the event is for
-2. **Question**: Enter the prediction question
-3. **Event Type**: Choose between Binary (Yes/No), Multi-option (2-6 choices), or Probability (0-25%, 25-50%, 50-75%, 75-100%)
-4. **Options** (for multi-option only): Enter answer options (one per line)
-5. **Deadline**: Enter deadline in format `DD.MM.YYYY HH:MM` (e.g., `25.12.2024 18:00`)
-6. **Confirmation**: Review all details and confirm or cancel
-
-**Key Features:**
-- **Group Context**: Events are automatically scoped to the selected group
-- **Clean Chat**: All intermediate messages are automatically deleted, leaving only the final result
-- **Persistent Sessions**: Your progress is saved - if the bot restarts, you can continue where you left off
-- **Validation**: Input is validated at each step with helpful error messages
-- **Session Timeout**: Sessions expire after 30 minutes of inactivity
-- **Concurrent Creation**: Multiple admins can create events simultaneously without interference
-
-## Scoring Rules
-
-### Base Points
-- Binary event (Yes/No): **+10 points**
-- Multi-option event (3-6 options): **+15 points**
-- Probability event: **+15 points**
-
-### Bonuses
-- Minority prediction (<40% votes): **+5 points**
-- Early voting (first 12 hours): **+3 points**
-- Participation: **+1 point**
-
-### Penalties
-- Incorrect prediction: **-3 points**
-
-## Achievements
-
-- 🎯 **Меткий стрелок** - 3 correct predictions in a row
-- 🔮 **Провидец** - 10 correct predictions in a row
-- 🎲 **Риск-мейкер** - 3 correct minority predictions in a row
-- 📊 **Аналитик недели** - Most points in a week
-- 🏆 **Старожил** - Participation in 50 events
-
-## Development
-
-### Running Tests
-
-```bash
-go test ./...
+```
+/start    — Начать работу с ботом
+/help     — Показать справку
+/groups   — Список ваших групп
+/rating   — Топ-10 участников
+/my       — Ваша статистика
+/events   — Активные события
 ```
 
-### Running with Verbose Output
+### Для администраторов
 
-```bash
-go test ./... -v
+#### 1. Создайте группу
+```
+/create_group
+```
+Бот проведёт вас через процесс создания и выдаст ссылку-приглашение.
+
+#### 2. Пригласите участников
+Поделитесь deep-link ссылкой:
+```
+https://t.me/your_bot?start=group_abc123
 ```
 
-### Project Structure
+#### 3. Создайте событие
+```
+/create_event
+```
+Интерактивный процесс:
+1. Выберите группу (если у вас несколько)
+2. Введите вопрос
+3. Выберите тип события
+4. Укажите варианты (для множественного выбора)
+5. Установите дедлайн
+6. Подтвердите
+
+#### 4. Завершите событие
+```
+/resolve_event
+```
+Выберите правильный ответ, и бот автоматически рассчитает очки и обновит рейтинги.
+
+### Дополнительные команды админа
+
+```
+/list_groups     — Список всех групп с ссылками
+/group_members   — Участники группы
+/remove_member   — Удалить участника
+/edit_event      — Редактировать событие (только без голосов)
+```
+
+---
+
+## 🏗 Архитектура
+
+### Технологический стек
+
+- **Язык**: Go 1.25.5
+- **База данных**: SQLite с WAL mode
+- **Telegram API**: [go-telegram/bot](https://github.com/go-telegram/bot)
+- **FSM**: Собственная реализация с персистентностью
+- **Кодирование ID**: Custom Base-N encoder для коротких deep-links
+
+### Структура проекта
 
 ```
 .
-├── cmd/bot/           # Main application entry point
+├── cmd/bot/              # Точка входа приложения
 ├── internal/
-│   ├── bot/          # Telegram bot handlers and FSM
-│   │   ├── handler.go              # Main bot handler
-│   │   ├── event_creation_fsm.go   # FSM-based event creation
-│   │   └── message_deletion.go     # Message cleanup utilities
-│   ├── config/       # Configuration management
-│   ├── domain/       # Business logic and domain models
-│   │   ├── event_creation_context.go  # FSM context data
-│   │   ├── deeplink_service.go        # Deep-link generation/parsing
-│   │   └── group_context_resolver.go  # Group context resolution
-│   ├── logger/       # Structured logging
-│   └── storage/      # Database repositories and schema
-│       ├── fsm_storage.go             # FSM state persistence
-│       ├── group_repository.go        # Group data access
-│       └── group_membership_repository.go  # Membership management
-└── .kiro/specs/      # Feature specifications and design docs
+│   ├── bot/             # Telegram handlers и FSM
+│   │   ├── handler.go              # Основной обработчик
+│   │   ├── event_creation_fsm.go   # FSM создания событий
+│   │   ├── event_resolution_fsm.go # FSM завершения событий
+│   │   ├── group_creation_fsm.go   # FSM создания групп
+│   │   └── message_deletion.go     # Утилиты очистки
+│   ├── config/          # Управление конфигурацией
+│   ├── domain/          # Бизнес-логика
+│   │   ├── event_manager.go           # Управление событиями
+│   │   ├── rating_calculator.go       # Расчёт рейтингов
+│   │   ├── achievement_tracker.go     # Отслеживание достижений
+│   │   ├── deeplink_service.go        # Генерация deep-links
+│   │   └── group_context_resolver.go  # Разрешение контекста групп
+│   ├── encoding/        # Base-N кодирование для ID
+│   ├── logger/          # Структурированное логирование
+│   └── storage/         # Репозитории и миграции
+│       ├── fsm_storage.go                  # Персистентность FSM
+│       ├── group_repository.go             # Работа с группами
+│       ├── group_membership_repository.go  # Управление членством
+│       └── migrations.go                   # Миграции БД
+└── data/                # SQLite база данных
 ```
 
-### Technical Architecture
+### Ключевые особенности реализации
 
-**Multi-Group Architecture:**
-- Each group maintains isolated data contexts
-- Group identifiers stored with all group-scoped entities (events, ratings, achievements)
-- Deep-link format: `https://t.me/{bot_username}?start=group_{groupID}`
-- Automatic group context resolution for single-group users
-- Group selection prompt for multi-group users during event creation
+#### 🔄 FSM с персистентностью
+Все интерактивные процессы (создание событий, групп, завершение событий) реализованы через конечные автоматы с сохранением состояния в БД. Это позволяет:
+- Продолжать процесс после перезапуска бота
+- Избегать конфликтов между сессиями
+- Автоматически очищать устаревшие сессии (>30 минут)
 
-**Event Creation State Machine:**
-- Uses `github.com/go-telegram/fsm` library for state management
-- States: `select_group` (conditional) → `ask_question` → `ask_event_type` → `ask_options` (conditional) → `ask_deadline` → `confirm` → `complete`
-- State and context data persisted in SQLite (`fsm_sessions` table)
-- Automatic cleanup of stale sessions (>30 minutes inactive)
-- Message IDs tracked in context for cleanup on completion
+#### 🔐 Изоляция данных
+Каждая группа — это полностью изолированное пространство:
+- События видны только участникам группы
+- Рейтинги ведутся отдельно
+- Достижения зарабатываются независимо
+- Пользователь может иметь разные позиции в разных группах
 
-**Database Schema:**
-- `groups`: Group metadata (id, name, created_at, created_by)
-- `group_memberships`: User-group relationships (id, group_id, user_id, joined_at, status)
-- `events`: Includes `group_id` for isolation
-- `ratings`: Composite key (user_id, group_id) for per-group ratings
-- `achievements`: Includes `group_id` for group-specific tracking
-- `fsm_sessions`: Stores FSM state, context JSON (including group_id), and timestamps per user
-- Indexed on `group_id` columns for efficient filtering
-- Foreign key constraints ensure referential integrity
+#### 📊 Умный расчёт рейтингов
+Система учитывает:
+- Сложность события (тип)
+- Популярность выбора (бонус за меньшинство)
+- Скорость реакции (бонус за ранний голос)
+- Историю правильных прогнозов (серии)
 
-## License
+#### 🔗 Короткие deep-links
+Используется custom Base-N кодирование для создания коротких и читаемых ссылок-приглашений вместо длинных числовых ID.
 
-See LICENSE file for details.
+---
+
+## 🧪 Тестирование
+
+```bash
+# Запустить все тесты
+go test ./...
+
+# С подробным выводом
+go test ./... -v
+
+# Только определённый пакет
+go test ./internal/bot -v
+
+# С покрытием
+go test ./... -cover
+```
+
+Проект включает:
+- Unit-тесты для всех компонентов
+- Integration-тесты для FSM
+- Property-based тесты (gopter) для кодирования
+- Тесты для multi-group сценариев
+
+---
+
+## 🤝 Вклад в проект
+
+Мы приветствуем вклад в проект! Вот как вы можете помочь:
+
+1. 🐛 **Сообщайте о багах** через Issues
+2. 💡 **Предлагайте новые функции** через Discussions
+3. 🔧 **Отправляйте Pull Requests**
+4. 📖 **Улучшайте документацию**
+5. ⭐ **Ставьте звёзды** проекту
+
+---
+
+## 📝 Лицензия
+
+Этот проект распространяется под лицензией MIT. См. файл [LICENSE](LICENSE) для подробностей.
+
+---
+
+## 🙏 Благодарности
+
+- [go-telegram/bot](https://github.com/go-telegram/bot) — отличная библиотека для Telegram Bot API
+- [modernc.org/sqlite](https://gitlab.com/cznic/sqlite) — pure Go SQLite драйвер
+- Сообществу Go за потрясающие инструменты и библиотеки
+
+---
+
+<div align="center">
+
+**Сделано с ❤️ для сообществ, которые любят предсказывать будущее**
+
+[⬆ Наверх](#-telegram-prediction-market-bot)
+
+</div>

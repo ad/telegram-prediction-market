@@ -300,6 +300,9 @@ func (f *EventResolutionFSM) handleOptionSelection(ctx context.Context, callback
 	predictions, err := f.predictionRepo.GetPredictionsByEvent(ctx, context.EventID)
 	if err == nil {
 		for _, pred := range predictions {
+			// Check if user just gained event creation permission
+			f.checkAndNotifyEventCreationPermission(ctx, pred.UserID, event.GroupID)
+
 			achievements, err := f.achievementTracker.CheckAndAwardAchievements(ctx, pred.UserID, event.GroupID)
 			if err != nil {
 				f.logger.Error("failed to check achievements", "user_id", pred.UserID, "group_id", event.GroupID, "error", err)
@@ -350,6 +353,70 @@ func (f *EventResolutionFSM) handleOptionSelection(ctx context.Context, callback
 // deleteMessages is a helper to delete multiple messages
 func (f *EventResolutionFSM) deleteMessages(ctx context.Context, chatID int64, messageIDs ...int) {
 	deleteMessages(ctx, f.bot, f.logger, chatID, messageIDs...)
+}
+
+// checkAndNotifyEventCreationPermission checks if user just gained permission to create events
+// and sends a notification with instructions
+func (f *EventResolutionFSM) checkAndNotifyEventCreationPermission(ctx context.Context, userID int64, groupID int64) {
+	// Skip admins - they always have permission
+	isAdmin := false
+	for _, adminID := range f.config.AdminUserIDs {
+		if adminID == userID {
+			isAdmin = true
+			break
+		}
+	}
+	if isAdmin {
+		return
+	}
+
+	// Check current participation count
+	canCreate, participationCount, err := f.eventPermissionValidator.CanCreateEvent(ctx, userID, groupID, f.config.AdminUserIDs)
+	if err != nil {
+		f.logger.Error("failed to check event creation permission", "user_id", userID, "group_id", groupID, "error", err)
+		return
+	}
+
+	// If user just reached the minimum required participation (exactly at the threshold)
+	if canCreate && participationCount == f.config.MinEventsToCreate {
+		// Get group information
+		group, err := f.groupRepo.GetGroup(ctx, groupID)
+		if err != nil {
+			f.logger.Error("failed to get group for permission notification", "group_id", groupID, "error", err)
+			return
+		}
+
+		groupName := "группе"
+		if group != nil && group.Name != "" {
+			groupName = fmt.Sprintf("группе \"%s\"", group.Name)
+		}
+
+		// Send notification with instructions
+		message := fmt.Sprintf(
+			"🎉 Поздравляем!\n\n"+
+				"Вы приняли участие в %d завершенных событиях в %s и теперь можете создавать свои собственные события!\n\n"+
+				"📝 Как создать событие:\n"+
+				"1️⃣ Используйте команду /create_event\n"+
+				"2️⃣ Выберите группу\n"+
+				"3️⃣ Введите вопрос события\n"+
+				"4️⃣ Выберите тип события\n"+
+				"5️⃣ Укажите варианты ответов\n"+
+				"6️⃣ Установите дедлайн\n\n"+
+				"Удачи в создании интересных событий! 🚀",
+			participationCount,
+			groupName,
+		)
+
+		_, err = f.bot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: userID,
+			Text:   message,
+		})
+		if err != nil {
+			f.logger.Error("failed to send event creation permission notification", "user_id", userID, "group_id", groupID, "error", err)
+		} else {
+			f.logger.Info("sent event creation permission notification", "user_id", userID, "group_id", groupID, "participation_count", participationCount)
+		}
+	}
 }
 
 // sendAchievementNotification sends achievement notification to user
