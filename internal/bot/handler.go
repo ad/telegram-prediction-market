@@ -2393,7 +2393,7 @@ func (h *BotHandler) handleResolveEventFromCallback(ctx context.Context, b *bot.
 	}
 
 	// Create a new callback with the resolve: prefix to trigger FSM handling
-	h.eventResolutionFSM.HandleCallback(ctx, callback)
+	_ = h.eventResolutionFSM.HandleCallback(ctx, callback)
 }
 
 // handleEditEventCallback handles the edit button click from event creation summary

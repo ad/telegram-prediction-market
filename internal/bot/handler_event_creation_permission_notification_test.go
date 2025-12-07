@@ -11,20 +11,8 @@ import (
 	"github.com/ad/gitelegram-prediction-market/internal/logger"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
-	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	_ "modernc.org/sqlite"
 )
-
-// mockBotForPermissionNotification is a simple mock bot for testing
-type mockBotForPermissionNotification struct {
-	sentMessages []string
-}
-
-func (m *mockBotForPermissionNotification) SendMessage(ctx context.Context, params *bot.SendMessageParams) (*models.Message, error) {
-	m.sentMessages = append(m.sentMessages, params.Text)
-	return &models.Message{ID: len(m.sentMessages)}, nil
-}
 
 // TestEventCreationPermissionNotification tests that users receive notification when they gain event creation permission
 func TestEventCreationPermissionNotification(t *testing.T) {
@@ -33,7 +21,7 @@ func TestEventCreationPermissionNotification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	queue := storage.NewDBQueue(db)
 	defer queue.Close()

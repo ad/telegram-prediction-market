@@ -23,7 +23,7 @@ func TestEventCreation_ForumTopicsDisplayed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	queue := storage.NewDBQueue(db)
 	defer queue.Close()
