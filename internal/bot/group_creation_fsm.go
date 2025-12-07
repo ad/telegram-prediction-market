@@ -313,7 +313,7 @@ func (f *GroupCreationFSM) createGroup(ctx context.Context, userID int64, chatID
 	successMsg := fmt.Sprintf("✅ Группа создана!\n\n"+
 		"📋 Название: %s\n"+
 		"🆔 ID группы: %d\n"+
-		"� ID чата: %d%\n",
+		"🆔 ID чата: %d\n",
 		context.GroupName, group.ID, context.TelegramChatID)
 
 	if context.IsForum {

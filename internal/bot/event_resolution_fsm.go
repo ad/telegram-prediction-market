@@ -31,6 +31,7 @@ type EventResolutionFSM struct {
 	predictionRepo           domain.PredictionRepository
 	groupRepo                domain.GroupRepository
 	eventPermissionValidator *domain.EventPermissionValidator
+	notificationService      *domain.NotificationService
 	config                   *config.Config
 	logger                   domain.Logger
 }
@@ -45,6 +46,7 @@ func NewEventResolutionFSM(
 	predictionRepo domain.PredictionRepository,
 	groupRepo domain.GroupRepository,
 	eventPermissionValidator *domain.EventPermissionValidator,
+	notificationService *domain.NotificationService,
 	cfg *config.Config,
 	logger domain.Logger,
 ) *EventResolutionFSM {
@@ -57,6 +59,7 @@ func NewEventResolutionFSM(
 		predictionRepo:           predictionRepo,
 		groupRepo:                groupRepo,
 		eventPermissionValidator: eventPermissionValidator,
+		notificationService:      notificationService,
 		config:                   cfg,
 		logger:                   logger,
 	}
@@ -332,6 +335,16 @@ func (f *EventResolutionFSM) handleOptionSelection(ctx context.Context, callback
 			} else {
 				f.logger.Info("poll stopped", "event_id", event.ID, "poll_id", event.PollID, "message_id", event.PollMessageID, "telegram_chat_id", group.TelegramChatID)
 			}
+		}
+	}
+
+	// Publish event results to the group
+	group, err := f.groupRepo.GetGroup(ctx, event.GroupID)
+	if err != nil {
+		f.logger.Error("failed to get group for publishing results", "event_id", event.ID, "group_id", event.GroupID, "error", err)
+	} else {
+		if err := f.notificationService.PublishEventResults(ctx, context.EventID, optionIndex, group.TelegramChatID, group.MessageThreadID); err != nil {
+			f.logger.Error("failed to publish event results", "event_id", context.EventID, "error", err)
 		}
 	}
 

@@ -163,7 +163,7 @@ func (ns *NotificationService) SendAchievementNotification(ctx context.Context, 
 }
 
 // PublishEventResults publishes event results to the group with outcome, correct count, top 5, rating changes, and achievements
-func (ns *NotificationService) PublishEventResults(ctx context.Context, eventID int64, correctOption int) error {
+func (ns *NotificationService) PublishEventResults(ctx context.Context, eventID int64, correctOption int, telegramChatID int64, messageThreadID *int) error {
 	// Get the event
 	event, err := ns.eventRepo.GetEvent(ctx, eventID)
 	if err != nil {
@@ -212,10 +212,18 @@ func (ns *NotificationService) PublishEventResults(ctx context.Context, eventID 
 	}
 
 	// Send results to group
-	_, err = ns.bot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: ns.groupID,
+	sendParams := &bot.SendMessageParams{
+		ChatID: telegramChatID,
 		Text:   sb.String(),
-	})
+	}
+
+	// Add MessageThreadID for forum groups
+	if messageThreadID != nil && *messageThreadID != 0 {
+		sendParams.MessageThreadID = *messageThreadID
+		ns.logger.Debug("sending results to forum topic", "event_id", eventID, "message_thread_id", *messageThreadID)
+	}
+
+	_, err = ns.bot.SendMessage(ctx, sendParams)
 	if err != nil {
 		ns.logger.Error("failed to send results to group", "event_id", eventID, "error", err)
 		return err

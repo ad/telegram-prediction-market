@@ -161,6 +161,7 @@ func (h *BotHandler) notifyAdminsWithKeyboard(ctx context.Context, message strin
 			ChatID:      adminID,
 			Text:        message,
 			ReplyMarkup: keyboard,
+			ParseMode:   models.ParseModeHTML,
 		})
 		if err != nil {
 			h.logger.Error("failed to send admin notification with keyboard", "admin_id", adminID, "error", err)

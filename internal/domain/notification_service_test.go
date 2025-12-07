@@ -274,7 +274,8 @@ func TestResultsContainCorrectCount(t *testing.T) {
 
 			// Publish results
 			ctx := context.Background()
-			err := ns.PublishEventResults(ctx, eventID, correctOption)
+			telegramChatID := int64(12345) // Mock Telegram chat ID
+			err := ns.PublishEventResults(ctx, eventID, correctOption, telegramChatID, nil)
 			if err != nil {
 				return false
 			}
@@ -361,7 +362,8 @@ func TestResultsContainTop5(t *testing.T) {
 
 			// Publish results
 			ctx := context.Background()
-			err := ns.PublishEventResults(ctx, eventID, correctOption)
+			telegramChatID := int64(12345) // Mock Telegram chat ID
+			err := ns.PublishEventResults(ctx, eventID, correctOption, telegramChatID, nil)
 			if err != nil {
 				return false
 			}

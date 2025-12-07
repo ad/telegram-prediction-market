@@ -201,6 +201,7 @@ func main() {
 		predictionRepo,
 		groupRepo,
 		eventPermissionValidator,
+		notificationService,
 		cfg,
 		log,
 	)
