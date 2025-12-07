@@ -28,6 +28,7 @@ type BotHandler struct {
 	eventResolutionFSM       *EventResolutionFSM
 	groupCreationFSM         *GroupCreationFSM
 	renameFSM                *RenameFSM
+	eventEditFSM             *EventEditFSM
 	eventPermissionValidator *domain.EventPermissionValidator
 	groupRepo                domain.GroupRepository
 	groupMembershipRepo      domain.GroupMembershipRepository
@@ -50,6 +51,7 @@ func NewBotHandler(
 	eventResolutionFSM *EventResolutionFSM,
 	groupCreationFSM *GroupCreationFSM,
 	renameFSM *RenameFSM,
+	eventEditFSM *EventEditFSM,
 	eventPermissionValidator *domain.EventPermissionValidator,
 	groupRepo domain.GroupRepository,
 	groupMembershipRepo domain.GroupMembershipRepository,
@@ -70,6 +72,7 @@ func NewBotHandler(
 		eventResolutionFSM:       eventResolutionFSM,
 		groupCreationFSM:         groupCreationFSM,
 		renameFSM:                renameFSM,
+		eventEditFSM:             eventEditFSM,
 		eventPermissionValidator: eventPermissionValidator,
 		groupRepo:                groupRepo,
 		groupMembershipRepo:      groupMembershipRepo,
@@ -1239,6 +1242,24 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 		return
 	}
 
+	// Check if user has active event edit FSM session
+	hasEditSession, err := h.eventEditFSM.HasSession(ctx, userID)
+	if err != nil {
+		h.logger.Error("failed to check event edit FSM session", "user_id", userID, "error", err)
+	} else if hasEditSession {
+		// Route to event edit FSM
+		if err := h.eventEditFSM.HandleMessage(ctx, update); err != nil {
+			h.logger.Error("event edit FSM message handling failed", "user_id", userID, "error", err)
+
+			// Inform user to restart
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: update.Message.Chat.ID,
+				Text:   "❌ Произошла ошибка при редактировании события.",
+			})
+		}
+		return
+	}
+
 	// No active conversation - ignore message
 }
 
@@ -1331,6 +1352,14 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 	// Handle edit_event callbacks
 	if strings.HasPrefix(data, "edit_event:") {
 		h.handleEditEventCallback(ctx, b, callback)
+		return
+	}
+
+	// Handle edit_field callbacks (from event edit FSM)
+	if strings.HasPrefix(data, "edit_field:") || strings.HasPrefix(data, "edit_deadline_preset:") {
+		if err := h.eventEditFSM.HandleCallback(ctx, callback); err != nil {
+			h.logger.Error("event edit FSM callback handling failed", "user_id", userID, "error", err)
+		}
 		return
 	}
 
@@ -2499,15 +2528,91 @@ func (h *BotHandler) handleResolveEventFromCallback(ctx context.Context, b *bot.
 // handleEditEventCallback handles the edit button click from event creation summary
 func (h *BotHandler) handleEditEventCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
 	userID := callback.From.ID
+	chatID := callback.Message.Message.Chat.ID
 
-	// Answer callback query to remove loading state
+	// Check admin authorization
+	if !h.isAdmin(userID) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ У вас нет прав для редактирования событий.",
+			ShowAlert:       true,
+		})
+		return
+	}
+
+	// Parse event ID from callback data: edit_event:EVENT_ID
+	parts := strings.Split(callback.Data, ":")
+	if len(parts) < 2 {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ Неверный формат данных.",
+			ShowAlert:       true,
+		})
+		return
+	}
+
+	eventID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ Неверный ID события.",
+			ShowAlert:       true,
+		})
+		return
+	}
+
+	// Check if event can be edited (no votes)
+	canEdit, err := h.eventManager.CanEditEvent(ctx, eventID)
+	if err != nil {
+		h.logger.Error("failed to check if event can be edited", "event_id", eventID, "error", err)
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ Ошибка при проверке события.",
+			ShowAlert:       true,
+		})
+		return
+	}
+
+	if !canEdit {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ Событие нельзя редактировать — уже есть голоса.",
+			ShowAlert:       true,
+		})
+		return
+	}
+
+	// Answer callback query
 	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 		CallbackQueryID: callback.ID,
-		Text:            "ℹ️ Редактирование событий временно недоступно",
-		ShowAlert:       true,
 	})
 
-	h.logger.Info("edit event button clicked", "user_id", userID, "callback_data", callback.Data)
+	// Delete the message with buttons
+	if callback.Message.Message != nil {
+		_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: callback.Message.Message.ID,
+		})
+	}
+
+	// Start edit FSM
+	if err := h.eventEditFSM.Start(ctx, userID, chatID, eventID); err != nil {
+		h.logger.Error("failed to start edit FSM", "user_id", userID, "event_id", eventID, "error", err)
+		if err == domain.ErrEventHasVotes {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Событие нельзя редактировать — уже есть голоса.",
+			})
+		} else {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Ошибка при запуске редактирования.",
+			})
+		}
+		return
+	}
+
+	h.logger.Info("edit event FSM started", "user_id", userID, "event_id", eventID)
 }
 
 // handleDeleteGroupCallback handles the callback for deleting a group

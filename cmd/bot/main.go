@@ -232,6 +232,17 @@ func main() {
 	)
 	log.Info("Rename FSM created")
 
+	// Create event edit FSM
+	eventEditFSM := bot.NewEventEditFSM(
+		fsmStorage,
+		b,
+		eventManager,
+		groupRepo,
+		cfg,
+		log,
+	)
+	log.Info("Event edit FSM created")
+
 	// Create bot handler
 	handler = bot.NewBotHandler(
 		b,
@@ -245,6 +256,7 @@ func main() {
 		eventResolutionFSM,
 		groupCreationFSM,
 		renameFSM,
+		eventEditFSM,
 		eventPermissionValidator,
 		groupRepo,
 		groupMembershipRepo,
