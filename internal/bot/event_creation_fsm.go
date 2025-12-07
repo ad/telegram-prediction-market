@@ -855,12 +855,26 @@ func (f *EventCreationFSM) getDeadlinePresetKeyboard() *models.InlineKeyboardMar
 		InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
 				{Text: "1 день", CallbackData: "deadline_preset:1d"},
+			},
+			{
 				{Text: "3 дня", CallbackData: "deadline_preset:3d"},
-				{Text: "7 дней", CallbackData: "deadline_preset:7d"},
+			},
+			{
+				{Text: "1 неделя", CallbackData: "deadline_preset:7d"},
+			},
+			{
 				{Text: "2 недели", CallbackData: "deadline_preset:14d"},
+			},
+			{
 				{Text: "1 месяц", CallbackData: "deadline_preset:30d"},
+			},
+			{
 				{Text: "3 месяца", CallbackData: "deadline_preset:90d"},
+			},
+			{
 				{Text: "6 месяцев", CallbackData: "deadline_preset:180d"},
+			},
+			{
 				{Text: "1 год", CallbackData: "deadline_preset:365d"},
 			},
 		},
@@ -1144,7 +1158,7 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 		kb := &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					{Text: "✏️ Редактировать", CallbackData: fmt.Sprintf("edit_event:%d", event.ID)},
+					{Text: "✏️ Изменить", CallbackData: fmt.Sprintf("edit_event:%d", event.ID)},
 					{Text: "🏁 Завершить", CallbackData: fmt.Sprintf("resolve:%d", event.ID)},
 				},
 			},

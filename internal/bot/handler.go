@@ -332,26 +332,17 @@ func (h *BotHandler) displayHelp(ctx context.Context, b *bot.Bot, update *models
 
 	// Achievements
 	helpText.WriteString("🏆 АЧИВКИ\n")
-	helpText.WriteString("🎯 Меткий стрелок\n")
-	helpText.WriteString("   → 3 правильных прогноза подряд\n\n")
-	helpText.WriteString("🔮 Провидец\n")
-	helpText.WriteString("   → 10 правильных прогнозов подряд\n\n")
-	helpText.WriteString("🎲 Риск-мейкер\n")
-	helpText.WriteString("   → 3 правильных прогноза в меньшинстве подряд\n\n")
-	helpText.WriteString("📊 Аналитик недели\n")
-	helpText.WriteString("   → Больше всех очков за неделю\n\n")
-	helpText.WriteString("🏆 Старожил\n")
-	helpText.WriteString("   → Участие в 50 событиях\n\n")
+	helpText.WriteString("🎯 Меткий стрелок → 3 правильных прогноза подряд\n\n")
+	helpText.WriteString("🔮 Провидец → 10 правильных прогнозов подряд\n\n")
+	helpText.WriteString("🎲 Риск-мейкер → 3 правильных прогноза в меньшинстве подряд\n\n")
+	helpText.WriteString("📊 Аналитик недели → Больше всех очков за неделю\n\n")
+	helpText.WriteString("🏆 Старожил → Участие в 50 событиях\n\n")
 
 	// Event types
 	helpText.WriteString("🎲 ТИПЫ СОБЫТИЙ\n")
-	helpText.WriteString("1️⃣ Бинарное\n")
-	helpText.WriteString("   → Да/Нет вопросы\n\n")
-	helpText.WriteString("2️⃣ Множественный выбор\n")
-	helpText.WriteString("   → 2-6 вариантов ответа\n\n")
-	helpText.WriteString("3️⃣ Вероятностное\n")
-	helpText.WriteString("   → Диапазоны вероятности\n")
-	helpText.WriteString("   (0-25%, 25-50%, 50-75%, 75-100%)\n\n")
+	helpText.WriteString("1️⃣ Бинарное → Да/Нет вопросы\n\n")
+	helpText.WriteString("2️⃣ Множественный выбор → 2-6 вариантов ответа\n\n")
+	helpText.WriteString("3️⃣ Вероятностное → Диапазоны вероятности (0-25%, 25-50%, 50-75%, 75-100%)\n\n")
 	helpText.WriteString("⏰ Голосуйте до дедлайна!\n")
 	helpText.WriteString("За 24 часа до окончания придёт напоминание 🔔")
 
@@ -1267,8 +1258,8 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 		return
 	}
 
-	// Check if this is an event creation FSM callback (group selection, event_type selection or confirmation)
-	if strings.HasPrefix(data, "select_group:") || strings.HasPrefix(data, "event_type:") || strings.HasPrefix(data, "confirm:") {
+	// Check if this is an event creation FSM callback (group selection, event_type selection, deadline preset or confirmation)
+	if strings.HasPrefix(data, "select_group:") || strings.HasPrefix(data, "event_type:") || strings.HasPrefix(data, "deadline_preset:") || strings.HasPrefix(data, "confirm:") {
 		// Check if user has active FSM session
 		hasSession, err := h.eventCreationFSM.HasSession(ctx, userID)
 		if err != nil {
@@ -1623,7 +1614,7 @@ func (h *BotHandler) HandleCreateGroup(ctx context.Context, b *bot.Bot, update *
 			"📍 ID темы: %d\n"+
 			"Группа будет настроена для работы с этой темой.\n\n", *messageThreadID)
 	}
-	promptText += "Шаг 1/2: Введите название новой группы:"
+	promptText += "Введите название новой группы:"
 
 	// Prompt for group name
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
