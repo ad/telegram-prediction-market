@@ -34,6 +34,7 @@ type EventCreationFSM struct {
 	achievementTracker   *domain.AchievementTracker
 	groupContextResolver *domain.GroupContextResolver
 	groupRepo            domain.GroupRepository
+	forumTopicRepo       domain.ForumTopicRepository
 	ratingRepo           domain.RatingRepository
 	config               *config.Config
 	logger               domain.Logger
@@ -47,6 +48,7 @@ func NewEventCreationFSM(
 	achievementTracker *domain.AchievementTracker,
 	groupContextResolver *domain.GroupContextResolver,
 	groupRepo domain.GroupRepository,
+	forumTopicRepo domain.ForumTopicRepository,
 	ratingRepo domain.RatingRepository,
 	cfg *config.Config,
 	logger domain.Logger,
@@ -58,6 +60,7 @@ func NewEventCreationFSM(
 		achievementTracker:   achievementTracker,
 		groupContextResolver: groupContextResolver,
 		groupRepo:            groupRepo,
+		forumTopicRepo:       forumTopicRepo,
 		ratingRepo:           ratingRepo,
 		config:               cfg,
 		logger:               logger,
@@ -912,14 +915,34 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 			pollOptions[i] = models.InputPollOption{Text: opt}
 		}
 
-		// Use MessageThreadID from context if provided, otherwise use group's default
+		// Handle forum topic if MessageThreadID is provided
 		var messageThreadID *int
 		if context.MessageThreadID != nil {
 			messageThreadID = context.MessageThreadID
-			event.MessageThreadID = context.MessageThreadID
-		} else if group.MessageThreadID != nil {
-			messageThreadID = group.MessageThreadID
-			event.MessageThreadID = group.MessageThreadID
+
+			// Find or create forum topic
+			topic, err := f.forumTopicRepo.GetForumTopicByGroupAndThread(ctx, context.GroupID, *context.MessageThreadID)
+			if err != nil {
+				f.logger.Error("failed to get forum topic", "group_id", context.GroupID, "message_thread_id", *context.MessageThreadID, "error", err)
+			} else if topic == nil {
+				// Create new forum topic
+				topic = &domain.ForumTopic{
+					GroupID:         context.GroupID,
+					MessageThreadID: *context.MessageThreadID,
+					Name:            fmt.Sprintf("Topic %d", *context.MessageThreadID),
+					CreatedAt:       time.Now(),
+					CreatedBy:       userID,
+				}
+				if err := f.forumTopicRepo.CreateForumTopic(ctx, topic); err != nil {
+					f.logger.Error("failed to create forum topic", "error", err)
+				} else {
+					event.ForumTopicID = &topic.ID
+					f.logger.Info("forum topic created for event", "topic_id", topic.ID, "message_thread_id", *context.MessageThreadID)
+				}
+			} else {
+				event.ForumTopicID = &topic.ID
+				f.logger.Info("using existing forum topic for event", "topic_id", topic.ID, "message_thread_id", *context.MessageThreadID)
+			}
 		}
 
 		isAnonymous := false
@@ -952,10 +975,21 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 			f.logger.Error("failed to update event with poll ID and message ID", "event_id", event.ID, "error", err)
 		}
 
-		// Send final summary to admin with poll reference
+		// Send final summary to admin with poll reference and action buttons
 		pollReference := "Опрос опубликован в группе"
 		summary := f.buildFinalEventSummary(event, pollReference)
-		_, _ = f.sendMessage(ctx, chatID, summary, nil)
+
+		// Add action buttons for editing and resolving
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{Text: "✏️ Редактировать", CallbackData: fmt.Sprintf("edit_event:%d", event.ID)},
+					{Text: "🏁 Завершить", CallbackData: fmt.Sprintf("resolve:%d", event.ID)},
+				},
+			},
+		}
+
+		_, _ = f.sendMessage(ctx, chatID, summary, kb)
 
 		f.logger.Info("event created and published", "user_id", userID, "event_id", event.ID, "poll_id", event.PollID)
 
@@ -1063,14 +1097,11 @@ func (f *EventCreationFSM) sendAchievementNotification(ctx context.Context, user
 	}
 
 	// Announce in group
+	// Note: Achievement notifications for event organizers are sent to the main group chat,
+	// not to specific forum topics, as they are not tied to a specific event
 	msgParams := &bot.SendMessageParams{
 		ChatID: telegramChatID,
 		Text:   fmt.Sprintf("🎉 %s получил ачивку: %s!", displayName, name),
-	}
-
-	// Add MessageThreadID if this is a forum group
-	if group != nil && group.MessageThreadID != nil {
-		msgParams.MessageThreadID = *group.MessageThreadID
 	}
 
 	_, err = f.bot.SendMessage(ctx, msgParams)

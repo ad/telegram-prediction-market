@@ -31,6 +31,11 @@ func TestSessionConflictDetection(t *testing.T) {
 		t.Fatalf("failed to init schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	fsmStorage := storage.NewFSMStorage(queue, log)
 
 	// Создаем handler с минимальными зависимостями
@@ -127,6 +132,11 @@ func TestSessionConflictCallback(t *testing.T) {
 	// Инициализируем схему
 	if err := storage.InitSchema(queue); err != nil {
 		t.Fatalf("failed to init schema: %v", err)
+	}
+
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	fsmStorage := storage.NewFSMStorage(queue, log)

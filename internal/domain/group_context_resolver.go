@@ -14,6 +14,7 @@ var (
 type GroupRepository interface {
 	CreateGroup(ctx context.Context, group *Group) error
 	GetGroup(ctx context.Context, groupID int64) (*Group, error)
+	GetGroupByTelegramChatID(ctx context.Context, telegramChatID int64) (*Group, error)
 	GetAllGroups(ctx context.Context) ([]*Group, error)
 	GetUserGroups(ctx context.Context, userID int64) ([]*Group, error)
 	DeleteGroup(ctx context.Context, groupID int64) error
@@ -26,6 +27,15 @@ type GroupMembershipRepository interface {
 	GetGroupMembers(ctx context.Context, groupID int64) ([]*GroupMembership, error)
 	UpdateMembershipStatus(ctx context.Context, groupID int64, userID int64, status MembershipStatus) error
 	HasActiveMembership(ctx context.Context, groupID int64, userID int64) (bool, error)
+}
+
+// ForumTopicRepository interface for forum topic operations
+type ForumTopicRepository interface {
+	CreateForumTopic(ctx context.Context, topic *ForumTopic) error
+	GetForumTopic(ctx context.Context, topicID int64) (*ForumTopic, error)
+	GetForumTopicByGroupAndThread(ctx context.Context, groupID int64, messageThreadID int) (*ForumTopic, error)
+	GetForumTopicsByGroup(ctx context.Context, groupID int64) ([]*ForumTopic, error)
+	DeleteForumTopic(ctx context.Context, topicID int64) error
 }
 
 // GroupContextResolver determines the active group context for a user

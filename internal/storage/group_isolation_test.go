@@ -31,12 +31,12 @@ func TestDataIsolation(t *testing.T) {
 
 	// Initialize schema
 	if err := InitSchema(queue); err != nil {
-
-// Run migrations to add group_id columns
-if err := RunMigrations(queue); err != nil {
-t.Fatalf("Failed to run migrations: %v", err)
-}
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to add group_id columns and forum_topic_id
+	if err := RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	eventRepo := NewEventRepository(queue)
@@ -270,7 +270,6 @@ t.Fatalf("Failed to run migrations: %v", err)
 	properties.TestingRun(t)
 }
 
-
 // TestGroupIdentifierPersistence tests Property 27: Group Identifier Persistence
 // For any event, rating, or achievement created, the stored record should include the group identifier.
 func TestGroupIdentifierPersistence(t *testing.T) {
@@ -286,12 +285,12 @@ func TestGroupIdentifierPersistence(t *testing.T) {
 
 	// Initialize schema
 	if err := InitSchema(queue); err != nil {
-
-// Run migrations to add group_id columns
-if err := RunMigrations(queue); err != nil {
-t.Fatalf("Failed to run migrations: %v", err)
-}
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to add group_id columns and forum_topic_id
+	if err := RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	eventRepo := NewEventRepository(queue)

@@ -43,6 +43,11 @@ func TestUsernameInAchievementNotification(t *testing.T) {
 				return false
 			}
 
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
+			}
+
 			ratingRepo := storage.NewRatingRepository(queue)
 			predictionRepo := storage.NewPredictionRepository(queue)
 			eventRepo := storage.NewEventRepository(queue)
@@ -152,6 +157,11 @@ func TestAchievementMessageFormat(t *testing.T) {
 				return false
 			}
 
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
+			}
+
 			ratingRepo := storage.NewRatingRepository(queue)
 			predictionRepo := storage.NewPredictionRepository(queue)
 			eventRepo := storage.NewEventRepository(queue)
@@ -236,6 +246,11 @@ func TestSendAchievementNotification_WithUsername(t *testing.T) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	ratingRepo := storage.NewRatingRepository(queue)
 	predictionRepo := storage.NewPredictionRepository(queue)
 	eventRepo := storage.NewEventRepository(queue)
@@ -293,6 +308,11 @@ func TestSendAchievementNotification_WithoutUsername(t *testing.T) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	ratingRepo := storage.NewRatingRepository(queue)
 	predictionRepo := storage.NewPredictionRepository(queue)
 	eventRepo := storage.NewEventRepository(queue)
@@ -346,6 +366,11 @@ func TestSendAchievementNotification_EmojiAndName(t *testing.T) {
 	// Initialize schema
 	if err := storage.InitSchema(queue); err != nil {
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	ratingRepo := storage.NewRatingRepository(queue)

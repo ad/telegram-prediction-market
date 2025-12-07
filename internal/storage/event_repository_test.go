@@ -28,12 +28,12 @@ func TestEventDataRoundTrip(t *testing.T) {
 
 	// Initialize schema
 	if err := InitSchema(queue); err != nil {
-
-// Run migrations to add group_id columns
-if err := RunMigrations(queue); err != nil {
-t.Fatalf("Failed to run migrations: %v", err)
-}
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to add group_id columns and forum_topic_id
+	if err := RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	repo := NewEventRepository(queue)
@@ -170,12 +170,12 @@ func TestCreatorIDPersistence(t *testing.T) {
 
 	// Initialize schema
 	if err := InitSchema(queue); err != nil {
-
-// Run migrations to add group_id columns
-if err := RunMigrations(queue); err != nil {
-t.Fatalf("Failed to run migrations: %v", err)
-}
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to add group_id columns and forum_topic_id
+	if err := RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	repo := NewEventRepository(queue)
@@ -263,12 +263,12 @@ func TestCreatorEventCounting(t *testing.T) {
 
 	// Initialize schema
 	if err := InitSchema(queue); err != nil {
-
-// Run migrations to add group_id columns
-if err := RunMigrations(queue); err != nil {
-t.Fatalf("Failed to run migrations: %v", err)
-}
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to add group_id columns and forum_topic_id
+	if err := RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	repo := NewEventRepository(queue)
@@ -361,12 +361,12 @@ func TestGetUserCreatedEventsCount(t *testing.T) {
 
 	// Initialize schema
 	if err := InitSchema(queue); err != nil {
-
-// Run migrations to add group_id columns
-if err := RunMigrations(queue); err != nil {
-t.Fatalf("Failed to run migrations: %v", err)
-}
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations to add group_id columns and forum_topic_id
+	if err := RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	repo := NewEventRepository(queue)

@@ -291,9 +291,7 @@ func (h *BotHandler) displayHelp(ctx context.Context, b *bot.Bot, update *models
 	helpText.WriteString("🤖 Telegram Prediction Market Bot\n\n")
 
 	// User commands section
-	helpText.WriteString("════════════════════\n")
 	helpText.WriteString("👤 КОМАНДЫ ПОЛЬЗОВАТЕЛЯ\n")
-	helpText.WriteString("════════════════════\n\n")
 	helpText.WriteString("  /help — Показать эту справку\n")
 	helpText.WriteString("  /rating — Топ-10 участников по очкам\n")
 	helpText.WriteString("  /my — Ваша статистика и ачивки\n")
@@ -302,9 +300,7 @@ func (h *BotHandler) displayHelp(ctx context.Context, b *bot.Bot, update *models
 
 	// Admin commands section (only for admins)
 	if isAdmin {
-		helpText.WriteString("════════════════════\n")
 		helpText.WriteString("👑 КОМАНДЫ АДМИНИСТРАТОРА\n")
-		helpText.WriteString("════════════════════\n\n")
 		helpText.WriteString("  /create_group — Создать новую группу\n")
 		helpText.WriteString("  /list_groups — Список всех групп с deep-links\n")
 		helpText.WriteString("  /group_members — Список участников группы\n")
@@ -315,9 +311,7 @@ func (h *BotHandler) displayHelp(ctx context.Context, b *bot.Bot, update *models
 	}
 
 	// Rules and scoring information
-	helpText.WriteString("════════════════════\n")
 	helpText.WriteString("💰 ПРАВИЛА НАЧИСЛЕНИЯ ОЧКОВ\n")
-	helpText.WriteString("════════════════════\n\n")
 	helpText.WriteString("✅ За правильный прогноз:\n")
 	helpText.WriteString("  • Бинарное событие (Да/Нет): +10 очков\n")
 	helpText.WriteString("  • Множественный выбор (3-6 вариантов): +15 очков\n")
@@ -330,9 +324,7 @@ func (h *BotHandler) displayHelp(ctx context.Context, b *bot.Bot, update *models
 	helpText.WriteString("  • Неправильный прогноз: -3 очка\n\n")
 
 	// Achievements
-	helpText.WriteString("════════════════════\n")
 	helpText.WriteString("🏆 АЧИВКИ\n")
-	helpText.WriteString("════════════════════\n\n")
 	helpText.WriteString("🎯 Меткий стрелок\n")
 	helpText.WriteString("   → 3 правильных прогноза подряд\n\n")
 	helpText.WriteString("🔮 Провидец\n")
@@ -345,9 +337,7 @@ func (h *BotHandler) displayHelp(ctx context.Context, b *bot.Bot, update *models
 	helpText.WriteString("   → Участие в 50 событиях\n\n")
 
 	// Event types
-	helpText.WriteString("════════════════════\n")
 	helpText.WriteString("🎲 ТИПЫ СОБЫТИЙ\n")
-	helpText.WriteString("════════════════════\n\n")
 	helpText.WriteString("1️⃣ Бинарное\n")
 	helpText.WriteString("   → Да/Нет вопросы\n\n")
 	helpText.WriteString("2️⃣ Множественный выбор\n")
@@ -355,7 +345,6 @@ func (h *BotHandler) displayHelp(ctx context.Context, b *bot.Bot, update *models
 	helpText.WriteString("3️⃣ Вероятностное\n")
 	helpText.WriteString("   → Диапазоны вероятности\n")
 	helpText.WriteString("   (0-25%, 25-50%, 50-75%, 75-100%)\n\n")
-	helpText.WriteString("════════════════════\n\n")
 	helpText.WriteString("⏰ Голосуйте до дедлайна!\n")
 	helpText.WriteString("За 24 часа до окончания придёт напоминание 🔔")
 
@@ -777,8 +766,7 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 
 	// Build events list message
 	var sb strings.Builder
-	sb.WriteString("📋 АКТИВНЫЕ СОБЫТИЯ\n")
-	sb.WriteString("════════════════════\n\n")
+	sb.WriteString("📋 АКТИВНЫЕ СОБЫТИЯ\n\n")
 
 	for i, event := range allEvents {
 		// Include group name for context
@@ -1318,6 +1306,16 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 			}
 			return
 		}
+
+		// No active session - start a new resolution session for this event
+		h.handleResolveEventFromCallback(ctx, b, callback)
+		return
+	}
+
+	// Handle edit_event callbacks
+	if strings.HasPrefix(data, "edit_event:") {
+		h.handleEditEventCallback(ctx, b, callback)
+		return
 	}
 
 	// Handle leave_group callbacks
@@ -1620,8 +1618,7 @@ func (h *BotHandler) HandleListGroups(ctx context.Context, b *bot.Bot, update *m
 
 	// Build groups list message with deep-links
 	var sb strings.Builder
-	sb.WriteString("📋 СПИСОК ГРУПП\n")
-	sb.WriteString("════════════════════\n\n")
+	sb.WriteString("📋 СПИСОК ГРУПП\n\n")
 
 	for i, group := range groups {
 		// Get member count
@@ -1827,8 +1824,7 @@ func (h *BotHandler) handleGroupMembersCallback(ctx context.Context, b *bot.Bot,
 
 	// Build members list message
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("👥 УЧАСТНИКИ ГРУППЫ \"%s\"\n", group.Name))
-	sb.WriteString("════════════════════\n\n")
+	sb.WriteString(fmt.Sprintf("👥 УЧАСТНИКИ ГРУППЫ \"%s\"\n\n", group.Name))
 
 	for i, member := range members {
 		// Get user rating for this group
@@ -1907,8 +1903,7 @@ func (h *BotHandler) HandleGroups(ctx context.Context, b *bot.Bot, update *model
 
 	// Build groups list message
 	var sb strings.Builder
-	sb.WriteString("📋 ВАШИ ГРУППЫ\n")
-	sb.WriteString("════════════════════\n\n")
+	sb.WriteString("📋 ВАШИ ГРУППЫ\n\n")
 
 	// Get memberships to access join dates (groups are already ordered by join date DESC)
 	for i, group := range groups {
@@ -2344,4 +2339,73 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 		})
 		return
 	}
+}
+
+// handleResolveEventFromCallback handles the resolve button click from event creation summary
+func (h *BotHandler) handleResolveEventFromCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	userID := callback.From.ID
+	chatID := callback.Message.Message.Chat.ID
+
+	// Answer callback query to remove loading state
+	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: callback.ID,
+	})
+
+	// Parse event ID from callback data
+	eventIDStr := strings.TrimPrefix(callback.Data, "resolve:")
+	eventID, err := strconv.ParseInt(eventIDStr, 10, 64)
+	if err != nil {
+		h.logger.Error("failed to parse event ID from callback", "user_id", userID, "data", callback.Data, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при обработке запроса.",
+		})
+		return
+	}
+
+	// Check if user can manage this event
+	canManage, err := h.eventPermissionValidator.CanManageEvent(ctx, userID, eventID, h.config.AdminUserIDs)
+	if err != nil {
+		h.logger.Error("failed to check event management permission", "user_id", userID, "event_id", eventID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при проверке прав доступа.",
+		})
+		return
+	}
+
+	if !canManage {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ У вас нет прав для управления этим событием.",
+		})
+		return
+	}
+
+	// Start resolution FSM session
+	if err := h.eventResolutionFSM.Start(ctx, userID, chatID); err != nil {
+		h.logger.Error("failed to start resolution FSM session", "user_id", userID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при запуске процесса завершения события.",
+		})
+		return
+	}
+
+	// Create a new callback with the resolve: prefix to trigger FSM handling
+	h.eventResolutionFSM.HandleCallback(ctx, callback)
+}
+
+// handleEditEventCallback handles the edit button click from event creation summary
+func (h *BotHandler) handleEditEventCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	userID := callback.From.ID
+
+	// Answer callback query to remove loading state
+	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: callback.ID,
+		Text:            "ℹ️ Редактирование событий временно недоступно",
+		ShowAlert:       true,
+	})
+
+	h.logger.Info("edit event button clicked", "user_id", userID, "callback_data", callback.Data)
 }

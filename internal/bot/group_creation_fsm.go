@@ -29,6 +29,7 @@ type GroupCreationFSM struct {
 	storage         *storage.FSMStorage
 	bot             *bot.Bot
 	groupRepo       domain.GroupRepository
+	forumTopicRepo  domain.ForumTopicRepository
 	deepLinkService *domain.DeepLinkService
 	config          *config.Config
 	logger          domain.Logger
@@ -39,6 +40,7 @@ func NewGroupCreationFSM(
 	storage *storage.FSMStorage,
 	b *bot.Bot,
 	groupRepo domain.GroupRepository,
+	forumTopicRepo domain.ForumTopicRepository,
 	deepLinkService *domain.DeepLinkService,
 	cfg *config.Config,
 	logger domain.Logger,
@@ -47,6 +49,7 @@ func NewGroupCreationFSM(
 		storage:         storage,
 		bot:             b,
 		groupRepo:       groupRepo,
+		forumTopicRepo:  forumTopicRepo,
 		deepLinkService: deepLinkService,
 		config:          cfg,
 		logger:          logger,
@@ -221,8 +224,8 @@ func (f *GroupCreationFSM) handleChatIDInput(ctx context.Context, update *models
 		kb := &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					{Text: "✅ Да, это форум", CallbackData: "group_is_forum:yes"},
-					{Text: "❌ Нет, обычная группа", CallbackData: "group_is_forum:no"},
+					{Text: "💬 Форум", CallbackData: "group_is_forum:yes"},
+					{Text: "👥 Обычная группа", CallbackData: "group_is_forum:no"},
 				},
 			},
 		}
@@ -259,42 +262,97 @@ func (f *GroupCreationFSM) createGroup(ctx context.Context, userID int64, chatID
 	// Delete all accumulated messages
 	f.deleteMessages(ctx, chatID, context.MessageIDs...)
 
-	// Create group
-	group := &domain.Group{
-		TelegramChatID:  context.TelegramChatID,
-		Name:            context.GroupName,
-		CreatedAt:       time.Now(),
-		CreatedBy:       userID,
-		MessageThreadID: context.MessageThreadID,
-		IsForum:         context.IsForum,
-	}
-
-	if err := group.Validate(); err != nil {
-		f.logger.Error("group validation failed", "error", err)
+	// Check if group already exists for this telegram chat ID
+	existingGroup, err := f.groupRepo.GetGroupByTelegramChatID(ctx, context.TelegramChatID)
+	if err != nil {
+		f.logger.Error("failed to check existing group", "error", err)
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка валидации группы: " + err.Error(),
+			Text:   "❌ Ошибка при проверке существующей группы: " + err.Error(),
 		})
-		// Clean up session
 		_ = f.storage.Delete(ctx, userID)
 		return err
 	}
 
-	if err := f.groupRepo.CreateGroup(ctx, group); err != nil {
-		f.logger.Error("failed to create group", "error", err)
-		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "❌ Ошибка при создании группы: " + err.Error(),
-		})
-		// Clean up session
-		_ = f.storage.Delete(ctx, userID)
-		return err
+	var group *domain.Group
+	isNewGroup := existingGroup == nil
+
+	if isNewGroup {
+		// Create new group
+		group = &domain.Group{
+			TelegramChatID: context.TelegramChatID,
+			Name:           context.GroupName,
+			CreatedAt:      time.Now(),
+			CreatedBy:      userID,
+			IsForum:        context.IsForum,
+		}
+
+		if err := group.Validate(); err != nil {
+			f.logger.Error("group validation failed", "error", err)
+			_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Ошибка валидации группы: " + err.Error(),
+			})
+			_ = f.storage.Delete(ctx, userID)
+			return err
+		}
+
+		if err := f.groupRepo.CreateGroup(ctx, group); err != nil {
+			f.logger.Error("failed to create group", "error", err)
+			_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Ошибка при создании группы: " + err.Error(),
+			})
+			_ = f.storage.Delete(ctx, userID)
+			return err
+		}
+
+		f.logger.Info("group created", "user_id", userID, "group_id", group.ID, "group_name", context.GroupName)
+		f.notifyAdminsAboutGroupCreation(ctx, userID, group)
+	} else {
+		// Use existing group
+		group = existingGroup
+		f.logger.Info("using existing group", "user_id", userID, "group_id", group.ID, "group_name", group.Name)
 	}
 
-	f.logger.Info("group created", "user_id", userID, "group_id", group.ID, "group_name", context.GroupName)
+	// If this is a forum and we have a thread ID, create/update forum topic
+	var topicCreated bool
+	if context.IsForum && context.MessageThreadID != nil {
+		// Check if topic already exists
+		existingTopic, err := f.forumTopicRepo.GetForumTopicByGroupAndThread(ctx, group.ID, *context.MessageThreadID)
+		if err != nil {
+			f.logger.Error("failed to check existing forum topic", "error", err)
+		} else if existingTopic == nil {
+			// Create new forum topic
+			topic := &domain.ForumTopic{
+				GroupID:         group.ID,
+				MessageThreadID: *context.MessageThreadID,
+				Name:            context.GroupName,
+				CreatedAt:       time.Now(),
+				CreatedBy:       userID,
+			}
 
-	// Notify admins about new group creation
-	f.notifyAdminsAboutGroupCreation(ctx, userID, group)
+			if err := topic.Validate(); err != nil {
+				f.logger.Error("forum topic validation failed", "error", err)
+			} else if err := f.forumTopicRepo.CreateForumTopic(ctx, topic); err != nil {
+				f.logger.Error("failed to create forum topic", "error", err)
+			} else {
+				f.logger.Info("forum topic created",
+					"topic_id", topic.ID,
+					"group_id", group.ID,
+					"message_thread_id", *context.MessageThreadID,
+				)
+				topicCreated = true
+			}
+		} else {
+			f.logger.Info("forum topic already exists",
+				"topic_id", existingTopic.ID,
+				"group_id", group.ID,
+				"message_thread_id", *context.MessageThreadID,
+			)
+			topicCreated = true
+		}
+	}
 
 	// Generate deep-link
 	deepLink, err := f.deepLinkService.GenerateGroupInviteLink(group.ID)
@@ -304,23 +362,33 @@ func (f *GroupCreationFSM) createGroup(ctx context.Context, userID int64, chatID
 			ChatID: chatID,
 			Text:   "❌ Ошибка при создании ссылки для приглашения",
 		})
-		// Clean up session
 		_ = f.storage.Delete(ctx, userID)
 		return err
 	}
 
 	// Build success message
-	successMsg := fmt.Sprintf("✅ Группа создана!\n\n"+
-		"📋 Название: %s\n"+
-		"🆔 ID группы: %d\n"+
-		"🆔 ID чата: %d\n",
-		context.GroupName, group.ID, context.TelegramChatID)
+	var successMsg string
+	if isNewGroup {
+		successMsg = fmt.Sprintf("✅ Группа создана!\n\n"+
+			"📋 Название: %s\n"+
+			"🆔 ID группы: %d\n"+
+			"🆔 ID чата: %d\n",
+			context.GroupName, group.ID, context.TelegramChatID)
+	} else {
+		successMsg = fmt.Sprintf("✅ Используется существующая группа!\n\n"+
+			"📋 Название: %s\n"+
+			"🆔 ID группы: %d\n"+
+			"🆔 ID чата: %d\n",
+			group.Name, group.ID, context.TelegramChatID)
+	}
 
 	if context.IsForum {
 		successMsg += "🗂 Тип: Форум\n"
 		if context.MessageThreadID != nil {
 			successMsg += fmt.Sprintf("📍 ID темы: %d\n", *context.MessageThreadID)
-			successMsg += "\n✨ Все события будут отправляться в эту тему.\n"
+			if topicCreated {
+				successMsg += "\n✨ Тема форума зарегистрирована! События будут отправляться в эту тему.\n"
+			}
 		}
 	} else {
 		successMsg += "🗂 Тип: Обычная группа\n"

@@ -43,6 +43,11 @@ func TestRatingDisplayCompleteness(t *testing.T) {
 				return false
 			}
 
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
+			}
+
 			ratingRepo := storage.NewRatingRepository(queue)
 			predictionRepo := storage.NewPredictionRepository(queue)
 			eventRepo := storage.NewEventRepository(queue)
@@ -120,6 +125,11 @@ func TestRatingOrderingConsistency(t *testing.T) {
 			if err := storage.InitSchema(queue); err != nil {
 				t.Logf("Failed to initialize schema: %v", err)
 				return false
+			}
+
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
 			}
 
 			ratingRepo := storage.NewRatingRepository(queue)

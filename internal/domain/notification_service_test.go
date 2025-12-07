@@ -232,6 +232,7 @@ func TestResultsContainCorrectCount(t *testing.T) {
 			// Create mock event
 			event := &Event{
 				ID:       eventID,
+				GroupID:  1,
 				Question: "Test question",
 				Options:  []string{"Option 0", "Option 1", "Option 2", "Option 3"},
 			}
@@ -275,7 +276,8 @@ func TestResultsContainCorrectCount(t *testing.T) {
 			// Publish results
 			ctx := context.Background()
 			telegramChatID := int64(12345) // Mock Telegram chat ID
-			err := ns.PublishEventResults(ctx, eventID, correctOption, telegramChatID, nil)
+			mockForumTopicRepo := &MockForumTopicRepo{topics: make(map[int64]*ForumTopic)}
+			err := ns.PublishEventResults(ctx, eventID, correctOption, telegramChatID, mockForumTopicRepo)
 			if err != nil {
 				return false
 			}
@@ -320,6 +322,7 @@ func TestResultsContainTop5(t *testing.T) {
 			// Create mock event
 			event := &Event{
 				ID:       eventID,
+				GroupID:  1,
 				Question: "Test question",
 				Options:  []string{"Option 0", "Option 1", "Option 2", "Option 3"},
 			}
@@ -339,8 +342,9 @@ func TestResultsContainTop5(t *testing.T) {
 			topRatings := make([]*Rating, 5)
 			for i := 0; i < 5; i++ {
 				topRatings[i] = &Rating{
-					UserID: int64(i + 1),
-					Score:  100 - i*10,
+					UserID:  int64(i + 1),
+					GroupID: 1,
+					Score:   100 - i*10,
 				}
 			}
 
@@ -363,7 +367,8 @@ func TestResultsContainTop5(t *testing.T) {
 			// Publish results
 			ctx := context.Background()
 			telegramChatID := int64(12345) // Mock Telegram chat ID
-			err := ns.PublishEventResults(ctx, eventID, correctOption, telegramChatID, nil)
+			mockForumTopicRepo := &MockForumTopicRepo{topics: make(map[int64]*ForumTopic)}
+			err := ns.PublishEventResults(ctx, eventID, correctOption, telegramChatID, mockForumTopicRepo)
 			if err != nil {
 				return false
 			}
@@ -375,8 +380,8 @@ func TestResultsContainTop5(t *testing.T) {
 
 			message := mockBot.sentMessages[0].Text
 
-			// Verify message contains "ТОП-5" section
-			if !strings.Contains(message, "ТОП-5") {
+			// Verify message contains "ТОП УЧАСТНИКОВ" section
+			if !strings.Contains(message, "ТОП УЧАСТНИКОВ") {
 				return false
 			}
 

@@ -62,8 +62,7 @@ func (ns *NotificationService) SendNewEventNotification(ctx context.Context, eve
 
 	// Build notification message
 	var sb strings.Builder
-	sb.WriteString("🆕 НОВОЕ СОБЫТИЕ ДЛЯ ПРОГНОЗА!\n")
-	sb.WriteString("════════════════════\n\n")
+	sb.WriteString("🆕 НОВОЕ СОБЫТИЕ ДЛЯ ПРОГНОЗА!\n\n")
 	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
 
 	// Event type
@@ -104,7 +103,6 @@ func (ns *NotificationService) SendNewEventNotification(ctx context.Context, eve
 		deadlineStr = "⏰ Дедлайн: истёк"
 	}
 	sb.WriteString(deadlineStr + "\n\n")
-	sb.WriteString("════════════════════\n")
 	sb.WriteString("Голосуйте в опросе выше! 🗳")
 
 	// Send notification to group
@@ -163,12 +161,23 @@ func (ns *NotificationService) SendAchievementNotification(ctx context.Context, 
 }
 
 // PublishEventResults publishes event results to the group with outcome, correct count, top 5, rating changes, and achievements
-func (ns *NotificationService) PublishEventResults(ctx context.Context, eventID int64, correctOption int, telegramChatID int64, messageThreadID *int) error {
+func (ns *NotificationService) PublishEventResults(ctx context.Context, eventID int64, correctOption int, telegramChatID int64, forumTopicRepo ForumTopicRepository) error {
 	// Get the event
 	event, err := ns.eventRepo.GetEvent(ctx, eventID)
 	if err != nil {
 		ns.logger.Error("failed to get event for results", "event_id", eventID, "error", err)
 		return err
+	}
+
+	// Get MessageThreadID from ForumTopic if event has one
+	var messageThreadID *int
+	if event.ForumTopicID != nil {
+		topic, err := forumTopicRepo.GetForumTopic(ctx, *event.ForumTopicID)
+		if err != nil {
+			ns.logger.Error("failed to get forum topic", "forum_topic_id", *event.ForumTopicID, "error", err)
+		} else if topic != nil {
+			messageThreadID = &topic.MessageThreadID
+		}
 	}
 
 	// Get all predictions for this event
@@ -195,19 +204,20 @@ func (ns *NotificationService) PublishEventResults(ctx context.Context, eventID 
 
 	// Build results message
 	var sb strings.Builder
-	sb.WriteString("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n")
-	sb.WriteString("════════════════════\n\n")
+	sb.WriteString("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n\n")
 	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
 	sb.WriteString(fmt.Sprintf("✅ Правильный ответ:\n%s\n\n", event.Options[correctOption]))
 	sb.WriteString(fmt.Sprintf("📊 Угадали: %d из %d участников\n", correctCount, len(predictions)))
 
 	if len(topRatings) > 0 {
-		sb.WriteString("\n════════════════════\n")
-		sb.WriteString("🏆 ТОП-5 УЧАСТНИКОВ\n")
-		sb.WriteString("════════════════════\n\n")
+		sb.WriteString("\n🏆 ТОП УЧАСТНИКОВ\n")
 		medals := []string{"🥇", "🥈", "🥉", "4.", "5."}
 		for i, rating := range topRatings {
-			sb.WriteString(fmt.Sprintf("%s %d очков\n", medals[i], rating.Score))
+			displayName := rating.Username
+			if displayName == "" {
+				displayName = fmt.Sprintf("User id%d", rating.UserID)
+			}
+			sb.WriteString(fmt.Sprintf("%s %s - %d очков\n", medals[i], displayName, rating.Score))
 		}
 	}
 

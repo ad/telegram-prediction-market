@@ -15,12 +15,15 @@ func TestPublishEventResults_ForumGroup(t *testing.T) {
 		sentMessages: make([]MockForumMessage, 0),
 	}
 
-	// Create mock event
+	// Test with forum group (event has ForumTopicID)
+	messageThreadID := 67890
+	forumTopicID := int64(1)
 	event := &Event{
-		ID:       1,
-		GroupID:  1,
-		Question: "Test question",
-		Options:  []string{"Option 0", "Option 1"},
+		ID:           1,
+		GroupID:      1,
+		ForumTopicID: &forumTopicID,
+		Question:     "Test question",
+		Options:      []string{"Option 0", "Option 1"},
 	}
 
 	// Create predictions
@@ -35,6 +38,18 @@ func TestPublishEventResults_ForumGroup(t *testing.T) {
 	mockReminderRepo := &MockReminderRepo{}
 	mockLogger := &MockLogger{}
 
+	// Create mock forum topic repo with a topic
+	mockForumTopicRepo := &MockForumTopicRepo{
+		topics: map[int64]*ForumTopic{
+			1: {
+				ID:              1,
+				GroupID:         1,
+				MessageThreadID: messageThreadID,
+				Name:            "Test Topic",
+			},
+		},
+	}
+
 	// Create notification service
 	ns := NewNotificationService(
 		mockBot,
@@ -45,11 +60,9 @@ func TestPublishEventResults_ForumGroup(t *testing.T) {
 		mockLogger,
 	)
 
-	// Test with forum group (MessageThreadID set)
 	ctx := context.Background()
 	telegramChatID := int64(12345)
-	messageThreadID := 67890
-	err := ns.PublishEventResults(ctx, 1, 0, telegramChatID, &messageThreadID)
+	err := ns.PublishEventResults(ctx, 1, 0, telegramChatID, mockForumTopicRepo)
 	if err != nil {
 		t.Fatalf("PublishEventResults failed: %v", err)
 	}
@@ -68,9 +81,18 @@ func TestPublishEventResults_ForumGroup(t *testing.T) {
 		t.Fatalf("Expected MessageThreadID %d, got %d", messageThreadID, *mockBot.sentMessages[0].MessageThreadID)
 	}
 
-	// Test with regular group (MessageThreadID nil)
+	// Test with regular group (no ForumTopicID)
 	mockBot.sentMessages = make([]MockForumMessage, 0)
-	err = ns.PublishEventResults(ctx, 1, 0, telegramChatID, nil)
+	eventNoForum := &Event{
+		ID:           2,
+		GroupID:      1,
+		ForumTopicID: nil,
+		Question:     "Test question",
+		Options:      []string{"Option 0", "Option 1"},
+	}
+	mockEventRepo.event = eventNoForum
+
+	err = ns.PublishEventResults(ctx, 2, 0, telegramChatID, mockForumTopicRepo)
 	if err != nil {
 		t.Fatalf("PublishEventResults failed: %v", err)
 	}
@@ -83,24 +105,6 @@ func TestPublishEventResults_ForumGroup(t *testing.T) {
 	// Verify MessageThreadID was not set
 	if mockBot.sentMessages[0].MessageThreadID != nil {
 		t.Fatalf("Expected MessageThreadID to be nil, but got %d", *mockBot.sentMessages[0].MessageThreadID)
-	}
-
-	// Test with MessageThreadID = 0 (should not be set)
-	mockBot.sentMessages = make([]MockForumMessage, 0)
-	zeroThreadID := 0
-	err = ns.PublishEventResults(ctx, 1, 0, telegramChatID, &zeroThreadID)
-	if err != nil {
-		t.Fatalf("PublishEventResults failed: %v", err)
-	}
-
-	// Verify message was sent
-	if len(mockBot.sentMessages) != 1 {
-		t.Fatalf("Expected 1 message, got %d", len(mockBot.sentMessages))
-	}
-
-	// Verify MessageThreadID was not set (0 should be treated as nil)
-	if mockBot.sentMessages[0].MessageThreadID != nil {
-		t.Fatalf("Expected MessageThreadID to be nil for zero value, but got %d", *mockBot.sentMessages[0].MessageThreadID)
 	}
 }
 
@@ -128,4 +132,46 @@ func (m *MockForumBot) SendMessage(ctx context.Context, params *bot.SendMessageP
 	}
 	m.sentMessages = append(m.sentMessages, msg)
 	return &models.Message{}, nil
+}
+
+// MockForumTopicRepo is a mock forum topic repository
+type MockForumTopicRepo struct {
+	topics map[int64]*ForumTopic
+}
+
+func (m *MockForumTopicRepo) CreateForumTopic(ctx context.Context, topic *ForumTopic) error {
+	topic.ID = int64(len(m.topics) + 1)
+	m.topics[topic.ID] = topic
+	return nil
+}
+
+func (m *MockForumTopicRepo) GetForumTopic(ctx context.Context, topicID int64) (*ForumTopic, error) {
+	if topic, ok := m.topics[topicID]; ok {
+		return topic, nil
+	}
+	return nil, nil
+}
+
+func (m *MockForumTopicRepo) GetForumTopicByGroupAndThread(ctx context.Context, groupID int64, messageThreadID int) (*ForumTopic, error) {
+	for _, topic := range m.topics {
+		if topic.GroupID == groupID && topic.MessageThreadID == messageThreadID {
+			return topic, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *MockForumTopicRepo) GetForumTopicsByGroup(ctx context.Context, groupID int64) ([]*ForumTopic, error) {
+	var topics []*ForumTopic
+	for _, topic := range m.topics {
+		if topic.GroupID == groupID {
+			topics = append(topics, topic)
+		}
+	}
+	return topics, nil
+}
+
+func (m *MockForumTopicRepo) DeleteForumTopic(ctx context.Context, topicID int64) error {
+	delete(m.topics, topicID)
+	return nil
 }

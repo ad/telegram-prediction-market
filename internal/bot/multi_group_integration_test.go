@@ -30,6 +30,11 @@ func setupMultiGroupTestDB(t *testing.T) (*storage.DBQueue, func()) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	// Run migrations to add group support
 	if err := storage.RunMigrations(queue); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -1129,6 +1134,11 @@ func TestIntegration_DataMigration(t *testing.T) {
 	// Step 1: Initialize schema WITHOUT migrations (simulating old database)
 	if err := storage.InitSchema(queue); err != nil {
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	// Create repositories

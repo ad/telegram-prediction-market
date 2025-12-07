@@ -26,6 +26,8 @@ var (
 	ErrInvalidGroupID            = errors.New("group ID must be set")
 	ErrInvalidTelegramChatID     = errors.New("telegram chat ID must be set")
 	ErrInvalidMembershipStatus   = errors.New("invalid membership status")
+	ErrEmptyTopicName            = errors.New("topic name cannot be empty")
+	ErrInvalidMessageThreadID    = errors.New("message thread ID must be set")
 )
 
 // EventStatus represents the status of an event
@@ -48,19 +50,19 @@ const (
 
 // Event represents a prediction event
 type Event struct {
-	ID              int64
-	GroupID         int64 // Group association for multi-group support
-	Question        string
-	Options         []string
-	CreatedAt       time.Time
-	Deadline        time.Time
-	Status          EventStatus
-	EventType       EventType
-	CorrectOption   *int
-	CreatedBy       int64
-	PollID          string // Telegram poll ID for tracking votes
-	PollMessageID   int    // Telegram message ID of the poll message
-	MessageThreadID *int   // Telegram forum topic thread ID (optional, for forum groups)
+	ID            int64
+	GroupID       int64  // Group association for multi-group support
+	ForumTopicID  *int64 // Forum topic association (optional, for forum groups)
+	Question      string
+	Options       []string
+	CreatedAt     time.Time
+	Deadline      time.Time
+	Status        EventStatus
+	EventType     EventType
+	CorrectOption *int
+	CreatedBy     int64
+	PollID        string // Telegram poll ID for tracking votes
+	PollMessageID int    // Telegram message ID of the poll message
 }
 
 // Prediction represents a user's prediction
@@ -108,13 +110,23 @@ type Achievement struct {
 
 // Group represents an independent prediction market community
 type Group struct {
+	ID             int64
+	TelegramChatID int64 // Unique Telegram chat ID
+	Name           string
+	CreatedAt      time.Time
+	CreatedBy      int64
+	IsForum        bool // Whether this group is a forum (supergroup with topics)
+}
+
+// ForumTopic represents a topic within a forum group
+// Multiple topics can belong to the same group (forum), sharing ratings and stats
+type ForumTopic struct {
 	ID              int64
-	TelegramChatID  int64 // Unique Telegram chat ID
+	GroupID         int64 // Parent group (forum)
+	MessageThreadID int   // Telegram forum topic thread ID
 	Name            string
 	CreatedAt       time.Time
 	CreatedBy       int64
-	MessageThreadID *int // Telegram forum topic thread ID (optional, for forum groups)
-	IsForum         bool // Whether this group is a forum (supergroup with topics)
 }
 
 // MembershipStatus represents the status of a group membership
@@ -264,4 +276,21 @@ func (gm *GroupMembership) Validate() error {
 	default:
 		return ErrInvalidMembershipStatus
 	}
+}
+
+// Validate validates a ForumTopic
+func (ft *ForumTopic) Validate() error {
+	if ft.GroupID == 0 {
+		return ErrInvalidGroupID
+	}
+	if ft.MessageThreadID == 0 {
+		return ErrInvalidMessageThreadID
+	}
+	if ft.Name == "" {
+		return ErrEmptyTopicName
+	}
+	if ft.CreatedBy == 0 {
+		return ErrInvalidCreator
+	}
+	return nil
 }

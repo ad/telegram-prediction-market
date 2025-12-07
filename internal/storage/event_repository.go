@@ -19,53 +19,21 @@ func NewEventRepository(queue *DBQueue) *EventRepository {
 	return &EventRepository{queue: queue}
 }
 
-// CreateEvent creates a new event in the database
-func (r *EventRepository) CreateEvent(ctx context.Context, event *domain.Event) error {
-	return r.queue.Execute(func(db *sql.DB) error {
-		optionsJSON, err := json.Marshal(event.Options)
-		if err != nil {
-			return err
-		}
-
-		result, err := db.ExecContext(ctx,
-			`INSERT INTO events (group_id, question, options_json, created_at, deadline, status, event_type, created_by, poll_id, poll_message_id, message_thread_id)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			event.GroupID, event.Question, optionsJSON, event.CreatedAt, event.Deadline,
-			event.Status, event.EventType, event.CreatedBy, event.PollID, event.PollMessageID, event.MessageThreadID,
-		)
-		if err != nil {
-			return err
-		}
-
-		id, err := result.LastInsertId()
-		if err != nil {
-			return err
-		}
-		event.ID = id
-		return nil
-	})
-}
-
-// GetEvent retrieves an event by ID
-func (r *EventRepository) GetEvent(ctx context.Context, eventID int64) (*domain.Event, error) {
+// scanEvent is a helper function to scan an event from a row
+func scanEvent(scanner interface {
+	Scan(dest ...interface{}) error
+}) (*domain.Event, error) {
 	var event domain.Event
 	var optionsJSON string
 	var correctOption sql.NullInt64
 	var pollID sql.NullString
 	var pollMessageID sql.NullInt64
-	var messageThreadID sql.NullInt64
+	var forumTopicID sql.NullInt64
 
-	err := r.queue.Execute(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx,
-			`SELECT id, group_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id, poll_message_id, message_thread_id
-			 FROM events WHERE id = ?`,
-			eventID,
-		).Scan(
-			&event.ID, &event.GroupID, &event.Question, &optionsJSON, &event.CreatedAt,
-			&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID, &pollMessageID, &messageThreadID,
-		)
-	})
-
+	err := scanner.Scan(
+		&event.ID, &event.GroupID, &forumTopicID, &event.Question, &optionsJSON, &event.CreatedAt,
+		&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID, &pollMessageID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -87,12 +55,63 @@ func (r *EventRepository) GetEvent(ctx context.Context, eventID int64) (*domain.
 		event.PollMessageID = int(pollMessageID.Int64)
 	}
 
-	if messageThreadID.Valid {
-		val := int(messageThreadID.Int64)
-		event.MessageThreadID = &val
+	if forumTopicID.Valid {
+		val := forumTopicID.Int64
+		event.ForumTopicID = &val
 	}
 
 	return &event, nil
+}
+
+// eventSelectColumns returns the standard SELECT columns for events
+const eventSelectColumns = `id, group_id, forum_topic_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id, poll_message_id`
+
+// CreateEvent creates a new event in the database
+func (r *EventRepository) CreateEvent(ctx context.Context, event *domain.Event) error {
+	return r.queue.Execute(func(db *sql.DB) error {
+		optionsJSON, err := json.Marshal(event.Options)
+		if err != nil {
+			return err
+		}
+
+		result, err := db.ExecContext(ctx,
+			`INSERT INTO events (group_id, forum_topic_id, question, options_json, created_at, deadline, status, event_type, created_by, poll_id, poll_message_id)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			event.GroupID, event.ForumTopicID, event.Question, optionsJSON, event.CreatedAt, event.Deadline,
+			event.Status, event.EventType, event.CreatedBy, event.PollID, event.PollMessageID,
+		)
+		if err != nil {
+			return err
+		}
+
+		id, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		event.ID = id
+		return nil
+	})
+}
+
+// GetEvent retrieves an event by ID
+func (r *EventRepository) GetEvent(ctx context.Context, eventID int64) (*domain.Event, error) {
+	var event *domain.Event
+
+	err := r.queue.Execute(func(db *sql.DB) error {
+		row := db.QueryRowContext(ctx,
+			`SELECT `+eventSelectColumns+` FROM events WHERE id = ?`,
+			eventID,
+		)
+		var err error
+		event, err = scanEvent(row)
+		return err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return event, nil
 }
 
 // GetActiveEvents retrieves all active events for a specific group
@@ -101,8 +120,7 @@ func (r *EventRepository) GetActiveEvents(ctx context.Context, groupID int64) ([
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx,
-			`SELECT id, group_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id, poll_message_id, message_thread_id
-			 FROM events WHERE status = ? AND group_id = ? ORDER BY created_at DESC`,
+			`SELECT `+eventSelectColumns+` FROM events WHERE status = ? AND group_id = ? ORDER BY created_at DESC`,
 			domain.EventStatusActive, groupID,
 		)
 		if err != nil {
@@ -111,43 +129,11 @@ func (r *EventRepository) GetActiveEvents(ctx context.Context, groupID int64) ([
 		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
-			var event domain.Event
-			var optionsJSON string
-			var correctOption sql.NullInt64
-			var pollID sql.NullString
-			var pollMessageID sql.NullInt64
-			var messageThreadID sql.NullInt64
-
-			if err := rows.Scan(
-				&event.ID, &event.GroupID, &event.Question, &optionsJSON, &event.CreatedAt,
-				&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID, &pollMessageID, &messageThreadID,
-			); err != nil {
+			event, err := scanEvent(rows)
+			if err != nil {
 				return err
 			}
-
-			if err := json.Unmarshal([]byte(optionsJSON), &event.Options); err != nil {
-				return err
-			}
-
-			if correctOption.Valid {
-				val := int(correctOption.Int64)
-				event.CorrectOption = &val
-			}
-
-			if pollID.Valid {
-				event.PollID = pollID.String
-			}
-
-			if pollMessageID.Valid {
-				event.PollMessageID = int(pollMessageID.Int64)
-			}
-
-			if messageThreadID.Valid {
-				val := int(messageThreadID.Int64)
-				event.MessageThreadID = &val
-			}
-
-			events = append(events, &event)
+			events = append(events, event)
 		}
 
 		return rows.Err()
@@ -174,9 +160,9 @@ func (r *EventRepository) UpdateEvent(ctx context.Context, event *domain.Event) 
 		}
 
 		_, err = db.ExecContext(ctx,
-			`UPDATE events SET group_id = ?, question = ?, options_json = ?, deadline = ?, status = ?, correct_option = ?, poll_id = ?, poll_message_id = ?, message_thread_id = ?
+			`UPDATE events SET group_id = ?, forum_topic_id = ?, question = ?, options_json = ?, deadline = ?, status = ?, correct_option = ?, poll_id = ?, poll_message_id = ?
 			 WHERE id = ?`,
-			event.GroupID, event.Question, optionsJSON, event.Deadline, event.Status, correctOption, event.PollID, event.PollMessageID, event.MessageThreadID, event.ID,
+			event.GroupID, event.ForumTopicID, event.Question, optionsJSON, event.Deadline, event.Status, correctOption, event.PollID, event.PollMessageID, event.ID,
 		)
 		return err
 	})
@@ -199,8 +185,7 @@ func (r *EventRepository) GetEventsByDeadlineRange(ctx context.Context, start, e
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx,
-			`SELECT id, group_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id, poll_message_id, message_thread_id
-			 FROM events WHERE deadline BETWEEN ? AND ? ORDER BY deadline ASC`,
+			`SELECT `+eventSelectColumns+` FROM events WHERE deadline BETWEEN ? AND ? ORDER BY deadline ASC`,
 			start, end,
 		)
 		if err != nil {
@@ -209,43 +194,11 @@ func (r *EventRepository) GetEventsByDeadlineRange(ctx context.Context, start, e
 		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
-			var event domain.Event
-			var optionsJSON string
-			var correctOption sql.NullInt64
-			var pollID sql.NullString
-			var pollMessageID sql.NullInt64
-			var messageThreadID sql.NullInt64
-
-			if err := rows.Scan(
-				&event.ID, &event.GroupID, &event.Question, &optionsJSON, &event.CreatedAt,
-				&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID, &pollMessageID, &messageThreadID,
-			); err != nil {
+			event, err := scanEvent(rows)
+			if err != nil {
 				return err
 			}
-
-			if err := json.Unmarshal([]byte(optionsJSON), &event.Options); err != nil {
-				return err
-			}
-
-			if correctOption.Valid {
-				val := int(correctOption.Int64)
-				event.CorrectOption = &val
-			}
-
-			if pollID.Valid {
-				event.PollID = pollID.String
-			}
-
-			if pollMessageID.Valid {
-				event.PollMessageID = int(pollMessageID.Int64)
-			}
-
-			if messageThreadID.Valid {
-				val := int(messageThreadID.Int64)
-				event.MessageThreadID = &val
-			}
-
-			events = append(events, &event)
+			events = append(events, event)
 		}
 
 		return rows.Err()
@@ -260,22 +213,16 @@ func (r *EventRepository) GetEventsByDeadlineRange(ctx context.Context, start, e
 
 // GetEventByPollID retrieves an event by its Telegram poll ID
 func (r *EventRepository) GetEventByPollID(ctx context.Context, pollID string) (*domain.Event, error) {
-	var event domain.Event
-	var optionsJSON string
-	var correctOption sql.NullInt64
-	var pollIDNull sql.NullString
-	var pollMessageID sql.NullInt64
-	var messageThreadID sql.NullInt64
+	var event *domain.Event
 
 	err := r.queue.Execute(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx,
-			`SELECT id, group_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id, poll_message_id, message_thread_id
-			 FROM events WHERE poll_id = ?`,
+		row := db.QueryRowContext(ctx,
+			`SELECT `+eventSelectColumns+` FROM events WHERE poll_id = ?`,
 			pollID,
-		).Scan(
-			&event.ID, &event.GroupID, &event.Question, &optionsJSON, &event.CreatedAt,
-			&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollIDNull, &pollMessageID, &messageThreadID,
 		)
+		var err error
+		event, err = scanEvent(row)
+		return err
 	})
 
 	if err == sql.ErrNoRows {
@@ -285,29 +232,7 @@ func (r *EventRepository) GetEventByPollID(ctx context.Context, pollID string) (
 		return nil, err
 	}
 
-	if err := json.Unmarshal([]byte(optionsJSON), &event.Options); err != nil {
-		return nil, err
-	}
-
-	if correctOption.Valid {
-		val := int(correctOption.Int64)
-		event.CorrectOption = &val
-	}
-
-	if pollIDNull.Valid {
-		event.PollID = pollIDNull.String
-	}
-
-	if pollMessageID.Valid {
-		event.PollMessageID = int(pollMessageID.Int64)
-	}
-
-	if messageThreadID.Valid {
-		val := int(messageThreadID.Int64)
-		event.MessageThreadID = &val
-	}
-
-	return &event, nil
+	return event, nil
 }
 
 // GetResolvedEvents retrieves all resolved events
@@ -316,8 +241,7 @@ func (r *EventRepository) GetResolvedEvents(ctx context.Context) ([]*domain.Even
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx,
-			`SELECT id, group_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id, poll_message_id, message_thread_id
-			 FROM events WHERE status = ? ORDER BY created_at DESC`,
+			`SELECT `+eventSelectColumns+` FROM events WHERE status = ? ORDER BY created_at DESC`,
 			domain.EventStatusResolved,
 		)
 		if err != nil {
@@ -326,43 +250,11 @@ func (r *EventRepository) GetResolvedEvents(ctx context.Context) ([]*domain.Even
 		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
-			var event domain.Event
-			var optionsJSON string
-			var correctOption sql.NullInt64
-			var pollID sql.NullString
-			var pollMessageID sql.NullInt64
-			var messageThreadID sql.NullInt64
-
-			if err := rows.Scan(
-				&event.ID, &event.GroupID, &event.Question, &optionsJSON, &event.CreatedAt,
-				&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID, &pollMessageID, &messageThreadID,
-			); err != nil {
+			event, err := scanEvent(rows)
+			if err != nil {
 				return err
 			}
-
-			if err := json.Unmarshal([]byte(optionsJSON), &event.Options); err != nil {
-				return err
-			}
-
-			if correctOption.Valid {
-				val := int(correctOption.Int64)
-				event.CorrectOption = &val
-			}
-
-			if pollID.Valid {
-				event.PollID = pollID.String
-			}
-
-			if pollMessageID.Valid {
-				event.PollMessageID = int(pollMessageID.Int64)
-			}
-
-			if messageThreadID.Valid {
-				val := int(messageThreadID.Int64)
-				event.MessageThreadID = &val
-			}
-
-			events = append(events, &event)
+			events = append(events, event)
 		}
 
 		return rows.Err()

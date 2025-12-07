@@ -30,6 +30,7 @@ type EventResolutionFSM struct {
 	ratingCalculator         *domain.RatingCalculator
 	predictionRepo           domain.PredictionRepository
 	groupRepo                domain.GroupRepository
+	forumTopicRepo           domain.ForumTopicRepository
 	eventPermissionValidator *domain.EventPermissionValidator
 	notificationService      *domain.NotificationService
 	config                   *config.Config
@@ -45,6 +46,7 @@ func NewEventResolutionFSM(
 	ratingCalculator *domain.RatingCalculator,
 	predictionRepo domain.PredictionRepository,
 	groupRepo domain.GroupRepository,
+	forumTopicRepo domain.ForumTopicRepository,
 	eventPermissionValidator *domain.EventPermissionValidator,
 	notificationService *domain.NotificationService,
 	cfg *config.Config,
@@ -58,6 +60,7 @@ func NewEventResolutionFSM(
 		ratingCalculator:         ratingCalculator,
 		predictionRepo:           predictionRepo,
 		groupRepo:                groupRepo,
+		forumTopicRepo:           forumTopicRepo,
 		eventPermissionValidator: eventPermissionValidator,
 		notificationService:      notificationService,
 		config:                   cfg,
@@ -343,7 +346,7 @@ func (f *EventResolutionFSM) handleOptionSelection(ctx context.Context, callback
 	if err != nil {
 		f.logger.Error("failed to get group for publishing results", "event_id", event.ID, "group_id", event.GroupID, "error", err)
 	} else {
-		if err := f.notificationService.PublishEventResults(ctx, context.EventID, optionIndex, group.TelegramChatID, group.MessageThreadID); err != nil {
+		if err := f.notificationService.PublishEventResults(ctx, context.EventID, optionIndex, group.TelegramChatID, f.forumTopicRepo); err != nil {
 			f.logger.Error("failed to publish event results", "event_id", context.EventID, "error", err)
 		}
 	}

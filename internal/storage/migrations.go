@@ -122,6 +122,99 @@ ALTER TABLE groups ADD COLUMN message_thread_id INTEGER;
 ALTER TABLE groups ADD COLUMN is_forum INTEGER NOT NULL DEFAULT 0;
 `,
 	},
+	{
+		Version:     6,
+		Description: "Add forum_topics table for managing forum topics separately from groups",
+		SQL: `
+-- Create forum_topics table to store individual forum topics
+-- A forum (group) can have multiple topics, but shares the same rating/stats
+CREATE TABLE IF NOT EXISTS forum_topics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    message_thread_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER NOT NULL,
+    FOREIGN KEY (group_id) REFERENCES groups(id),
+    UNIQUE(group_id, message_thread_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_forum_topics_group_id ON forum_topics(group_id);
+CREATE INDEX IF NOT EXISTS idx_forum_topics_message_thread_id ON forum_topics(message_thread_id);
+`,
+	},
+	{
+		Version:     7,
+		Description: "Refactor forum support: add forum_topic_id to events, deprecate message_thread_id columns",
+		SQL: `
+-- Add forum_topic_id to events table (nullable for backward compatibility)
+ALTER TABLE events ADD COLUMN forum_topic_id INTEGER REFERENCES forum_topics(id);
+CREATE INDEX IF NOT EXISTS idx_events_forum_topic_id ON events(forum_topic_id);
+
+-- Note: We keep message_thread_id columns in events and groups for backward compatibility
+-- but new code should use forum_topic_id and get message_thread_id from forum_topics table
+`,
+	},
+	{
+		Version:     8,
+		Description: "Remove deprecated message_thread_id columns from events and groups",
+		SQL: `
+-- SQLite doesn't support DROP COLUMN directly in older versions
+-- We need to recreate tables without the deprecated columns
+
+-- 1. Recreate events table without message_thread_id
+CREATE TABLE events_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question TEXT NOT NULL,
+    options_json TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    deadline TIMESTAMP NOT NULL,
+    status TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    correct_option INTEGER,
+    created_by INTEGER NOT NULL,
+    poll_id TEXT,
+    group_id INTEGER REFERENCES groups(id),
+    poll_message_id INTEGER,
+    forum_topic_id INTEGER REFERENCES forum_topics(id)
+);
+
+-- Copy data from old table
+INSERT INTO events_new (id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id, group_id, poll_message_id, forum_topic_id)
+SELECT id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id, group_id, poll_message_id, forum_topic_id
+FROM events;
+
+-- Drop old table and rename new one
+DROP TABLE events;
+ALTER TABLE events_new RENAME TO events;
+
+-- Recreate indexes
+CREATE INDEX IF NOT EXISTS idx_events_group_id ON events(group_id);
+CREATE INDEX IF NOT EXISTS idx_events_forum_topic_id ON events(forum_topic_id);
+
+-- 2. Recreate groups table without message_thread_id
+CREATE TABLE groups_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_chat_id INTEGER NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER NOT NULL,
+    is_forum INTEGER NOT NULL DEFAULT 0
+);
+
+-- Copy data from old table
+INSERT INTO groups_new (id, telegram_chat_id, name, created_at, created_by, is_forum)
+SELECT id, telegram_chat_id, name, created_at, created_by, is_forum
+FROM groups;
+
+-- Drop old table and rename new one
+DROP TABLE groups;
+ALTER TABLE groups_new RENAME TO groups;
+
+-- Recreate indexes
+CREATE INDEX IF NOT EXISTS idx_groups_telegram_chat_id ON groups(telegram_chat_id);
+`,
+	},
 }
 
 // columnExists checks if a column exists in a table
@@ -227,6 +320,67 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 				}
 				if exists {
 					// Columns already exist, just mark migration as complete
+					_, err = db.Exec(
+						"INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)",
+						migration.Version,
+						migration.Description,
+					)
+					if err != nil {
+						return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+					}
+					continue
+				}
+			}
+
+			// Special handling for migration 6 - check if table already exists
+			if migration.Version == 6 {
+				// Check if forum_topics table already exists
+				var tableName string
+				err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='forum_topics'").Scan(&tableName)
+				if err == nil {
+					// Table already exists, just mark migration as complete
+					_, err = db.Exec(
+						"INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)",
+						migration.Version,
+						migration.Description,
+					)
+					if err != nil {
+						return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+					}
+					continue
+				}
+			}
+
+			// Special handling for migration 7 - check if column already exists
+			if migration.Version == 7 {
+				// Check if forum_topic_id already exists in events table
+				exists, err := columnExists(db, "events", "forum_topic_id")
+				if err != nil {
+					return fmt.Errorf("failed to check column existence: %w", err)
+				}
+				if exists {
+					// Column already exists, just mark migration as complete
+					_, err = db.Exec(
+						"INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)",
+						migration.Version,
+						migration.Description,
+					)
+					if err != nil {
+						return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+					}
+					continue
+				}
+			}
+
+			// Special handling for migration 8 - check if message_thread_id was already removed
+			if migration.Version == 8 {
+				// Check if message_thread_id still exists in events table
+				exists, err := columnExists(db, "events", "message_thread_id")
+				if err != nil {
+					return fmt.Errorf("failed to check column existence: %w", err)
+				}
+				if !exists {
+					// Column already removed, just mark migration as complete
 					_, err = db.Exec(
 						"INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)",
 						migration.Version,

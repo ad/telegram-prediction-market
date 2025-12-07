@@ -72,6 +72,11 @@ func setupTestGroupAndDB(t *testing.T, chatID, userID int64) (*storage.DBQueue, 
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	// Create test group
 	groupRepo := storage.NewGroupRepository(queue)
 	group := &domain.Group{
@@ -525,6 +530,11 @@ func TestIntegration_CancellationFlow(t *testing.T) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	// Create dependencies
 	log := logger.New(logger.ERROR)
 
@@ -605,6 +615,11 @@ func TestIntegration_EventCreationPermissionFlow(t *testing.T) {
 	// Initialize schema
 	if err := storage.InitSchema(queue); err != nil {
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	// Run migrations to ensure all tables exist
@@ -1111,6 +1126,11 @@ func TestIntegration_CreatorAchievementFlow(t *testing.T) {
 	// Initialize schema
 	if err := storage.InitSchema(queue); err != nil {
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	// Run migrations to ensure all tables exist

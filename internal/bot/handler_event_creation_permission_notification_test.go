@@ -48,6 +48,11 @@ func TestEventCreationPermissionNotification(t *testing.T) {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	ctx := context.Background()
 	log := logger.New(logger.ERROR)
 

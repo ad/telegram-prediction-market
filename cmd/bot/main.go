@@ -79,6 +79,7 @@ func main() {
 	reminderRepo := storage.NewReminderRepository(dbQueue)
 	groupRepo := storage.NewGroupRepository(dbQueue)
 	groupMembershipRepo := storage.NewGroupMembershipRepository(dbQueue)
+	forumTopicRepo := storage.NewForumTopicRepository(dbQueue)
 
 	log.Info("Repositories created")
 
@@ -175,6 +176,7 @@ func main() {
 		achievementTracker,
 		groupContextResolver,
 		groupRepo,
+		forumTopicRepo,
 		ratingRepo,
 		cfg,
 		log,
@@ -200,6 +202,7 @@ func main() {
 		ratingCalculator,
 		predictionRepo,
 		groupRepo,
+		forumTopicRepo,
 		eventPermissionValidator,
 		notificationService,
 		cfg,
@@ -212,6 +215,7 @@ func main() {
 		fsmStorage,
 		b,
 		groupRepo,
+		forumTopicRepo,
 		deepLinkService,
 		cfg,
 		log,

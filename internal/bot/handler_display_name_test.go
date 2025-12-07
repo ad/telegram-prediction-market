@@ -29,6 +29,11 @@ func TestGetUserDisplayName_WithUsername(t *testing.T) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	ratingRepo := storage.NewRatingRepository(queue)
 	predictionRepo := storage.NewPredictionRepository(queue)
 	eventRepo := storage.NewEventRepository(queue)
@@ -83,6 +88,11 @@ func TestGetUserDisplayName_WithUsernameWithAtSign(t *testing.T) {
 	// Initialize schema
 	if err := storage.InitSchema(queue); err != nil {
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	ratingRepo := storage.NewRatingRepository(queue)
@@ -141,6 +151,11 @@ func TestGetUserDisplayName_WithOnlyUserID(t *testing.T) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	ratingRepo := storage.NewRatingRepository(queue)
 	predictionRepo := storage.NewPredictionRepository(queue)
 	eventRepo := storage.NewEventRepository(queue)
@@ -197,6 +212,11 @@ func TestGetUserDisplayName_WithOnlyFirstName(t *testing.T) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	ratingRepo := storage.NewRatingRepository(queue)
 	predictionRepo := storage.NewPredictionRepository(queue)
 	eventRepo := storage.NewEventRepository(queue)
@@ -251,6 +271,11 @@ func TestGetUserDisplayName_UserNotFound(t *testing.T) {
 	// Initialize schema
 	if err := storage.InitSchema(queue); err != nil {
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	ratingRepo := storage.NewRatingRepository(queue)

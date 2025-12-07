@@ -36,6 +36,11 @@ func TestVotePersistenceCompleteness(t *testing.T) {
 				return false
 			}
 
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
+			}
+
 			predictionRepo := storage.NewPredictionRepository(queue)
 			eventRepo := storage.NewEventRepository(queue)
 
@@ -136,6 +141,11 @@ func TestVoteUpdateIdempotence(t *testing.T) {
 			if err := storage.InitSchema(queue); err != nil {
 				t.Logf("Failed to initialize schema: %v", err)
 				return false
+			}
+
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
 			}
 
 			predictionRepo := storage.NewPredictionRepository(queue)
@@ -255,6 +265,11 @@ func TestDeadlineEnforcement(t *testing.T) {
 				return false
 			}
 
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
+			}
+
 			predictionRepo := storage.NewPredictionRepository(queue)
 			eventRepo := storage.NewEventRepository(queue)
 
@@ -350,6 +365,11 @@ func TestTransactionAtomicity(t *testing.T) {
 			if err := storage.InitSchema(queue); err != nil {
 				t.Logf("Failed to initialize schema: %v", err)
 				return false
+			}
+
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
 			}
 
 			predictionRepo := storage.NewPredictionRepository(queue)

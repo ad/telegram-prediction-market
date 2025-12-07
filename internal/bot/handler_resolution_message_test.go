@@ -44,6 +44,11 @@ func TestResolverInformationInMessage(t *testing.T) {
 				return false
 			}
 
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
+			}
+
 			ratingRepo := storage.NewRatingRepository(queue)
 			predictionRepo := storage.NewPredictionRepository(queue)
 			eventRepo := storage.NewEventRepository(queue)
@@ -98,7 +103,7 @@ func TestResolverInformationInMessage(t *testing.T) {
 			displayName := handler.getUserDisplayName(ctx, resolverID, groupID)
 
 			// The message should contain resolver information
-			message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил: %s\n",
+			message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n\n❓ Вопрос: %s\n\n✅ Правильный ответ: %s\n\n👤 Завершил: %s\n",
 				event.Question, event.Options[correctOption], displayName)
 
 			// Verify the message contains resolver identification
@@ -161,6 +166,11 @@ func TestCreatorVsAdminDistinction(t *testing.T) {
 			if err := storage.InitSchema(queue); err != nil {
 				t.Logf("Failed to initialize schema: %v", err)
 				return false
+			}
+
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
 			}
 
 			ratingRepo := storage.NewRatingRepository(queue)
@@ -236,11 +246,11 @@ func TestCreatorVsAdminDistinction(t *testing.T) {
 			var message string
 			if isAdmin && resolverID != creatorID {
 				// Admin resolution
-				message = fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (администратор): %s\n",
+				message = fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n\n❓ Вопрос: %s\n\n✅ Правильный ответ: %s\n\n👤 Завершил (администратор): %s\n",
 					event.Question, event.Options[correctOption], displayName)
 			} else {
 				// Creator resolution
-				message = fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (создатель): %s\n",
+				message = fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n\n❓ Вопрос: %s\n\n✅ Правильный ответ: %s\n\n👤 Завершил (создатель): %s\n",
 					event.Question, event.Options[correctOption], displayName)
 			}
 
@@ -299,6 +309,11 @@ func TestCreatorResolutionMessage(t *testing.T) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	ratingRepo := storage.NewRatingRepository(queue)
 	predictionRepo := storage.NewPredictionRepository(queue)
 	eventRepo := storage.NewEventRepository(queue)
@@ -349,7 +364,7 @@ func TestCreatorResolutionMessage(t *testing.T) {
 
 	// Build creator resolution message
 	displayName := handler.getUserDisplayName(ctx, creatorID, groupID)
-	message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (создатель): %s\n",
+	message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n\n❓ Вопрос: %s\n\n✅ Правильный ответ: %s\n\n👤 Завершил (создатель): %s\n",
 		event.Question, event.Options[0], displayName)
 
 	// Verify message contains "создатель"
@@ -383,6 +398,11 @@ func TestAdminResolutionMessage(t *testing.T) {
 	// Initialize schema
 	if err := storage.InitSchema(queue); err != nil {
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	ratingRepo := storage.NewRatingRepository(queue)
@@ -447,7 +467,7 @@ func TestAdminResolutionMessage(t *testing.T) {
 
 	// Build admin resolution message
 	displayName := handler.getUserDisplayName(ctx, adminID, groupID)
-	message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил (администратор): %s\n",
+	message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n\n❓ Вопрос: %s\n\n✅ Правильный ответ: %s\n\n👤 Завершил (администратор): %s\n",
 		event.Question, event.Options[0], displayName)
 
 	// Verify message contains "администратор"
@@ -481,6 +501,11 @@ func TestResolverNameInclusion(t *testing.T) {
 	// Initialize schema
 	if err := storage.InitSchema(queue); err != nil {
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	ratingRepo := storage.NewRatingRepository(queue)
@@ -552,7 +577,7 @@ func TestResolverNameInclusion(t *testing.T) {
 
 			// Build resolution message
 			displayName := handler.getUserDisplayName(ctx, tc.userID, groupID)
-			message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n════════════════════\n\n❓ Вопрос:\n%s\n\n✅ Правильный ответ:\n%s\n\n👤 Завершил: %s\n",
+			message := fmt.Sprintf("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n\n❓ Вопрос: %s\n\n✅ Правильный ответ: %s\n\n👤 Завершил: %s\n",
 				event.Question, event.Options[0], displayName)
 
 			// Verify message contains expected name format

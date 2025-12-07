@@ -35,6 +35,11 @@ func TestPersonalStatsCompleteness(t *testing.T) {
 				return false
 			}
 
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
+			}
+
 			ratingRepo := storage.NewRatingRepository(queue)
 			achievementRepo := storage.NewAchievementRepository(queue)
 			predictionRepo := storage.NewPredictionRepository(queue)

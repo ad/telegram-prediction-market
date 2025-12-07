@@ -33,6 +33,11 @@ func setupTestDB(t *testing.T) (*storage.DBQueue, func()) {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	cleanup := func() {
 		queue.Close()
 		_ = db.Close()

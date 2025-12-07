@@ -477,6 +477,11 @@ func createTestFSMStorage(t *testing.T) *storage.FSMStorage {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	log := logger.New(logger.ERROR)
 	return storage.NewFSMStorage(queue, log)
 }
@@ -758,6 +763,11 @@ func TestProperty_ExpiredSessionHandling(t *testing.T) {
 			if err := storage.InitSchema(queue); err != nil {
 				t.Logf("Failed to initialize schema: %v", err)
 				return false
+			}
+
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
 			}
 
 			log := logger.New(logger.ERROR)
@@ -1793,6 +1803,11 @@ func TestProperty_MessageIDPersistenceAcrossRestarts(t *testing.T) {
 				return false
 			}
 
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
+			}
+
 			log := logger.New(logger.ERROR)
 
 			// Create first storage instance (before "restart")
@@ -1915,6 +1930,11 @@ func TestProperty_AtomicSessionUpdates(t *testing.T) {
 			if err := storage.InitSchema(queue); err != nil {
 				t.Logf("Failed to initialize schema: %v", err)
 				return false
+			}
+
+			// Run migrations
+			if err := storage.RunMigrations(queue); err != nil {
+				t.Fatalf("Failed to run migrations: %v", err)
 			}
 
 			log := logger.New(logger.ERROR)

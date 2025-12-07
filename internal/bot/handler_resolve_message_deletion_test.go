@@ -56,6 +56,11 @@ func TestResolveEventMessageDeletion(t *testing.T) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	logger := &mockLogger{}
 
 	mockBot := &mockBotForResolve{
@@ -111,6 +116,11 @@ func TestResolveEventCleanChat(t *testing.T) {
 	// Initialize schema
 	if err := storage.InitSchema(queue); err != nil {
 		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Run migrations
+	if err := storage.RunMigrations(queue); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	logger := &mockLogger{}
