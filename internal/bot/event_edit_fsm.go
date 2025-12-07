@@ -123,12 +123,13 @@ func (c *EventEditContext) FromMap(data map[string]interface{}) error {
 
 // EventEditFSM manages the event editing state machine
 type EventEditFSM struct {
-	storage      *storage.FSMStorage
-	bot          *bot.Bot
-	eventManager *domain.EventManager
-	groupRepo    domain.GroupRepository
-	config       *config.Config
-	logger       domain.Logger
+	storage        *storage.FSMStorage
+	bot            *bot.Bot
+	eventManager   *domain.EventManager
+	groupRepo      domain.GroupRepository
+	forumTopicRepo domain.ForumTopicRepository
+	config         *config.Config
+	logger         domain.Logger
 }
 
 // NewEventEditFSM creates a new FSM for event editing
@@ -137,16 +138,18 @@ func NewEventEditFSM(
 	b *bot.Bot,
 	eventManager *domain.EventManager,
 	groupRepo domain.GroupRepository,
+	forumTopicRepo domain.ForumTopicRepository,
 	cfg *config.Config,
 	logger domain.Logger,
 ) *EventEditFSM {
 	return &EventEditFSM{
-		storage:      storage,
-		bot:          b,
-		eventManager: eventManager,
-		groupRepo:    groupRepo,
-		config:       cfg,
-		logger:       logger,
+		storage:        storage,
+		bot:            b,
+		eventManager:   eventManager,
+		groupRepo:      groupRepo,
+		forumTopicRepo: forumTopicRepo,
+		config:         cfg,
+		logger:         logger,
 	}
 }
 
@@ -661,14 +664,26 @@ func (f *EventEditFSM) updatePollInGroup(ctx context.Context, event *domain.Even
 		return err
 	}
 
-	// Stop the old poll
+	// Get MessageThreadID from ForumTopic if event has one
+	var messageThreadID *int
+	if event.ForumTopicID != nil {
+		topic, err := f.forumTopicRepo.GetForumTopic(ctx, *event.ForumTopicID)
+		if err != nil {
+			f.logger.Error("failed to get forum topic", "forum_topic_id", *event.ForumTopicID, "error", err)
+		} else if topic != nil {
+			messageThreadID = &topic.MessageThreadID
+			f.logger.Debug("found forum topic for event", "event_id", event.ID, "message_thread_id", topic.MessageThreadID)
+		}
+	}
+
+	// Delete the old poll message (cleaner than stopping it)
 	if event.PollMessageID != 0 {
-		_, err := f.bot.StopPoll(ctx, &bot.StopPollParams{
+		_, err := f.bot.DeleteMessage(ctx, &bot.DeleteMessageParams{
 			ChatID:    group.TelegramChatID,
 			MessageID: event.PollMessageID,
 		})
 		if err != nil {
-			f.logger.Warn("failed to stop old poll", "event_id", event.ID, "error", err)
+			f.logger.Warn("failed to delete old poll", "event_id", event.ID, "error", err)
 			// Continue - we'll try to send a new poll anyway
 		}
 	}
@@ -680,12 +695,21 @@ func (f *EventEditFSM) updatePollInGroup(ctx context.Context, event *domain.Even
 	}
 
 	isAnonymous := false
+	disableNotification := true
 	pollParams := &bot.SendPollParams{
 		ChatID:                group.TelegramChatID,
 		Question:              event.Question,
 		Options:               pollOptions,
 		IsAnonymous:           &isAnonymous,
 		AllowsMultipleAnswers: false,
+		DisableNotification:   disableNotification,
+		ProtectContent:        true,
+	}
+
+	// Add MessageThreadID for forum groups
+	if messageThreadID != nil && *messageThreadID != 0 {
+		pollParams.MessageThreadID = *messageThreadID
+		f.logger.Debug("sending updated poll to forum topic", "event_id", event.ID, "message_thread_id", *messageThreadID)
 	}
 
 	pollMsg, err := f.bot.SendPoll(ctx, pollParams)
@@ -700,6 +724,7 @@ func (f *EventEditFSM) updatePollInGroup(ctx context.Context, event *domain.Even
 		f.logger.Error("failed to update event with new poll ID", "event_id", event.ID, "error", err)
 	}
 
+	f.logger.Info("poll updated in group", "event_id", event.ID, "new_poll_id", event.PollID, "new_message_id", event.PollMessageID)
 	return nil
 }
 

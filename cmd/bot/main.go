@@ -238,6 +238,7 @@ func main() {
 		b,
 		eventManager,
 		groupRepo,
+		forumTopicRepo,
 		cfg,
 		log,
 	)

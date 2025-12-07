@@ -1127,6 +1127,7 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 			Options:               pollOptions,
 			IsAnonymous:           &isAnonymous,
 			AllowsMultipleAnswers: false,
+			ProtectContent:        true,
 		}
 
 		// Add MessageThreadID if this is a forum group
