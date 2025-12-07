@@ -35,11 +35,15 @@ func Load() (*Config, error) {
 		DatabasePath:          os.Getenv("DATABASE_PATH"),
 		LogLevel:              os.Getenv("LOG_LEVEL"),
 		TimezoneStr:           os.Getenv("TIMEZONE"),
-		MinEventsToCreate:     lookupEnvOrInt("MIN_EVENTS_TO_CREATE", 0),
-		MaxGroupsPerAdmin:     lookupEnvOrInt("MAX_GROUPS_PER_ADMIN", 0),
-		MaxMembershipsPerUser: lookupEnvOrInt("MAX_MEMBERSHIPS_PER_USER", 0),
+		MinEventsToCreate:     0,
+		MaxGroupsPerAdmin:     0,
+		MaxMembershipsPerUser: 0,
 		IDEncodingAlphabet:    os.Getenv("ID_ENCODING_ALPHABET"),
 	}
+
+	config.MinEventsToCreate = config.LookupEnvOrInt("MIN_EVENTS_TO_CREATE", 0)
+	config.MaxGroupsPerAdmin = config.LookupEnvOrInt("MAX_GROUPS_PER_ADMIN", 0)
+	config.MaxMembershipsPerUser = config.LookupEnvOrInt("MAX_MEMBERSHIPS_PER_USER", 0)
 
 	if _, err := os.Stat(ConfigFileName); err == nil {
 		jsonFile, err := os.Open(ConfigFileName)

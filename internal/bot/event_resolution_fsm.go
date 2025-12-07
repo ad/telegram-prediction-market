@@ -315,14 +315,20 @@ func (f *EventResolutionFSM) handleOptionSelection(ctx context.Context, callback
 
 	// Stop the poll
 	if event.PollID != "" && event.PollMessageID != 0 {
-		_, err := f.bot.StopPoll(ctx, &bot.StopPollParams{
-			ChatID:    event.GroupID,
-			MessageID: event.PollMessageID,
-		})
+		// Get the group to obtain Telegram chat ID
+		group, err := f.groupRepo.GetGroup(ctx, event.GroupID)
 		if err != nil {
-			f.logger.Error("failed to stop poll", "event_id", event.ID, "poll_id", event.PollID, "message_id", event.PollMessageID, "error", err)
+			f.logger.Error("failed to get group for stopping poll", "event_id", event.ID, "group_id", event.GroupID, "error", err)
 		} else {
-			f.logger.Info("poll stopped", "event_id", event.ID, "poll_id", event.PollID, "message_id", event.PollMessageID)
+			_, err := f.bot.StopPoll(ctx, &bot.StopPollParams{
+				ChatID:    group.TelegramChatID,
+				MessageID: event.PollMessageID,
+			})
+			if err != nil {
+				f.logger.Error("failed to stop poll", "event_id", event.ID, "poll_id", event.PollID, "message_id", event.PollMessageID, "telegram_chat_id", group.TelegramChatID, "error", err)
+			} else {
+				f.logger.Info("poll stopped", "event_id", event.ID, "poll_id", event.PollID, "message_id", event.PollMessageID, "telegram_chat_id", group.TelegramChatID)
+			}
 		}
 	}
 
