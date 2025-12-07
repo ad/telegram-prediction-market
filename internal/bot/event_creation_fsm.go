@@ -253,37 +253,12 @@ func (f *EventCreationFSM) sendMessage(ctx context.Context, chatID int64, text s
 	return msg.ID, nil
 }
 
-// escapeMarkdown escapes special characters for Telegram Markdown
-func escapeMarkdown(text string) string {
-	// Characters that need to be escaped in Telegram Markdown: _ * [ ] ( ) ~ ` > # + - = | { } . !
-	replacer := strings.NewReplacer(
-		"_", "\\_",
-		"*", "\\*",
-		"[", "\\[",
-		"]", "\\]",
-		"(", "\\(",
-		")", "\\)",
-		"~", "\\~",
-		">", "\\>",
-		"#", "\\#",
-		"+", "\\+",
-		"-", "\\-",
-		"=", "\\=",
-		"|", "\\|",
-		"{", "\\{",
-		"}", "\\}",
-		".", "\\.",
-		"!", "\\!",
-	)
-	return replacer.Replace(text)
-}
-
-// sendMessageMarkdown is a helper to send a message with Markdown formatting and track its ID
-func (f *EventCreationFSM) sendMessageMarkdown(ctx context.Context, chatID int64, text string, replyMarkup models.ReplyMarkup) (int, error) {
+// sendMessageHTML is a helper to send a message with HTML formatting and track its ID
+func (f *EventCreationFSM) sendMessageHTML(ctx context.Context, chatID int64, text string, replyMarkup models.ReplyMarkup) (int, error) {
 	msg, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        text,
-		ParseMode:   models.ParseModeMarkdown,
+		ParseMode:   models.ParseModeHTML,
 		ReplyMarkup: replyMarkup,
 	})
 	if err != nil {
@@ -520,28 +495,28 @@ func (f *EventCreationFSM) handleEventTypeCallback(ctx context.Context, userID i
 	var nextState string
 	var messageText string
 
-	var useMarkdown bool
+	var useHTML bool
 
 	switch eventType {
 	case "binary":
 		context.EventType = domain.EventTypeBinary
 		context.Options = []string{"Да", "Нет"}
 		nextState = StateAskDeadline
-		messageText = escapeMarkdown("✅ Выбран бинарный тип (Да/Нет)") + "\n\n" + f.getDeadlinePromptMessage()
-		useMarkdown = true
+		messageText = "✅ Выбран бинарный тип (Да/Нет)\n\n" + f.getDeadlinePromptMessage()
+		useHTML = true
 
 	case "probability":
 		context.EventType = domain.EventTypeProbability
 		context.Options = []string{"0-25%", "25-50%", "50-75%", "75-100%"}
 		nextState = StateAskDeadline
 		messageText = "✅ Выбран вероятностный тип\n\n" + f.getDeadlinePromptMessage()
-		useMarkdown = true
+		useHTML = true
 
 	case "multi":
 		context.EventType = domain.EventTypeMultiOption
 		nextState = StateAskOptions
-		messageText = escapeMarkdown("✅ Выбран множественный выбор") + "\n\n" + escapeMarkdown("Введите варианты ответа (2-6 штук), каждый с новой строки:")
-		useMarkdown = false
+		messageText = "✅ Выбран множественный выбор\n\nВведите варианты ответа (2-6 штук), каждый с новой строки:"
+		useHTML = false
 
 	default:
 		f.logger.Error("unknown event type", "user_id", userID, "event_type", eventType)
@@ -552,8 +527,8 @@ func (f *EventCreationFSM) handleEventTypeCallback(ctx context.Context, userID i
 	chatID := callback.Message.Message.Chat.ID
 	var messageID int
 	var err error
-	if useMarkdown {
-		messageID, err = f.sendMessageMarkdown(ctx, chatID, messageText, nil)
+	if useHTML {
+		messageID, err = f.sendMessageHTML(ctx, chatID, messageText, nil)
 	} else {
 		messageID, err = f.sendMessage(ctx, chatID, messageText, nil)
 	}
@@ -663,8 +638,8 @@ func (f *EventCreationFSM) handleOptionsInput(ctx context.Context, userID int64,
 	}
 	f.deleteMessages(ctx, chatID, messagesToDelete...)
 
-	// Send deadline request (with markdown for example date)
-	messageID, err := f.sendMessageMarkdown(ctx, chatID, f.getDeadlinePromptMessage(), nil)
+	// Send deadline request (with HTML for example date)
+	messageID, err := f.sendMessageHTML(ctx, chatID, f.getDeadlinePromptMessage(), nil)
 	if err != nil {
 		return err
 	}
@@ -702,7 +677,7 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 		exampleDate := time.Now().In(f.config.Timezone).AddDate(0, 0, 7)
 		exampleDate = time.Date(exampleDate.Year(), exampleDate.Month(), exampleDate.Day(), 12, 0, 0, 0, f.config.Timezone)
 		exampleStr := exampleDate.Format("02.01.2006 15:04")
-		errorMessageID, sendErr := f.sendMessageMarkdown(ctx, chatID, fmt.Sprintf("❌ Неверный формат даты. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: `%s`", exampleStr), nil)
+		errorMessageID, sendErr := f.sendMessageHTML(ctx, chatID, fmt.Sprintf("❌ Неверный формат даты. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: <code>%s</code>", exampleStr), nil)
 		if sendErr != nil {
 			return sendErr
 		}
@@ -807,7 +782,7 @@ func (f *EventCreationFSM) getDeadlinePromptMessage() string {
 	exampleDate = time.Date(exampleDate.Year(), exampleDate.Month(), exampleDate.Day(), 12, 0, 0, 0, f.config.Timezone)
 	exampleStr := exampleDate.Format("02.01.2006 15:04")
 
-	return fmt.Sprintf("📅 Введите дедлайн в формате:\nДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: `%s`", exampleStr)
+	return fmt.Sprintf("📅 Введите дедлайн в формате:\nДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: <code>%s</code>", exampleStr)
 }
 
 // buildEventSummary creates a summary message with all event details (for confirmation)
