@@ -291,15 +291,44 @@ func (f *EventCreationFSM) handleSelectGroup(ctx context.Context, userID int64, 
 		return fmt.Errorf("no groups available for user")
 	}
 
-	// Build inline keyboard with group choices
+	// Build inline keyboard with group choices (including forum topics)
 	var buttons [][]models.InlineKeyboardButton
 	for _, group := range groups {
-		buttons = append(buttons, []models.InlineKeyboardButton{
-			{
-				Text:         group.Name,
-				CallbackData: fmt.Sprintf("select_group:%d", group.ID),
-			},
-		})
+		// Check if this is a forum group
+		if group.IsForum {
+			// Add main group button (for default/general chat, thread ID = 0)
+			buttons = append(buttons, []models.InlineKeyboardButton{
+				{
+					Text:         group.Name,
+					CallbackData: fmt.Sprintf("select_group:%d", group.ID),
+				},
+			})
+
+			// Get forum topics for this group
+			topics, err := f.forumTopicRepo.GetForumTopicsByGroup(ctx, group.ID)
+			if err != nil {
+				f.logger.Error("failed to get forum topics", "group_id", group.ID, "error", err)
+				continue
+			}
+
+			// Add buttons for each topic with indentation symbol
+			for _, topic := range topics {
+				buttons = append(buttons, []models.InlineKeyboardButton{
+					{
+						Text:         fmt.Sprintf("  ↳ %s", topic.Name),
+						CallbackData: fmt.Sprintf("select_group:%d:%d", group.ID, topic.MessageThreadID),
+					},
+				})
+			}
+		} else {
+			// Regular group (not a forum)
+			buttons = append(buttons, []models.InlineKeyboardButton{
+				{
+					Text:         group.Name,
+					CallbackData: fmt.Sprintf("select_group:%d", group.ID),
+				},
+			})
+		}
 	}
 
 	kb := &models.InlineKeyboardMarkup{
@@ -307,7 +336,7 @@ func (f *EventCreationFSM) handleSelectGroup(ctx context.Context, userID int64, 
 	}
 
 	// Send message
-	messageID, err := f.sendMessage(ctx, chatID, "📝 СОЗДАНИЕ НОВОГО СОБЫТИЯ\n\nВыберите группу для события:", kb)
+	messageID, err := f.sendMessage(ctx, chatID, "📝 СОЗДАНИЕ НОВОГО СОБЫТИЯ\n\nВыберите группу (и тему, если это форум) для события:", kb)
 	if err != nil {
 		return err
 	}
@@ -342,9 +371,18 @@ func (f *EventCreationFSM) handleGroupSelectionCallback(ctx context.Context, use
 		CallbackQueryID: callback.ID,
 	})
 
-	// Parse group ID from callback data
-	groupIDStr := strings.TrimPrefix(callback.Data, "select_group:")
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
+	// Parse group ID and optional thread ID from callback data
+	// Format: "select_group:ID" or "select_group:ID:ThreadID"
+	dataStr := strings.TrimPrefix(callback.Data, "select_group:")
+	parts := strings.Split(dataStr, ":")
+
+	if len(parts) == 0 {
+		f.logger.Error("invalid callback data format", "user_id", userID, "data", callback.Data)
+		return fmt.Errorf("invalid callback data format")
+	}
+
+	// Parse group ID
+	groupID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
 		f.logger.Error("failed to parse group ID", "user_id", userID, "data", callback.Data, "error", err)
 		return err
@@ -352,6 +390,20 @@ func (f *EventCreationFSM) handleGroupSelectionCallback(ctx context.Context, use
 
 	// Store group ID in context
 	context.GroupID = groupID
+
+	// Parse thread ID if present
+	if len(parts) > 1 {
+		threadID, err := strconv.Atoi(parts[1])
+		if err != nil {
+			f.logger.Error("failed to parse thread ID", "user_id", userID, "data", callback.Data, "error", err)
+			return err
+		}
+		context.MessageThreadID = &threadID
+		f.logger.Debug("forum topic selected", "user_id", userID, "group_id", groupID, "thread_id", threadID)
+	} else {
+		context.MessageThreadID = nil
+		f.logger.Debug("group selected (no topic)", "user_id", userID, "group_id", groupID)
+	}
 
 	// Delete the group selection message
 	if callback.Message.Message != nil {
@@ -365,8 +417,6 @@ func (f *EventCreationFSM) handleGroupSelectionCallback(ctx context.Context, use
 		f.logger.Error("failed to transition to ask_question", "user_id", userID, "error", err)
 		return err
 	}
-
-	f.logger.Debug("group selected", "user_id", userID, "group_id", groupID)
 
 	// Send question prompt
 	return f.handleAskQuestion(ctx, userID, chatID)
