@@ -154,6 +154,20 @@ func (h *BotHandler) logAdminAction(userID int64, action string, eventID int64, 
 	)
 }
 
+// notifyAdminsWithKeyboard sends a notification message with inline keyboard to all bot admins
+func (h *BotHandler) notifyAdminsWithKeyboard(ctx context.Context, message string, keyboard *models.InlineKeyboardMarkup) {
+	for _, adminID := range h.config.AdminUserIDs {
+		_, err := h.bot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      adminID,
+			Text:        message,
+			ReplyMarkup: keyboard,
+		})
+		if err != nil {
+			h.logger.Error("failed to send admin notification with keyboard", "admin_id", adminID, "error", err)
+		}
+	}
+}
+
 // handleSessionConflictCallback handles user's choice when there's a conflicting session
 func (h *BotHandler) handleSessionConflictCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
 	userID := callback.From.ID
@@ -1268,6 +1282,12 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 		}
 	}
 
+	// Handle leave_group callbacks
+	if strings.HasPrefix(data, "leave_group:") {
+		h.handleLeaveGroupCallback(ctx, b, callback, userID, data)
+		return
+	}
+
 	// Handle group_members callbacks
 	if strings.HasPrefix(data, "group_members:") {
 		h.handleGroupMembersCallback(ctx, b, callback, userID, data)
@@ -1868,6 +1888,178 @@ func (h *BotHandler) HandleGroups(ctx context.Context, b *bot.Bot, update *model
 	})
 	if err != nil {
 		h.logger.Error("failed to send groups list", "error", err)
+	}
+}
+
+// HandleMyChatMember handles updates when bot is added to or removed from a chat
+func (h *BotHandler) HandleMyChatMember(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if update.MyChatMember == nil {
+		return
+	}
+
+	chatMember := update.MyChatMember
+	chat := chatMember.Chat
+	newStatus := chatMember.NewChatMember.Type
+	oldStatus := chatMember.OldChatMember.Type
+	addedBy := chatMember.From
+
+	// Check if bot was added to a group or supergroup
+	if (chat.Type == "group" || chat.Type == "supergroup") &&
+		(oldStatus == models.ChatMemberTypeLeft || oldStatus == models.ChatMemberTypeBanned) &&
+		(newStatus == models.ChatMemberTypeMember || newStatus == models.ChatMemberTypeAdministrator) {
+
+		// Bot was added to a group
+		h.logger.Info("bot added to telegram group",
+			"chat_id", chat.ID,
+			"chat_title", chat.Title,
+			"added_by_user_id", addedBy.ID,
+			"added_by_username", addedBy.Username,
+		)
+
+		// Get display name for the user who added the bot
+		displayName := addedBy.Username
+		if displayName == "" {
+			if addedBy.FirstName != "" {
+				displayName = addedBy.FirstName
+			}
+			if addedBy.LastName != "" {
+				if displayName != "" {
+					displayName += " " + addedBy.LastName
+				} else {
+					displayName = addedBy.LastName
+				}
+			}
+		}
+		if displayName == "" {
+			displayName = fmt.Sprintf("ID: %d", addedBy.ID)
+		} else {
+			displayName = fmt.Sprintf("@%s", displayName)
+		}
+
+		// Notify all admins with "Leave Group" button
+		notificationMsg := fmt.Sprintf(
+			"🤖 БОТ ДОБАВЛЕН В ТЕЛЕГРАМ-ГРУППУ\n\n"+
+				"👤 Кто добавил: %s\n"+
+				"💬 Название группы: %s\n"+
+				"🆔 ID чата: %d\n\n"+
+				"Для регистрации этой группы в системе используйте команду /create_group",
+			displayName,
+			chat.Title,
+			chat.ID,
+		)
+
+		// Create inline keyboard with "Leave Group" button
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{
+						Text:         "🚪 Выйти из группы",
+						CallbackData: fmt.Sprintf("leave_group:%d", chat.ID),
+					},
+				},
+			},
+		}
+
+		h.notifyAdminsWithKeyboard(ctx, notificationMsg, kb)
+
+		// Check if the user who added the bot is a member of any group
+		groups, err := h.groupRepo.GetUserGroups(ctx, addedBy.ID)
+		if err != nil {
+			h.logger.Error("failed to check user groups", "user_id", addedBy.ID, "error", err)
+			return
+		}
+
+		// If user is a member, send them a notification
+		if len(groups) > 0 {
+			userNotificationMsg := fmt.Sprintf(
+				"✅ Вы добавили бота в чат!\n\n"+
+					"🆔 ID чата для регистрации:\n"+
+					"<code>%d</code>\n\n"+
+					"Чтобы зарегистрировать эту группу в системе, используйте команду /create_group",
+				chat.ID,
+			)
+
+			_, err = h.bot.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID:    addedBy.ID,
+				Text:      userNotificationMsg,
+				ParseMode: models.ParseModeHTML,
+			})
+			if err != nil {
+				h.logger.Error("failed to send notification to user", "user_id", addedBy.ID, "error", err)
+			}
+		}
+	}
+}
+
+// handleLeaveGroupCallback handles the callback for leaving a telegram group
+func (h *BotHandler) handleLeaveGroupCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
+	// Check admin authorization
+	if !h.isAdmin(userID) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ У вас нет прав для выполнения этой команды.",
+		})
+		return
+	}
+
+	// Parse chat ID
+	parts := strings.Split(data, ":")
+	if len(parts) != 2 {
+		h.logger.Error("invalid leave_group callback data", "data", data)
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ Ошибка: неверный формат данных.",
+		})
+		return
+	}
+
+	chatID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		h.logger.Error("failed to parse chat ID", "error", err)
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ Ошибка: неверный ID чата.",
+		})
+		return
+	}
+
+	// Try to leave the chat
+	_, err = b.LeaveChat(ctx, &bot.LeaveChatParams{
+		ChatID: chatID,
+	})
+	if err != nil {
+		h.logger.Error("failed to leave chat", "chat_id", chatID, "error", err)
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ Ошибка при выходе из группы.",
+		})
+
+		// Edit message to show error
+		if callback.Message.Message != nil {
+			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+				ChatID:    callback.Message.Message.Chat.ID,
+				MessageID: callback.Message.Message.ID,
+				Text:      callback.Message.Message.Text + "\n\n❌ Ошибка при выходе из группы.",
+			})
+		}
+		return
+	}
+
+	h.logger.Info("bot left telegram group", "chat_id", chatID, "admin_user_id", userID)
+
+	// Answer callback query
+	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: callback.ID,
+		Text:            "✅ Бот вышел из группы.",
+	})
+
+	// Edit message to show success
+	if callback.Message.Message != nil {
+		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
+			ChatID:    callback.Message.Message.Chat.ID,
+			MessageID: callback.Message.Message.ID,
+			Text:      callback.Message.Message.Text + "\n\n✅ Бот вышел из группы.",
+		})
 	}
 }
 

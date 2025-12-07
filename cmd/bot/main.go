@@ -118,6 +118,11 @@ func main() {
 				handler.HandlePollAnswer(ctx, b, update)
 				return
 			}
+			// Handle my_chat_member updates (bot added to/removed from groups)
+			if update.MyChatMember != nil && handler != nil {
+				handler.HandleMyChatMember(ctx, b, update)
+				return
+			}
 			// Default handler for other unhandled updates
 		}),
 	}

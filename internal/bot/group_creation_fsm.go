@@ -227,6 +227,9 @@ func (f *GroupCreationFSM) handleChatIDInput(ctx context.Context, update *models
 
 	f.logger.Info("group created", "user_id", userID, "group_id", group.ID, "group_name", context.GroupName)
 
+	// Notify admins about new group creation
+	f.notifyAdminsAboutGroupCreation(ctx, userID, group)
+
 	// Generate deep-link
 	deepLink, err := f.deepLinkService.GenerateGroupInviteLink(group.ID)
 	if err != nil {
@@ -264,4 +267,46 @@ func (f *GroupCreationFSM) handleChatIDInput(ctx context.Context, update *models
 // deleteMessages is a helper to delete multiple messages
 func (f *GroupCreationFSM) deleteMessages(ctx context.Context, chatID int64, messageIDs ...int) {
 	deleteMessages(ctx, f.bot, f.logger, chatID, messageIDs...)
+}
+
+// notifyAdminsAboutGroupCreation sends notification to all admins about new group creation
+func (f *GroupCreationFSM) notifyAdminsAboutGroupCreation(ctx context.Context, creatorUserID int64, group *domain.Group) {
+	// Get creator's username from bot API if possible
+	creatorName := fmt.Sprintf("ID: %d", creatorUserID)
+
+	// Try to get user info
+	chat, err := f.bot.GetChat(ctx, &bot.GetChatParams{ChatID: creatorUserID})
+	if err == nil && chat != nil {
+		if chat.Username != "" {
+			creatorName = fmt.Sprintf("@%s", chat.Username)
+		} else if chat.FirstName != "" {
+			creatorName = chat.FirstName
+			if chat.LastName != "" {
+				creatorName += " " + chat.LastName
+			}
+		}
+	}
+
+	notificationMsg := fmt.Sprintf(
+		"🎉 СОЗДАНА НОВАЯ ГРУППА\n\n"+
+			"👤 Создатель: %s\n"+
+			"📋 Название: %s\n"+
+			"🆔 ID группы: %d\n"+
+			"💬 ID чата: %d",
+		creatorName,
+		group.Name,
+		group.ID,
+		group.TelegramChatID,
+	)
+
+	// Send notification to all admins
+	for _, adminID := range f.config.AdminUserIDs {
+		_, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: adminID,
+			Text:   notificationMsg,
+		})
+		if err != nil {
+			f.logger.Error("failed to send admin notification about group creation", "admin_id", adminID, "error", err)
+		}
+	}
 }
