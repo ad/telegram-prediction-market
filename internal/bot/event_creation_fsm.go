@@ -241,11 +241,24 @@ func (f *EventCreationFSM) deleteMessages(ctx context.Context, chatID int64, mes
 
 // sendMessage is a helper to send a message and track its ID
 func (f *EventCreationFSM) sendMessage(ctx context.Context, chatID int64, text string, replyMarkup models.ReplyMarkup) (int, error) {
-	parseMode := models.ParseModeMarkdown
 	msg, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        text,
-		ParseMode:   parseMode,
+		ReplyMarkup: replyMarkup,
+	})
+	if err != nil {
+		f.logger.Error("failed to send message", "chat_id", chatID, "error", err)
+		return 0, err
+	}
+	return msg.ID, nil
+}
+
+// sendMessageMarkdown is a helper to send a message with Markdown formatting and track its ID
+func (f *EventCreationFSM) sendMessageMarkdown(ctx context.Context, chatID int64, text string, replyMarkup models.ReplyMarkup) (int, error) {
+	msg, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        text,
+		ParseMode:   models.ParseModeMarkdown,
 		ReplyMarkup: replyMarkup,
 	})
 	if err != nil {
@@ -507,7 +520,14 @@ func (f *EventCreationFSM) handleEventTypeCallback(ctx context.Context, userID i
 
 	// Send next message
 	chatID := callback.Message.Message.Chat.ID
-	messageID, err := f.sendMessage(ctx, chatID, messageText, nil)
+	var messageID int
+	var err error
+	// Use markdown if message contains backticks
+	if strings.Contains(messageText, "`") {
+		messageID, err = f.sendMessageMarkdown(ctx, chatID, messageText, nil)
+	} else {
+		messageID, err = f.sendMessage(ctx, chatID, messageText, nil)
+	}
 	if err != nil {
 		return err
 	}
@@ -614,8 +634,8 @@ func (f *EventCreationFSM) handleOptionsInput(ctx context.Context, userID int64,
 	}
 	f.deleteMessages(ctx, chatID, messagesToDelete...)
 
-	// Send deadline request
-	messageID, err := f.sendMessage(ctx, chatID, f.getDeadlinePromptMessage(), nil)
+	// Send deadline request (with markdown for example date)
+	messageID, err := f.sendMessageMarkdown(ctx, chatID, f.getDeadlinePromptMessage(), nil)
 	if err != nil {
 		return err
 	}
@@ -653,7 +673,7 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 		exampleDate := time.Now().In(f.config.Timezone).AddDate(0, 0, 7)
 		exampleDate = time.Date(exampleDate.Year(), exampleDate.Month(), exampleDate.Day(), 12, 0, 0, 0, f.config.Timezone)
 		exampleStr := exampleDate.Format("02.01.2006 15:04")
-		errorMessageID, sendErr := f.sendMessage(ctx, chatID, fmt.Sprintf("❌ Неверный формат даты. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: `%s`", exampleStr), nil)
+		errorMessageID, sendErr := f.sendMessageMarkdown(ctx, chatID, fmt.Sprintf("❌ Неверный формат даты. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: `%s`", exampleStr), nil)
 		if sendErr != nil {
 			return sendErr
 		}
