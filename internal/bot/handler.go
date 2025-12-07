@@ -989,9 +989,23 @@ func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *
 	// Start FSM session for user
 	if err := h.eventCreationFSM.Start(ctx, userID, chatID); err != nil {
 		h.logger.Error("failed to start FSM session", "user_id", userID, "error", err)
+
+		// Provide user-friendly error message based on error type
+		var errorMsg string
+		if err == domain.ErrNoGroupMembership {
+			errorMsg = "❌ Вы не состоите ни в одной группе.\n\n" +
+				"Для создания событий необходимо:\n" +
+				"1️⃣ Добавить бота в группу\n" +
+				"2️⃣ Зарегистрировать группу командой /create_group\n" +
+				"3️⃣ Принять участие в событиях группы\n\n" +
+				"Используйте /help для получения дополнительной информации."
+		} else {
+			errorMsg = "❌ Ошибка при создании события. Попробуйте позже."
+		}
+
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при создании события. Попробуйте позже.",
+			Text:   errorMsg,
 		})
 		return
 	}
