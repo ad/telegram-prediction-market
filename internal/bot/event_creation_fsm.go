@@ -253,6 +253,31 @@ func (f *EventCreationFSM) sendMessage(ctx context.Context, chatID int64, text s
 	return msg.ID, nil
 }
 
+// escapeMarkdown escapes special characters for Telegram Markdown
+func escapeMarkdown(text string) string {
+	// Characters that need to be escaped in Telegram Markdown: _ * [ ] ( ) ~ ` > # + - = | { } . !
+	replacer := strings.NewReplacer(
+		"_", "\\_",
+		"*", "\\*",
+		"[", "\\[",
+		"]", "\\]",
+		"(", "\\(",
+		")", "\\)",
+		"~", "\\~",
+		">", "\\>",
+		"#", "\\#",
+		"+", "\\+",
+		"-", "\\-",
+		"=", "\\=",
+		"|", "\\|",
+		"{", "\\{",
+		"}", "\\}",
+		".", "\\.",
+		"!", "\\!",
+	)
+	return replacer.Replace(text)
+}
+
 // sendMessageMarkdown is a helper to send a message with Markdown formatting and track its ID
 func (f *EventCreationFSM) sendMessageMarkdown(ctx context.Context, chatID int64, text string, replyMarkup models.ReplyMarkup) (int, error) {
 	msg, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
@@ -495,23 +520,28 @@ func (f *EventCreationFSM) handleEventTypeCallback(ctx context.Context, userID i
 	var nextState string
 	var messageText string
 
+	var useMarkdown bool
+
 	switch eventType {
 	case "binary":
 		context.EventType = domain.EventTypeBinary
 		context.Options = []string{"Да", "Нет"}
 		nextState = StateAskDeadline
-		messageText = "✅ Выбран бинарный тип (Да/Нет)\n\n" + f.getDeadlinePromptMessage()
+		messageText = escapeMarkdown("✅ Выбран бинарный тип (Да/Нет)") + "\n\n" + f.getDeadlinePromptMessage()
+		useMarkdown = true
 
 	case "probability":
 		context.EventType = domain.EventTypeProbability
 		context.Options = []string{"0-25%", "25-50%", "50-75%", "75-100%"}
 		nextState = StateAskDeadline
 		messageText = "✅ Выбран вероятностный тип\n\n" + f.getDeadlinePromptMessage()
+		useMarkdown = true
 
 	case "multi":
 		context.EventType = domain.EventTypeMultiOption
 		nextState = StateAskOptions
-		messageText = "✅ Выбран множественный выбор\n\nВведите варианты ответа (2-6 штук), каждый с новой строки:"
+		messageText = escapeMarkdown("✅ Выбран множественный выбор") + "\n\n" + escapeMarkdown("Введите варианты ответа (2-6 штук), каждый с новой строки:")
+		useMarkdown = false
 
 	default:
 		f.logger.Error("unknown event type", "user_id", userID, "event_type", eventType)
@@ -522,8 +552,7 @@ func (f *EventCreationFSM) handleEventTypeCallback(ctx context.Context, userID i
 	chatID := callback.Message.Message.Chat.ID
 	var messageID int
 	var err error
-	// Use markdown if message contains backticks
-	if strings.Contains(messageText, "`") {
+	if useMarkdown {
 		messageID, err = f.sendMessageMarkdown(ctx, chatID, messageText, nil)
 	} else {
 		messageID, err = f.sendMessage(ctx, chatID, messageText, nil)
