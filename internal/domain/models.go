@@ -109,13 +109,22 @@ type Achievement struct {
 }
 
 // Group represents an independent prediction market community
+// GroupStatus represents the status of a group
+type GroupStatus string
+
+const (
+	GroupStatusActive  GroupStatus = "active"
+	GroupStatusDeleted GroupStatus = "deleted"
+)
+
 type Group struct {
 	ID             int64
 	TelegramChatID int64 // Unique Telegram chat ID
 	Name           string
 	CreatedAt      time.Time
 	CreatedBy      int64
-	IsForum        bool // Whether this group is a forum (supergroup with topics)
+	IsForum        bool        // Whether this group is a forum (supergroup with topics)
+	Status         GroupStatus // Group status (active/deleted)
 }
 
 // ForumTopic represents a topic within a forum group

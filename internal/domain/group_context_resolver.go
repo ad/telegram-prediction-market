@@ -18,6 +18,8 @@ type GroupRepository interface {
 	GetAllGroups(ctx context.Context) ([]*Group, error)
 	GetUserGroups(ctx context.Context, userID int64) ([]*Group, error)
 	DeleteGroup(ctx context.Context, groupID int64) error
+	UpdateGroupStatus(ctx context.Context, groupID int64, status GroupStatus) error
+	UpdateGroupName(ctx context.Context, groupID int64, name string) error
 }
 
 // GroupMembershipRepository interface for group membership operations
@@ -36,6 +38,7 @@ type ForumTopicRepository interface {
 	GetForumTopicByGroupAndThread(ctx context.Context, groupID int64, messageThreadID int) (*ForumTopic, error)
 	GetForumTopicsByGroup(ctx context.Context, groupID int64) ([]*ForumTopic, error)
 	DeleteForumTopic(ctx context.Context, topicID int64) error
+	UpdateForumTopicName(ctx context.Context, topicID int64, name string) error
 }
 
 // GroupContextResolver determines the active group context for a user

@@ -118,3 +118,11 @@ func (r *ForumTopicRepository) DeleteForumTopic(ctx context.Context, topicID int
 		return err
 	})
 }
+
+// UpdateForumTopicName updates the name of a forum topic
+func (r *ForumTopicRepository) UpdateForumTopicName(ctx context.Context, topicID int64, name string) error {
+	return r.queue.Execute(func(db *sql.DB) error {
+		_, err := db.ExecContext(ctx, `UPDATE forum_topics SET name = ? WHERE id = ?`, name, topicID)
+		return err
+	})
+}

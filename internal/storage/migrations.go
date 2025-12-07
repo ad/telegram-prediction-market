@@ -215,6 +215,17 @@ ALTER TABLE groups_new RENAME TO groups;
 CREATE INDEX IF NOT EXISTS idx_groups_telegram_chat_id ON groups(telegram_chat_id);
 `,
 	},
+	{
+		Version:     9,
+		Description: "Add status column to groups table for soft delete support",
+		SQL: `
+-- Add status column to groups table (default 'active')
+ALTER TABLE groups ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+
+-- Create index on status for faster queries
+CREATE INDEX IF NOT EXISTS idx_groups_status ON groups(status);
+`,
+	},
 }
 
 // columnExists checks if a column exists in a table
@@ -381,6 +392,27 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 				}
 				if !exists {
 					// Column already removed, just mark migration as complete
+					_, err = db.Exec(
+						"INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)",
+						migration.Version,
+						migration.Description,
+					)
+					if err != nil {
+						return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+					}
+					continue
+				}
+			}
+
+			// Special handling for migration 9 - check if column already exists
+			if migration.Version == 9 {
+				// Check if status already exists in groups table
+				exists, err := columnExists(db, "groups", "status")
+				if err != nil {
+					return fmt.Errorf("failed to check column existence: %w", err)
+				}
+				if exists {
+					// Column already exists, just mark migration as complete
 					_, err = db.Exec(
 						"INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)",
 						migration.Version,

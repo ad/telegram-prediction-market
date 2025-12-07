@@ -175,3 +175,11 @@ func (m *MockForumTopicRepo) DeleteForumTopic(ctx context.Context, topicID int64
 	delete(m.topics, topicID)
 	return nil
 }
+
+func (m *MockForumTopicRepo) UpdateForumTopicName(ctx context.Context, topicID int64, name string) error {
+	if topic, ok := m.topics[topicID]; ok {
+		topic.Name = name
+		return nil
+	}
+	return nil
+}

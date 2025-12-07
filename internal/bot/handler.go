@@ -27,9 +27,11 @@ type BotHandler struct {
 	eventCreationFSM         *EventCreationFSM
 	eventResolutionFSM       *EventResolutionFSM
 	groupCreationFSM         *GroupCreationFSM
+	renameFSM                *RenameFSM
 	eventPermissionValidator *domain.EventPermissionValidator
 	groupRepo                domain.GroupRepository
 	groupMembershipRepo      domain.GroupMembershipRepository
+	forumTopicRepo           domain.ForumTopicRepository
 	deepLinkService          *domain.DeepLinkService
 	groupContextResolver     *domain.GroupContextResolver
 	ratingRepo               domain.RatingRepository
@@ -47,9 +49,11 @@ func NewBotHandler(
 	eventCreationFSM *EventCreationFSM,
 	eventResolutionFSM *EventResolutionFSM,
 	groupCreationFSM *GroupCreationFSM,
+	renameFSM *RenameFSM,
 	eventPermissionValidator *domain.EventPermissionValidator,
 	groupRepo domain.GroupRepository,
 	groupMembershipRepo domain.GroupMembershipRepository,
+	forumTopicRepo domain.ForumTopicRepository,
 	deepLinkService *domain.DeepLinkService,
 	groupContextResolver *domain.GroupContextResolver,
 	ratingRepo domain.RatingRepository,
@@ -65,9 +69,11 @@ func NewBotHandler(
 		eventCreationFSM:         eventCreationFSM,
 		eventResolutionFSM:       eventResolutionFSM,
 		groupCreationFSM:         groupCreationFSM,
+		renameFSM:                renameFSM,
 		eventPermissionValidator: eventPermissionValidator,
 		groupRepo:                groupRepo,
 		groupMembershipRepo:      groupMembershipRepo,
+		forumTopicRepo:           forumTopicRepo,
 		deepLinkService:          deepLinkService,
 		groupContextResolver:     groupContextResolver,
 		ratingRepo:               ratingRepo,
@@ -302,12 +308,13 @@ func (h *BotHandler) displayHelp(ctx context.Context, b *bot.Bot, update *models
 	if isAdmin {
 		helpText.WriteString("👑 КОМАНДЫ АДМИНИСТРАТОРА\n")
 		helpText.WriteString("  /create_group — Создать новую группу\n")
-		helpText.WriteString("  /list_groups — Список всех групп с deep-links\n")
+		helpText.WriteString("  /list_groups — Список всех групп с топиками\n")
 		helpText.WriteString("  /group_members — Список участников группы\n")
 		helpText.WriteString("  /remove_member — Удалить участника из группы\n")
 		helpText.WriteString("  /create_event — Создать новое событие\n")
 		helpText.WriteString("  /resolve_event — Завершить событие\n")
 		helpText.WriteString("  /edit_event — Редактировать событие\n\n")
+		helpText.WriteString("💡 В /list_groups можно удалять группы и топики\n\n")
 	}
 
 	// Rules and scoring information
@@ -1223,6 +1230,24 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 		return
 	}
 
+	// Check if user has active rename FSM session
+	hasRenameSession, err := h.renameFSM.HasSession(ctx, userID)
+	if err != nil {
+		h.logger.Error("failed to check rename FSM session", "user_id", userID, "error", err)
+	} else if hasRenameSession {
+		// Route to rename FSM
+		if err := h.renameFSM.HandleMessage(ctx, update); err != nil {
+			h.logger.Error("rename FSM message handling failed", "user_id", userID, "error", err)
+
+			// Inform user to restart
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: update.Message.Chat.ID,
+				Text:   "❌ Произошла ошибка. Попробуйте начать заново с /list_groups",
+			})
+		}
+		return
+	}
+
 	// No active conversation - ignore message
 }
 
@@ -1333,6 +1358,42 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 	// Handle remove_member callbacks
 	if strings.HasPrefix(data, "remove_member_group:") || strings.HasPrefix(data, "remove_member_user:") {
 		h.handleRemoveMemberCallback(ctx, b, callback, userID, data)
+		return
+	}
+
+	// Handle delete_group callbacks
+	if strings.HasPrefix(data, "delete_group_") {
+		h.handleDeleteGroupCallback(ctx, b, callback, userID, data)
+		return
+	}
+
+	// Handle delete_topic callbacks
+	if strings.HasPrefix(data, "delete_topic_") {
+		h.handleDeleteTopicCallback(ctx, b, callback, userID, data)
+		return
+	}
+
+	// Handle soft_delete_group callbacks
+	if strings.HasPrefix(data, "soft_delete_group_") {
+		h.handleSoftDeleteGroupCallback(ctx, b, callback, userID, data)
+		return
+	}
+
+	// Handle restore_group callbacks
+	if strings.HasPrefix(data, "restore_group_") {
+		h.handleRestoreGroupCallback(ctx, b, callback, userID, data)
+		return
+	}
+
+	// Handle rename_group callbacks
+	if strings.HasPrefix(data, "rename_group_") {
+		h.handleRenameGroupCallback(ctx, b, callback, userID, data)
+		return
+	}
+
+	// Handle rename_topic callbacks
+	if strings.HasPrefix(data, "rename_topic_") {
+		h.handleRenameTopicCallback(ctx, b, callback, userID, data)
 		return
 	}
 
@@ -1616,7 +1677,7 @@ func (h *BotHandler) HandleListGroups(ctx context.Context, b *bot.Bot, update *m
 		return
 	}
 
-	// Build groups list message with deep-links
+	// Build groups list message with deep-links and topics
 	var sb strings.Builder
 	sb.WriteString("📋 СПИСОК ГРУПП\n\n")
 
@@ -1643,15 +1704,63 @@ func (h *BotHandler) HandleListGroups(ctx context.Context, b *bot.Bot, update *m
 			deepLink = "ошибка генерации ссылки"
 		}
 
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, group.Name))
+		// Add status indicator
+		statusIcon := "✅"
+		statusText := ""
+		if group.Status == domain.GroupStatusDeleted {
+			statusIcon = "🗑"
+			statusText = " (удалена)"
+		}
+
+		sb.WriteString(fmt.Sprintf("%d. %s %s%s\n", i+1, statusIcon, group.Name, statusText))
 		sb.WriteString(fmt.Sprintf("   👥 Участников: %d\n", activeCount))
 		sb.WriteString(fmt.Sprintf("   🔗 Ссылка: %s\n", deepLink))
-		sb.WriteString(fmt.Sprintf("   🆔 ID: %d\n\n", group.ID))
+		sb.WriteString(fmt.Sprintf("   🆔 ID: %d\n", group.ID))
+
+		// If this is a forum, show topics
+		if group.IsForum {
+			sb.WriteString("   🗂 Тип: Форум\n")
+
+			// Get forum topics for this group
+			topics, err := h.forumTopicRepo.GetForumTopicsByGroup(ctx, group.ID)
+			if err != nil {
+				h.logger.Error("failed to get forum topics", "group_id", group.ID, "error", err)
+			} else if len(topics) > 0 {
+				sb.WriteString("   📌 Топики:\n")
+				for _, topic := range topics {
+					sb.WriteString(fmt.Sprintf("      • %s (Thread ID: %d, ID: %d)\n", topic.Name, topic.MessageThreadID, topic.ID))
+				}
+			} else {
+				sb.WriteString("   📌 Топики: нет\n")
+			}
+		}
+
+		sb.WriteString("\n")
+	}
+
+	// Add management buttons
+	var buttons [][]models.InlineKeyboardButton
+	buttons = append(buttons, []models.InlineKeyboardButton{
+		{Text: "✏️ Переименовать группу", CallbackData: "rename_group_select"},
+		{Text: "✏️ Переименовать топик", CallbackData: "rename_topic_select"},
+	})
+	buttons = append(buttons, []models.InlineKeyboardButton{
+		{Text: "🗑 Пометить удаленной", CallbackData: "soft_delete_group_select"},
+		{Text: "♻️ Восстановить группу", CallbackData: "restore_group_select"},
+	})
+	buttons = append(buttons, []models.InlineKeyboardButton{
+		{Text: "🗑 Удалить топик", CallbackData: "delete_topic_select"},
+	})
+
+	kb := &models.InlineKeyboardMarkup{
+		InlineKeyboard: buttons,
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   sb.String(),
+		ChatID:      update.Message.Chat.ID,
+		Text:        sb.String(),
+		ReplyMarkup: kb,
+		ParseMode:   models.ParseModeHTML,
 	})
 	if err != nil {
 		h.logger.Error("failed to send groups list", "error", err)
@@ -2408,4 +2517,927 @@ func (h *BotHandler) handleEditEventCallback(ctx context.Context, b *bot.Bot, ca
 	})
 
 	h.logger.Info("edit event button clicked", "user_id", userID, "callback_data", callback.Data)
+}
+
+// handleDeleteGroupCallback handles the callback for deleting a group
+func (h *BotHandler) handleDeleteGroupCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
+	// Check admin authorization
+	if !h.isAdmin(userID) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ У вас нет прав для выполнения этой команды.",
+		})
+		return
+	}
+
+	// Check if this is group selection or confirmation
+	if data == "delete_group_select" {
+		// Get all groups
+		groups, err := h.groupRepo.GetAllGroups(ctx)
+		if err != nil {
+			h.logger.Error("failed to get all groups", "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении списка групп.",
+			})
+			return
+		}
+
+		if len(groups) == 0 {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "📋 Нет групп для удаления.",
+			})
+			return
+		}
+
+		// Build inline keyboard with groups
+		var buttons [][]models.InlineKeyboardButton
+		for _, group := range groups {
+			buttons = append(buttons, []models.InlineKeyboardButton{
+				{
+					Text:         group.Name,
+					CallbackData: fmt.Sprintf("delete_group_confirm:%d", group.ID),
+				},
+			})
+		}
+
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: buttons,
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      callback.Message.Message.Chat.ID,
+			Text:        "🗑 УДАЛЕНИЕ ГРУППЫ\n\nВыберите группу для удаления:",
+			ReplyMarkup: kb,
+		})
+		if err != nil {
+			h.logger.Error("failed to send group selection for deletion", "error", err)
+		}
+
+		// Answer callback query
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+
+	// This is confirmation
+	if strings.HasPrefix(data, "delete_group_confirm:") {
+		// Parse group ID
+		parts := strings.Split(data, ":")
+		if len(parts) != 2 {
+			h.logger.Error("invalid delete_group_confirm callback data", "data", data)
+			return
+		}
+
+		groupID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			h.logger.Error("failed to parse group ID", "error", err)
+			return
+		}
+
+		// Get group
+		group, err := h.groupRepo.GetGroup(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении группы.",
+			})
+			return
+		}
+
+		if group == nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Группа не найдена.",
+			})
+			return
+		}
+
+		// Delete the group (this will cascade delete memberships, topics, etc.)
+		err = h.groupRepo.DeleteGroup(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to delete group", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при удалении группы.",
+			})
+			return
+		}
+
+		// Log the action
+		h.logAdminAction(userID, "delete_group", groupID, fmt.Sprintf("Deleted group %s", group.Name))
+
+		// Send confirmation
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   fmt.Sprintf("✅ Группа \"%s\" успешно удалена.", group.Name),
+		})
+		if err != nil {
+			h.logger.Error("failed to send confirmation", "error", err)
+		}
+
+		// Answer callback query
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+}
+
+// handleDeleteTopicCallback handles the callback for deleting a forum topic
+func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
+	// Check admin authorization
+	if !h.isAdmin(userID) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ У вас нет прав для выполнения этой команды.",
+		})
+		return
+	}
+
+	// Check if this is group selection, topic selection, or confirmation
+	if data == "delete_topic_select" {
+		// Get all forum groups
+		groups, err := h.groupRepo.GetAllGroups(ctx)
+		if err != nil {
+			h.logger.Error("failed to get all groups", "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении списка групп.",
+			})
+			return
+		}
+
+		// Filter forum groups
+		var forumGroups []*domain.Group
+		for _, group := range groups {
+			if group.IsForum {
+				forumGroups = append(forumGroups, group)
+			}
+		}
+
+		if len(forumGroups) == 0 {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "📋 Нет форумов с топиками.",
+			})
+			return
+		}
+
+		// Build inline keyboard with forum groups
+		var buttons [][]models.InlineKeyboardButton
+		for _, group := range forumGroups {
+			buttons = append(buttons, []models.InlineKeyboardButton{
+				{
+					Text:         group.Name,
+					CallbackData: fmt.Sprintf("delete_topic_group:%d", group.ID),
+				},
+			})
+		}
+
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: buttons,
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      callback.Message.Message.Chat.ID,
+			Text:        "🗑 УДАЛЕНИЕ ТОПИКА\n\nВыберите форум:",
+			ReplyMarkup: kb,
+		})
+		if err != nil {
+			h.logger.Error("failed to send forum selection for topic deletion", "error", err)
+		}
+
+		// Answer callback query
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+
+	// This is group selection
+	if strings.HasPrefix(data, "delete_topic_group:") {
+		// Parse group ID
+		parts := strings.Split(data, ":")
+		if len(parts) != 2 {
+			h.logger.Error("invalid delete_topic_group callback data", "data", data)
+			return
+		}
+
+		groupID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			h.logger.Error("failed to parse group ID", "error", err)
+			return
+		}
+
+		// Get group
+		group, err := h.groupRepo.GetGroup(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении группы.",
+			})
+			return
+		}
+
+		if group == nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Группа не найдена.",
+			})
+			return
+		}
+
+		// Get topics for this group
+		topics, err := h.forumTopicRepo.GetForumTopicsByGroup(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to get forum topics", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении топиков.",
+			})
+			return
+		}
+
+		if len(topics) == 0 {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   fmt.Sprintf("📋 В форуме \"%s\" нет топиков.", group.Name),
+			})
+			return
+		}
+
+		// Build inline keyboard with topics
+		var buttons [][]models.InlineKeyboardButton
+		for _, topic := range topics {
+			buttons = append(buttons, []models.InlineKeyboardButton{
+				{
+					Text:         fmt.Sprintf("%s (Thread ID: %d)", topic.Name, topic.MessageThreadID),
+					CallbackData: fmt.Sprintf("delete_topic_confirm:%d", topic.ID),
+				},
+			})
+		}
+
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: buttons,
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      callback.Message.Message.Chat.ID,
+			Text:        fmt.Sprintf("🗑 УДАЛЕНИЕ ТОПИКА ИЗ \"%s\"\n\nВыберите топик:", group.Name),
+			ReplyMarkup: kb,
+		})
+		if err != nil {
+			h.logger.Error("failed to send topic selection", "error", err)
+		}
+
+		// Answer callback query
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+
+	// This is confirmation
+	if strings.HasPrefix(data, "delete_topic_confirm:") {
+		// Parse topic ID
+		parts := strings.Split(data, ":")
+		if len(parts) != 2 {
+			h.logger.Error("invalid delete_topic_confirm callback data", "data", data)
+			return
+		}
+
+		topicID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			h.logger.Error("failed to parse topic ID", "error", err)
+			return
+		}
+
+		// Get topic
+		topic, err := h.forumTopicRepo.GetForumTopic(ctx, topicID)
+		if err != nil {
+			h.logger.Error("failed to get topic", "topic_id", topicID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении топика.",
+			})
+			return
+		}
+
+		if topic == nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Топик не найден.",
+			})
+			return
+		}
+
+		// Delete the topic
+		err = h.forumTopicRepo.DeleteForumTopic(ctx, topicID)
+		if err != nil {
+			h.logger.Error("failed to delete topic", "topic_id", topicID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при удалении топика.",
+			})
+			return
+		}
+
+		// Log the action
+		h.logAdminAction(userID, "delete_topic", topic.GroupID, fmt.Sprintf("Deleted topic %s (ID: %d)", topic.Name, topicID))
+
+		// Send confirmation
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   fmt.Sprintf("✅ Топик \"%s\" успешно удален.", topic.Name),
+		})
+		if err != nil {
+			h.logger.Error("failed to send confirmation", "error", err)
+		}
+
+		// Answer callback query
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+}
+
+// handleSoftDeleteGroupCallback handles soft delete (marking as deleted)
+func (h *BotHandler) handleSoftDeleteGroupCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
+	// Check admin authorization
+	if !h.isAdmin(userID) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ У вас нет прав для выполнения этой команды.",
+		})
+		return
+	}
+
+	if data == "soft_delete_group_select" {
+		// Get all active groups
+		groups, err := h.groupRepo.GetAllGroups(ctx)
+		if err != nil {
+			h.logger.Error("failed to get all groups", "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении списка групп.",
+			})
+			return
+		}
+
+		// Filter active groups
+		var activeGroups []*domain.Group
+		for _, group := range groups {
+			if group.Status == domain.GroupStatusActive {
+				activeGroups = append(activeGroups, group)
+			}
+		}
+
+		if len(activeGroups) == 0 {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "📋 Нет активных групп для пометки удаленными.",
+			})
+			return
+		}
+
+		// Build inline keyboard with active groups
+		var buttons [][]models.InlineKeyboardButton
+		for _, group := range activeGroups {
+			buttons = append(buttons, []models.InlineKeyboardButton{
+				{
+					Text:         group.Name,
+					CallbackData: fmt.Sprintf("soft_delete_group_confirm:%d", group.ID),
+				},
+			})
+		}
+
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: buttons,
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      callback.Message.Message.Chat.ID,
+			Text:        "🗑 ПОМЕТИТЬ ГРУППУ УДАЛЕННОЙ\n\nВыберите группу:",
+			ReplyMarkup: kb,
+		})
+		if err != nil {
+			h.logger.Error("failed to send group selection", "error", err)
+		}
+
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+
+	if strings.HasPrefix(data, "soft_delete_group_confirm:") {
+		parts := strings.Split(data, ":")
+		if len(parts) != 2 {
+			h.logger.Error("invalid soft_delete_group_confirm callback data", "data", data)
+			return
+		}
+
+		groupID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			h.logger.Error("failed to parse group ID", "error", err)
+			return
+		}
+
+		group, err := h.groupRepo.GetGroup(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении группы.",
+			})
+			return
+		}
+
+		if group == nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Группа не найдена.",
+			})
+			return
+		}
+
+		// Update status to deleted
+		err = h.groupRepo.UpdateGroupStatus(ctx, groupID, domain.GroupStatusDeleted)
+		if err != nil {
+			h.logger.Error("failed to update group status", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при обновлении статуса группы.",
+			})
+			return
+		}
+
+		h.logAdminAction(userID, "soft_delete_group", groupID, fmt.Sprintf("Marked group %s as deleted", group.Name))
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   fmt.Sprintf("✅ Группа \"%s\" помечена как удаленная.\n\nОна больше недоступна для вступления и создания событий.", group.Name),
+		})
+		if err != nil {
+			h.logger.Error("failed to send confirmation", "error", err)
+		}
+
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+}
+
+// handleRestoreGroupCallback handles restoring deleted groups
+func (h *BotHandler) handleRestoreGroupCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
+	// Check admin authorization
+	if !h.isAdmin(userID) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ У вас нет прав для выполнения этой команды.",
+		})
+		return
+	}
+
+	if data == "restore_group_select" {
+		// Get all groups
+		groups, err := h.groupRepo.GetAllGroups(ctx)
+		if err != nil {
+			h.logger.Error("failed to get all groups", "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении списка групп.",
+			})
+			return
+		}
+
+		// Filter deleted groups
+		var deletedGroups []*domain.Group
+		for _, group := range groups {
+			if group.Status == domain.GroupStatusDeleted {
+				deletedGroups = append(deletedGroups, group)
+			}
+		}
+
+		if len(deletedGroups) == 0 {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "📋 Нет удаленных групп для восстановления.",
+			})
+			return
+		}
+
+		// Build inline keyboard with deleted groups
+		var buttons [][]models.InlineKeyboardButton
+		for _, group := range deletedGroups {
+			buttons = append(buttons, []models.InlineKeyboardButton{
+				{
+					Text:         group.Name,
+					CallbackData: fmt.Sprintf("restore_group_confirm:%d", group.ID),
+				},
+			})
+		}
+
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: buttons,
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      callback.Message.Message.Chat.ID,
+			Text:        "♻️ ВОССТАНОВИТЬ ГРУППУ\n\nВыберите группу:",
+			ReplyMarkup: kb,
+		})
+		if err != nil {
+			h.logger.Error("failed to send group selection", "error", err)
+		}
+
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+
+	if strings.HasPrefix(data, "restore_group_confirm:") {
+		parts := strings.Split(data, ":")
+		if len(parts) != 2 {
+			h.logger.Error("invalid restore_group_confirm callback data", "data", data)
+			return
+		}
+
+		groupID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			h.logger.Error("failed to parse group ID", "error", err)
+			return
+		}
+
+		group, err := h.groupRepo.GetGroup(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении группы.",
+			})
+			return
+		}
+
+		if group == nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Группа не найдена.",
+			})
+			return
+		}
+
+		// Update status to active
+		err = h.groupRepo.UpdateGroupStatus(ctx, groupID, domain.GroupStatusActive)
+		if err != nil {
+			h.logger.Error("failed to update group status", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при обновлении статуса группы.",
+			})
+			return
+		}
+
+		h.logAdminAction(userID, "restore_group", groupID, fmt.Sprintf("Restored group %s", group.Name))
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   fmt.Sprintf("✅ Группа \"%s\" восстановлена.\n\nТеперь она снова доступна для вступления и создания событий.", group.Name),
+		})
+		if err != nil {
+			h.logger.Error("failed to send confirmation", "error", err)
+		}
+
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+}
+
+// handleRenameGroupCallback handles renaming groups
+func (h *BotHandler) handleRenameGroupCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
+	// Check admin authorization
+	if !h.isAdmin(userID) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ У вас нет прав для выполнения этой команды.",
+		})
+		return
+	}
+
+	if data == "rename_group_select" {
+		groups, err := h.groupRepo.GetAllGroups(ctx)
+		if err != nil {
+			h.logger.Error("failed to get all groups", "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении списка групп.",
+			})
+			return
+		}
+
+		if len(groups) == 0 {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "📋 Нет групп для переименования.",
+			})
+			return
+		}
+
+		var buttons [][]models.InlineKeyboardButton
+		for _, group := range groups {
+			buttons = append(buttons, []models.InlineKeyboardButton{
+				{
+					Text:         group.Name,
+					CallbackData: fmt.Sprintf("rename_group_input:%d", group.ID),
+				},
+			})
+		}
+
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: buttons,
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      callback.Message.Message.Chat.ID,
+			Text:        "✏️ ПЕРЕИМЕНОВАТЬ ГРУППУ\n\nВыберите группу:",
+			ReplyMarkup: kb,
+		})
+		if err != nil {
+			h.logger.Error("failed to send group selection", "error", err)
+		}
+
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+
+	if strings.HasPrefix(data, "rename_group_input:") {
+		parts := strings.Split(data, ":")
+		if len(parts) != 2 {
+			h.logger.Error("invalid rename_group_input callback data", "data", data)
+			return
+		}
+
+		groupID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			h.logger.Error("failed to parse group ID", "error", err)
+			return
+		}
+
+		group, err := h.groupRepo.GetGroup(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении группы.",
+			})
+			return
+		}
+
+		if group == nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Группа не найдена.",
+			})
+			return
+		}
+
+		// Start rename FSM session
+		err = h.renameFSM.StartGroupRename(ctx, userID, callback.Message.Message.Chat.ID, groupID, group.Name)
+		if err != nil {
+			h.logger.Error("failed to start rename FSM", "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при запуске переименования.",
+			})
+			return
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   fmt.Sprintf("✏️ Переименование группы \"%s\"\n\nВведите новое название:", group.Name),
+		})
+		if err != nil {
+			h.logger.Error("failed to send rename prompt", "error", err)
+		}
+
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+}
+
+// handleRenameTopicCallback handles renaming forum topics
+func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
+	// Check admin authorization
+	if !h.isAdmin(userID) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+			Text:            "❌ У вас нет прав для выполнения этой команды.",
+		})
+		return
+	}
+
+	if data == "rename_topic_select" {
+		groups, err := h.groupRepo.GetAllGroups(ctx)
+		if err != nil {
+			h.logger.Error("failed to get all groups", "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении списка групп.",
+			})
+			return
+		}
+
+		var forumGroups []*domain.Group
+		for _, group := range groups {
+			if group.IsForum {
+				forumGroups = append(forumGroups, group)
+			}
+		}
+
+		if len(forumGroups) == 0 {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "📋 Нет форумов с топиками.",
+			})
+			return
+		}
+
+		var buttons [][]models.InlineKeyboardButton
+		for _, group := range forumGroups {
+			buttons = append(buttons, []models.InlineKeyboardButton{
+				{
+					Text:         group.Name,
+					CallbackData: fmt.Sprintf("rename_topic_group:%d", group.ID),
+				},
+			})
+		}
+
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: buttons,
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      callback.Message.Message.Chat.ID,
+			Text:        "✏️ ПЕРЕИМЕНОВАТЬ ТОПИК\n\nВыберите форум:",
+			ReplyMarkup: kb,
+		})
+		if err != nil {
+			h.logger.Error("failed to send forum selection", "error", err)
+		}
+
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+
+	if strings.HasPrefix(data, "rename_topic_group:") {
+		parts := strings.Split(data, ":")
+		if len(parts) != 2 {
+			h.logger.Error("invalid rename_topic_group callback data", "data", data)
+			return
+		}
+
+		groupID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			h.logger.Error("failed to parse group ID", "error", err)
+			return
+		}
+
+		group, err := h.groupRepo.GetGroup(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении группы.",
+			})
+			return
+		}
+
+		if group == nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Группа не найдена.",
+			})
+			return
+		}
+
+		// Get topics for this group
+		topics, err := h.forumTopicRepo.GetForumTopicsByGroup(ctx, groupID)
+		if err != nil {
+			h.logger.Error("failed to get forum topics", "group_id", groupID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении топиков.",
+			})
+			return
+		}
+
+		if len(topics) == 0 {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   fmt.Sprintf("📋 В форуме \"%s\" нет топиков.", group.Name),
+			})
+			return
+		}
+
+		// Build inline keyboard with topics
+		var buttons [][]models.InlineKeyboardButton
+		for _, topic := range topics {
+			buttons = append(buttons, []models.InlineKeyboardButton{
+				{
+					Text:         fmt.Sprintf("%s (Thread ID: %d)", topic.Name, topic.MessageThreadID),
+					CallbackData: fmt.Sprintf("rename_topic_input:%d", topic.ID),
+				},
+			})
+		}
+
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: buttons,
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:      callback.Message.Message.Chat.ID,
+			Text:        fmt.Sprintf("✏️ ПЕРЕИМЕНОВАТЬ ТОПИК ИЗ \"%s\"\n\nВыберите топик:", group.Name),
+			ReplyMarkup: kb,
+		})
+		if err != nil {
+			h.logger.Error("failed to send topic selection", "error", err)
+		}
+
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
+
+	if strings.HasPrefix(data, "rename_topic_input:") {
+		parts := strings.Split(data, ":")
+		if len(parts) != 2 {
+			h.logger.Error("invalid rename_topic_input callback data", "data", data)
+			return
+		}
+
+		topicID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			h.logger.Error("failed to parse topic ID", "error", err)
+			return
+		}
+
+		topic, err := h.forumTopicRepo.GetForumTopic(ctx, topicID)
+		if err != nil {
+			h.logger.Error("failed to get topic", "topic_id", topicID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при получении топика.",
+			})
+			return
+		}
+
+		if topic == nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Топик не найден.",
+			})
+			return
+		}
+
+		// Start rename FSM session
+		err = h.renameFSM.StartTopicRename(ctx, userID, callback.Message.Message.Chat.ID, topicID, topic.Name)
+		if err != nil {
+			h.logger.Error("failed to start rename FSM", "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: callback.Message.Message.Chat.ID,
+				Text:   "❌ Ошибка при запуске переименования.",
+			})
+			return
+		}
+
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: callback.Message.Message.Chat.ID,
+			Text:   fmt.Sprintf("✏️ Переименование топика \"%s\"\n\nВведите новое название:", topic.Name),
+		})
+		if err != nil {
+			h.logger.Error("failed to send rename prompt", "error", err)
+		}
+
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: callback.ID,
+		})
+		return
+	}
 }
