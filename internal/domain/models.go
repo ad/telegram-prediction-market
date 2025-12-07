@@ -59,6 +59,7 @@ type Event struct {
 	CorrectOption *int
 	CreatedBy     int64
 	PollID        string // Telegram poll ID for tracking votes
+	PollMessageID int    // Telegram message ID of the poll message
 }
 
 // Prediction represents a user's prediction
@@ -107,7 +108,7 @@ type Achievement struct {
 // Group represents an independent prediction market community
 type Group struct {
 	ID             int64
-	TelegramChatID int64  // Unique Telegram chat ID
+	TelegramChatID int64 // Unique Telegram chat ID
 	Name           string
 	CreatedAt      time.Time
 	CreatedBy      int64

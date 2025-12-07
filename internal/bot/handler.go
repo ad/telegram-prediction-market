@@ -1530,9 +1530,6 @@ func (h *BotHandler) sendAchievementNotification(ctx context.Context, b *bot.Bot
 	var telegramChatID int64
 	if group != nil {
 		telegramChatID = group.TelegramChatID
-	} else {
-		// Fallback to config group ID if we couldn't get group info
-		telegramChatID = group.TelegramChatID
 	}
 
 	// Announce in group with username

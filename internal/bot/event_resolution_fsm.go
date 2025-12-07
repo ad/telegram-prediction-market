@@ -314,11 +314,16 @@ func (f *EventResolutionFSM) handleOptionSelection(ctx context.Context, callback
 	}
 
 	// Stop the poll
-	if event.PollID != "" {
-		_, _ = f.bot.StopPoll(ctx, &bot.StopPollParams{
+	if event.PollID != "" && event.PollMessageID != 0 {
+		_, err := f.bot.StopPoll(ctx, &bot.StopPollParams{
 			ChatID:    event.GroupID,
-			MessageID: 0,
+			MessageID: event.PollMessageID,
 		})
+		if err != nil {
+			f.logger.Error("failed to stop poll", "event_id", event.ID, "poll_id", event.PollID, "message_id", event.PollMessageID, "error", err)
+		} else {
+			f.logger.Info("poll stopped", "event_id", event.ID, "poll_id", event.PollID, "message_id", event.PollMessageID)
+		}
 	}
 
 	// Send confirmation to user (final message - not deleted)

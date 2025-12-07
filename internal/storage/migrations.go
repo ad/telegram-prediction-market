@@ -100,6 +100,14 @@ ALTER TABLE ratings_new RENAME TO ratings;
 CREATE INDEX IF NOT EXISTS idx_ratings_group_id ON ratings(group_id);
 `,
 	},
+	{
+		Version:     4,
+		Description: "Add poll_message_id column to events table for stopping polls",
+		SQL: `
+-- Add poll_message_id to events table to store Telegram message ID of the poll
+ALTER TABLE events ADD COLUMN poll_message_id INTEGER;
+`,
+	},
 }
 
 // columnExists checks if a column exists in a table
@@ -163,6 +171,27 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 				}
 				if exists {
 					// Columns already exist, just mark migration as complete
+					_, err = db.Exec(
+						"INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)",
+						migration.Version,
+						migration.Description,
+					)
+					if err != nil {
+						return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+					}
+					continue
+				}
+			}
+
+			// Special handling for migration 4 - check if column already exists
+			if migration.Version == 4 {
+				// Check if poll_message_id already exists in events table
+				exists, err := columnExists(db, "events", "poll_message_id")
+				if err != nil {
+					return fmt.Errorf("failed to check column existence: %w", err)
+				}
+				if exists {
+					// Column already exists, just mark migration as complete
 					_, err = db.Exec(
 						"INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)",
 						migration.Version,

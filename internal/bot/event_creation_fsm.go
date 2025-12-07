@@ -928,10 +928,11 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 			return err
 		}
 
-		// Update event with poll ID
+		// Update event with poll ID and message ID
 		event.PollID = pollMsg.Poll.ID
+		event.PollMessageID = pollMsg.ID
 		if err := f.eventManager.UpdateEvent(ctx, event); err != nil {
-			f.logger.Error("failed to update event with poll ID", "event_id", event.ID, "error", err)
+			f.logger.Error("failed to update event with poll ID and message ID", "event_id", event.ID, "error", err)
 		}
 
 		// Send final summary to admin with poll reference

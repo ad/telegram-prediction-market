@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS events (
     correct_option INTEGER,
     created_by INTEGER NOT NULL,
     poll_id TEXT,
+    poll_message_id INTEGER,
     group_id INTEGER NOT NULL,
     FOREIGN KEY (group_id) REFERENCES groups(id)
 );
