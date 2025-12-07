@@ -14,12 +14,6 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// createGroupSession tracks the state of group creation process
-type createGroupSession struct {
-	step      int    // 1 = waiting for name, 2 = waiting for chat ID
-	groupName string // Stored group name from step 1
-}
-
 // BotHandler handles all Telegram bot interactions
 type BotHandler struct {
 	bot                      *bot.Bot
@@ -30,13 +24,14 @@ type BotHandler struct {
 	config                   *config.Config
 	logger                   domain.Logger
 	eventCreationFSM         *EventCreationFSM
+	eventResolutionFSM       *EventResolutionFSM
+	groupCreationFSM         *GroupCreationFSM
 	eventPermissionValidator *domain.EventPermissionValidator
 	groupRepo                domain.GroupRepository
 	groupMembershipRepo      domain.GroupMembershipRepository
 	deepLinkService          *domain.DeepLinkService
 	groupContextResolver     *domain.GroupContextResolver
 	ratingRepo               domain.RatingRepository
-	createGroupState         map[int64]*createGroupSession // Tracks users in create_group flow
 }
 
 // NewBotHandler creates a new BotHandler with all dependencies
@@ -49,6 +44,8 @@ func NewBotHandler(
 	cfg *config.Config,
 	logger domain.Logger,
 	eventCreationFSM *EventCreationFSM,
+	eventResolutionFSM *EventResolutionFSM,
+	groupCreationFSM *GroupCreationFSM,
 	eventPermissionValidator *domain.EventPermissionValidator,
 	groupRepo domain.GroupRepository,
 	groupMembershipRepo domain.GroupMembershipRepository,
@@ -65,13 +62,14 @@ func NewBotHandler(
 		config:                   cfg,
 		logger:                   logger,
 		eventCreationFSM:         eventCreationFSM,
+		eventResolutionFSM:       eventResolutionFSM,
+		groupCreationFSM:         groupCreationFSM,
 		eventPermissionValidator: eventPermissionValidator,
 		groupRepo:                groupRepo,
 		groupMembershipRepo:      groupMembershipRepo,
 		deepLinkService:          deepLinkService,
 		groupContextResolver:     groupContextResolver,
 		ratingRepo:               ratingRepo,
-		createGroupState:         make(map[int64]*createGroupSession),
 	}
 }
 
@@ -1021,23 +1019,35 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 
 	userID := update.Message.From.ID
 
-	// Check if user is in create_group flow
-	if session, exists := h.createGroupState[userID]; exists {
-		h.handleCreateGroupInput(ctx, b, update, session)
-		return
-	}
-
-	// Check if user has active FSM session
-	hasSession, err := h.eventCreationFSM.HasSession(ctx, userID)
+	// Check if user has active group creation FSM session
+	hasGroupSession, err := h.groupCreationFSM.HasSession(ctx, userID)
 	if err != nil {
-		h.logger.Error("failed to check FSM session", "user_id", userID, "error", err)
+		h.logger.Error("failed to check group creation FSM session", "user_id", userID, "error", err)
+	} else if hasGroupSession {
+		// Route to group creation FSM
+		if err := h.groupCreationFSM.HandleMessage(ctx, update); err != nil {
+			h.logger.Error("group creation FSM message handling failed", "user_id", userID, "error", err)
+
+			// Inform user to restart
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: update.Message.Chat.ID,
+				Text:   "❌ Произошла ошибка. Пожалуйста, начните заново с /create_group",
+			})
+		}
 		return
 	}
 
-	if hasSession {
-		// Route to FSM
+	// Check if user has active event creation FSM session
+	hasEventSession, err := h.eventCreationFSM.HasSession(ctx, userID)
+	if err != nil {
+		h.logger.Error("failed to check event creation FSM session", "user_id", userID, "error", err)
+		return
+	}
+
+	if hasEventSession {
+		// Route to event creation FSM
 		if err := h.eventCreationFSM.HandleMessage(ctx, update); err != nil {
-			h.logger.Error("FSM message handling failed", "user_id", userID, "error", err)
+			h.logger.Error("event creation FSM message handling failed", "user_id", userID, "error", err)
 
 			// Inform user to restart
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -1051,111 +1061,6 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 	// No active conversation - ignore message
 }
 
-// handleCreateGroupInput handles the group name and chat ID input for create_group flow
-func (h *BotHandler) handleCreateGroupInput(ctx context.Context, b *bot.Bot, update *models.Update, session *createGroupSession) {
-	userID := update.Message.From.ID
-	chatID := update.Message.Chat.ID
-	input := strings.TrimSpace(update.Message.Text)
-
-	if session.step == 1 {
-		// Step 1: Validate and store group name
-		if input == "" {
-			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: chatID,
-				Text:   "❌ Название группы не может быть пустым. Попробуйте снова:",
-			})
-			return
-		}
-
-		// Store group name and move to step 2
-		session.groupName = input
-		session.step = 2
-
-		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text: "✅ Название сохранено: " + input + "\n\n" +
-				"Шаг 2/2: Введите ID группового чата Telegram, к которому будет привязана эта группа.\n\n" +
-				"💡 Как получить ID чата:\n" +
-				"1. Добавьте бота @userinfobot в ваш групповой чат\n" +
-				"2. Он отправит ID чата (например: -1001234567890)\n" +
-				"3. Скопируйте и отправьте этот ID сюда",
-		})
-		if err != nil {
-			h.logger.Error("failed to send chat ID prompt", "error", err)
-		}
-		return
-	}
-
-	// Step 2: Validate and create group with chat ID
-	telegramChatID, err := strconv.ParseInt(input, 10, 64)
-	if err != nil || telegramChatID == 0 {
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "❌ Неверный формат ID чата. Введите числовой ID (например: -1001234567890):",
-		})
-		return
-	}
-
-	// Clear state
-	delete(h.createGroupState, userID)
-
-	// Create group
-	group := &domain.Group{
-		TelegramChatID: telegramChatID,
-		Name:           session.groupName,
-		CreatedAt:      time.Now(),
-		CreatedBy:      userID,
-	}
-
-	if err := group.Validate(); err != nil {
-		h.logger.Error("group validation failed", "error", err)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "❌ Ошибка валидации группы: " + err.Error(),
-		})
-		return
-	}
-
-	if err := h.groupRepo.CreateGroup(ctx, group); err != nil {
-		h.logger.Error("failed to create group", "error", err)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "❌ Ошибка при создании группы: " + err.Error(),
-		})
-		return
-	}
-
-	// Log the action
-	h.logAdminAction(userID, "create_group", group.ID, fmt.Sprintf("Created group: %s (chat ID: %d)", session.groupName, telegramChatID))
-
-	// Generate deep-link
-	deepLink, err := h.deepLinkService.GenerateGroupInviteLink(group.ID)
-	if err != nil {
-		h.logger.Error("failed to generate deep-link", "error", err)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "❌ Ошибка при создании ссылки для приглашения",
-		})
-		return
-	}
-
-	// Send success message
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: chatID,
-		Text: fmt.Sprintf("✅ Группа создана!\n\n"+
-			"📋 Название: %s\n"+
-			"🆔 ID группы: %d\n"+
-			"💬 ID чата: %d\n"+
-			"🔗 Ссылка для приглашения:\n%s",
-			session.groupName, group.ID, telegramChatID, deepLink),
-	})
-	if err != nil {
-		h.logger.Error("failed to send success message", "error", err)
-	}
-
-	h.logger.Info("group created", "group_id", group.ID, "name", session.groupName, "telegram_chat_id", telegramChatID, "created_by", userID)
-}
-
 // HandleCallback handles callback queries (button clicks)
 func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
 	if update.CallbackQuery == nil {
@@ -1166,7 +1071,7 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 	userID := callback.From.ID
 	data := callback.Data
 
-	// Check if this is an FSM callback (group selection, event_type selection or confirmation)
+	// Check if this is an event creation FSM callback (group selection, event_type selection or confirmation)
 	if strings.HasPrefix(data, "select_group:") || strings.HasPrefix(data, "event_type:") || strings.HasPrefix(data, "confirm:") {
 		// Check if user has active FSM session
 		hasSession, err := h.eventCreationFSM.HasSession(ctx, userID)
@@ -1188,6 +1093,28 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 		}
 	}
 
+	// Check if this is an event resolution FSM callback
+	if strings.HasPrefix(data, "resolve:") {
+		// Check if user has active resolution FSM session
+		hasSession, err := h.eventResolutionFSM.HasSession(ctx, userID)
+		if err != nil {
+			h.logger.Error("failed to check resolution FSM session for callback", "user_id", userID, "error", err)
+			// Answer callback query to remove loading state
+			_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+				CallbackQueryID: callback.ID,
+			})
+			return
+		}
+
+		if hasSession {
+			// Route to resolution FSM
+			if err := h.eventResolutionFSM.HandleCallback(ctx, callback); err != nil {
+				h.logger.Error("resolution FSM callback handling failed", "user_id", userID, "error", err)
+			}
+			return
+		}
+	}
+
 	// Handle group_members callbacks
 	if strings.HasPrefix(data, "group_members:") {
 		h.handleGroupMembersCallback(ctx, b, callback, userID, data)
@@ -1204,17 +1131,22 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 		CallbackQueryID: callback.ID,
 	})
-
-	// Handle resolve event callbacks
-	if strings.HasPrefix(data, "resolve:") {
-		h.handleResolveCallback(ctx, b, callback, userID, data)
-		return
-	}
 }
 
 // HandleResolveEvent handles the /resolve_event command
 func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update *models.Update) {
 	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+
+	// Start FSM session for user
+	if err := h.eventResolutionFSM.Start(ctx, userID, chatID); err != nil {
+		h.logger.Error("failed to start resolution FSM session", "user_id", userID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при запуске процесса завершения события.",
+		})
+		return
+	}
 
 	// Get all groups where user has access (admin sees all, others see their groups)
 	var groups []*domain.Group
@@ -1227,7 +1159,7 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 	if err != nil {
 		h.logger.Error("failed to get groups", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
+			ChatID: chatID,
 			Text:   "❌ Ошибка при получении списка групп.",
 		})
 		return
@@ -1246,7 +1178,7 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 
 	if len(allEvents) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
+			ChatID: chatID,
 			Text:   "📋 Нет активных событий для завершения.",
 		})
 		return
@@ -1267,7 +1199,7 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 
 	if len(manageableEvents) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
+			ChatID: chatID,
 			Text:   "❌ У вас нет прав для управления активными событиями.",
 		})
 		return
@@ -1288,185 +1220,30 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 		InlineKeyboard: buttons,
 	}
 
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      update.Message.Chat.ID,
+	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      chatID,
 		Text:        "🏁 ЗАВЕРШЕНИЕ СОБЫТИЯ\n\nВыберите событие для завершения:",
 		ReplyMarkup: kb,
 	})
 	if err != nil {
 		h.logger.Error("failed to send resolve event selection", "error", err)
-	}
-}
-
-func (h *BotHandler) handleResolveCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery, userID int64, data string) {
-	// Parse event ID
-	parts := strings.Split(data, ":")
-	if len(parts) < 2 {
 		return
 	}
 
-	// Check if this is selecting the correct option
-	if len(parts) == 4 && parts[1] == "option" {
-		eventID, err := strconv.ParseInt(parts[2], 10, 64)
-		if err != nil {
-			h.logger.Error("failed to parse event ID", "error", err)
-			return
-		}
-
-		optionIndex, err := strconv.Atoi(parts[3])
-		if err != nil {
-			h.logger.Error("failed to parse option index", "error", err)
-			return
-		}
-
-		// Check if user can manage this event
-		canManage, err := h.eventPermissionValidator.CanManageEvent(ctx, userID, eventID, h.config.AdminUserIDs)
-		if err != nil {
-			h.logger.Error("failed to check event management permission", "user_id", userID, "event_id", eventID, "error", err)
-			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при проверке прав доступа.",
-			})
-			return
-		}
-
-		if !canManage {
-			h.logger.Warn("unauthorized event resolution attempt", "user_id", userID, "event_id", eventID)
-			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ У вас нет прав для управления этим событием.",
-			})
-			return
-		}
-
-		// Resolve the event
-		if err := h.eventManager.ResolveEvent(ctx, eventID, optionIndex); err != nil {
-			h.logger.Error("failed to resolve event", "event_id", eventID, "error", err)
-			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при завершении события.",
-			})
-			return
-		}
-
-		// Get the event to show details
-		event, err := h.eventManager.GetEvent(ctx, eventID)
-		if err != nil {
-			h.logger.Error("failed to get event", "event_id", eventID, "error", err)
-			return
-		}
-
-		// Log the action (admin or creator)
-		if h.isAdmin(userID) {
-			h.logAdminAction(userID, "resolve_event", eventID, fmt.Sprintf("Correct option: %d (%s)", optionIndex, event.Options[optionIndex]))
-		} else {
-			h.logger.Info("creator resolved event", "user_id", userID, "event_id", eventID, "correct_option", optionIndex)
-		}
-
-		// Calculate scores
-		if err := h.ratingCalculator.CalculateScores(ctx, eventID, optionIndex); err != nil {
-			h.logger.Error("failed to calculate scores", "event_id", eventID, "error", err)
-		}
-
-		// Check and award achievements for all participants
-		predictions, err := h.predictionRepo.GetPredictionsByEvent(ctx, eventID)
+	// Store message ID in FSM context
+	if msg != nil {
+		// Get current context and add message ID
+		state, contextData, err := h.eventResolutionFSM.storage.Get(ctx, userID)
 		if err == nil {
-			for _, pred := range predictions {
-				achievements, err := h.achievementTracker.CheckAndAwardAchievements(ctx, pred.UserID, event.GroupID)
-				if err != nil {
-					h.logger.Error("failed to check achievements", "user_id", pred.UserID, "group_id", event.GroupID, "error", err)
-					continue
-				}
-
-				// Send achievement notifications
-				for _, ach := range achievements {
-					h.sendAchievementNotification(ctx, b, pred.UserID, ach)
-				}
+			resolutionContext := &domain.EventResolutionContext{}
+			if err := resolutionContext.FromMap(contextData); err == nil {
+				resolutionContext.MessageIDs = append(resolutionContext.MessageIDs, msg.ID)
+				_ = h.eventResolutionFSM.storage.Set(ctx, userID, state, resolutionContext.ToMap())
 			}
 		}
-
-		// Stop the poll
-		if event.PollID != "" {
-			_, _ = b.StopPoll(ctx, &bot.StopPollParams{
-				ChatID:    event.GroupID,
-				MessageID: 0, // We don't have message ID, poll will just be closed
-			})
-		}
-
-		// Publish results to group
-		h.publishEventResults(ctx, b, event, optionIndex, userID)
-
-		// Send confirmation to user
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: callback.Message.Message.Chat.ID,
-			Text:   fmt.Sprintf("✅ Событие завершено!\n\nПравильный ответ: %s", event.Options[optionIndex]),
-		})
-
-		return
 	}
 
-	// This is selecting the event, now show options
-	eventIDStr := parts[1]
-	eventID, err := strconv.ParseInt(eventIDStr, 10, 64)
-	if err != nil {
-		h.logger.Error("failed to parse event ID", "error", err)
-		return
-	}
-
-	// Check if user can manage this event
-	canManage, err := h.eventPermissionValidator.CanManageEvent(ctx, userID, eventID, h.config.AdminUserIDs)
-	if err != nil {
-		h.logger.Error("failed to check event management permission", "user_id", userID, "event_id", eventID, "error", err)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: callback.Message.Message.Chat.ID,
-			Text:   "❌ Ошибка при проверке прав доступа.",
-		})
-		return
-	}
-
-	if !canManage {
-		h.logger.Warn("unauthorized event management attempt", "user_id", userID, "event_id", eventID)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: callback.Message.Message.Chat.ID,
-			Text:   "❌ У вас нет прав для управления этим событием.",
-		})
-		return
-	}
-
-	// Get the event
-	event, err := h.eventManager.GetEvent(ctx, eventID)
-	if err != nil {
-		h.logger.Error("failed to get event", "event_id", eventID, "error", err)
-		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: callback.Message.Message.Chat.ID,
-			Text:   "❌ Ошибка при получении события.",
-		})
-		return
-	}
-
-	// Build inline keyboard with options
-	var buttons [][]models.InlineKeyboardButton
-	for i, option := range event.Options {
-		buttons = append(buttons, []models.InlineKeyboardButton{
-			{
-				Text:         option,
-				CallbackData: fmt.Sprintf("resolve:option:%d:%d", eventID, i),
-			},
-		})
-	}
-
-	kb := &models.InlineKeyboardMarkup{
-		InlineKeyboard: buttons,
-	}
-
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      callback.Message.Message.Chat.ID,
-		Text:        fmt.Sprintf("🎯 ВЫБОР ПРАВИЛЬНОГО ОТВЕТА\n\n▸ Событие: %s\n\nВыберите правильный ответ:", event.Question),
-		ReplyMarkup: kb,
-	})
-	if err != nil {
-		h.logger.Error("failed to send option selection", "error", err)
-	}
+	h.logger.Info("event resolution started via FSM", "user_id", userID, "chat_id", chatID)
 }
 
 func (h *BotHandler) publishEventResults(ctx context.Context, b *bot.Bot, event *domain.Event, correctOption int, resolverID int64) {
@@ -1615,8 +1392,18 @@ func (h *BotHandler) HandleCreateGroup(ctx context.Context, b *bot.Bot, update *
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
 
+	// Start FSM session for user
+	if err := h.groupCreationFSM.Start(ctx, userID, chatID); err != nil {
+		h.logger.Error("failed to start group creation FSM session", "user_id", userID, "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при запуске процесса создания группы.",
+		})
+		return
+	}
+
 	// Prompt for group name
-	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
 		Text:   "🏗️ СОЗДАНИЕ ГРУППЫ\n\nШаг 1/2: Введите название новой группы:",
 	})
@@ -1625,11 +1412,20 @@ func (h *BotHandler) HandleCreateGroup(ctx context.Context, b *bot.Bot, update *
 		return
 	}
 
-	// Initialize session for this admin
-	h.createGroupState[userID] = &createGroupSession{
-		step: 1,
+	// Store message ID in FSM context
+	if msg != nil {
+		// Get current context and add message ID
+		state, contextData, err := h.groupCreationFSM.storage.Get(ctx, userID)
+		if err == nil {
+			groupContext := &domain.GroupCreationContext{}
+			if err := groupContext.FromMap(contextData); err == nil {
+				groupContext.MessageIDs = append(groupContext.MessageIDs, msg.ID)
+				_ = h.groupCreationFSM.storage.Set(ctx, userID, state, groupContext.ToMap())
+			}
+		}
 	}
-	h.logger.Info("create_group command initiated", "admin_user_id", userID)
+
+	h.logger.Info("group creation started via FSM", "user_id", userID, "chat_id", chatID)
 }
 
 // HandleListGroups handles the /list_groups command

@@ -186,6 +186,32 @@ func main() {
 	)
 	log.Info("Event permission validator created")
 
+	// Create event resolution FSM
+	eventResolutionFSM := bot.NewEventResolutionFSM(
+		fsmStorage,
+		b,
+		eventManager,
+		achievementTracker,
+		ratingCalculator,
+		predictionRepo,
+		groupRepo,
+		eventPermissionValidator,
+		cfg,
+		log,
+	)
+	log.Info("Event resolution FSM created")
+
+	// Create group creation FSM
+	groupCreationFSM := bot.NewGroupCreationFSM(
+		fsmStorage,
+		b,
+		groupRepo,
+		deepLinkService,
+		cfg,
+		log,
+	)
+	log.Info("Group creation FSM created")
+
 	// Create bot handler
 	handler = bot.NewBotHandler(
 		b,
@@ -196,6 +222,8 @@ func main() {
 		cfg,
 		log,
 		eventCreationFSM,
+		eventResolutionFSM,
+		groupCreationFSM,
 		eventPermissionValidator,
 		groupRepo,
 		groupMembershipRepo,

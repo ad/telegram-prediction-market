@@ -234,9 +234,11 @@ func (f *EventCreationFSM) deleteMessages(ctx context.Context, chatID int64, mes
 
 // sendMessage is a helper to send a message and track its ID
 func (f *EventCreationFSM) sendMessage(ctx context.Context, chatID int64, text string, replyMarkup models.ReplyMarkup) (int, error) {
+	parseMode := models.ParseModeMarkdown
 	msg, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        text,
+		ParseMode:   parseMode,
 		ReplyMarkup: replyMarkup,
 	})
 	if err != nil {
@@ -478,13 +480,13 @@ func (f *EventCreationFSM) handleEventTypeCallback(ctx context.Context, userID i
 		context.EventType = domain.EventTypeBinary
 		context.Options = []string{"Да", "Нет"}
 		nextState = StateAskDeadline
-		messageText = "✅ Выбран бинарный тип (Да/Нет)\n\n📅 Введите дедлайн в формате:\n   ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00"
+		messageText = "✅ Выбран бинарный тип (Да/Нет)\n\n" + f.getDeadlinePromptMessage()
 
 	case "probability":
 		context.EventType = domain.EventTypeProbability
 		context.Options = []string{"0-25%", "25-50%", "50-75%", "75-100%"}
 		nextState = StateAskDeadline
-		messageText = "✅ Выбран вероятностный тип\n\n📅 Введите дедлайн в формате:\n   ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00"
+		messageText = "✅ Выбран вероятностный тип\n\n" + f.getDeadlinePromptMessage()
 
 	case "multi":
 		context.EventType = domain.EventTypeMultiOption
@@ -606,7 +608,7 @@ func (f *EventCreationFSM) handleOptionsInput(ctx context.Context, userID int64,
 	f.deleteMessages(ctx, chatID, messagesToDelete...)
 
 	// Send deadline request
-	messageID, err := f.sendMessage(ctx, chatID, "📅 Введите дедлайн в формате:\n   ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00", nil)
+	messageID, err := f.sendMessage(ctx, chatID, f.getDeadlinePromptMessage(), nil)
 	if err != nil {
 		return err
 	}
@@ -641,7 +643,10 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 		f.deleteMessages(ctx, chatID, userMessageID)
 
 		// Send error message and store its ID
-		errorMessageID, sendErr := f.sendMessage(ctx, chatID, "❌ Неверный формат даты. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: 25.12.2024 18:00", nil)
+		exampleDate := time.Now().In(f.config.Timezone).AddDate(0, 0, 7)
+		exampleDate = time.Date(exampleDate.Year(), exampleDate.Month(), exampleDate.Day(), 12, 0, 0, 0, f.config.Timezone)
+		exampleStr := exampleDate.Format("02.01.2006 15:04")
+		errorMessageID, sendErr := f.sendMessage(ctx, chatID, fmt.Sprintf("❌ Неверный формат даты. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: `%s`", exampleStr), nil)
 		if sendErr != nil {
 			return sendErr
 		}
@@ -737,6 +742,16 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 
 	f.logger.Debug("deadline stored", "user_id", userID, "deadline", deadline)
 	return nil
+}
+
+// getDeadlinePromptMessage returns the deadline prompt message with a dynamic example
+func (f *EventCreationFSM) getDeadlinePromptMessage() string {
+	// Calculate example date: current date + 7 days at 12:00
+	exampleDate := time.Now().In(f.config.Timezone).AddDate(0, 0, 7)
+	exampleDate = time.Date(exampleDate.Year(), exampleDate.Month(), exampleDate.Day(), 12, 0, 0, 0, f.config.Timezone)
+	exampleStr := exampleDate.Format("02.01.2006 15:04")
+
+	return fmt.Sprintf("📅 Введите дедлайн в формате:\nДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: `%s`", exampleStr)
 }
 
 // buildEventSummary creates a summary message with all event details (for confirmation)
