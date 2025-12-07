@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS groups (
     telegram_chat_id INTEGER NOT NULL UNIQUE,
     name TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by INTEGER NOT NULL
+    created_by INTEGER NOT NULL,
+    message_thread_id INTEGER,
+    is_forum INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_groups_telegram_chat_id ON groups(telegram_chat_id);
@@ -40,6 +42,7 @@ CREATE TABLE IF NOT EXISTS events (
     poll_id TEXT,
     poll_message_id INTEGER,
     group_id INTEGER NOT NULL,
+    message_thread_id INTEGER,
     FOREIGN KEY (group_id) REFERENCES groups(id)
 );
 

@@ -21,8 +21,8 @@ func NewGroupRepository(queue *DBQueue) *GroupRepository {
 func (r *GroupRepository) CreateGroup(ctx context.Context, group *domain.Group) error {
 	return r.queue.Execute(func(db *sql.DB) error {
 		result, err := db.ExecContext(ctx,
-			`INSERT INTO groups (telegram_chat_id, name, created_at, created_by) VALUES (?, ?, ?, ?)`,
-			group.TelegramChatID, group.Name, group.CreatedAt, group.CreatedBy,
+			`INSERT INTO groups (telegram_chat_id, name, created_at, created_by, message_thread_id, is_forum) VALUES (?, ?, ?, ?, ?, ?)`,
+			group.TelegramChatID, group.Name, group.CreatedAt, group.CreatedBy, group.MessageThreadID, group.IsForum,
 		)
 		if err != nil {
 			return err
@@ -43,9 +43,9 @@ func (r *GroupRepository) GetGroup(ctx context.Context, groupID int64) (*domain.
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx,
-			`SELECT id, telegram_chat_id, name, created_at, created_by FROM groups WHERE id = ?`,
+			`SELECT id, telegram_chat_id, name, created_at, created_by, message_thread_id, is_forum FROM groups WHERE id = ?`,
 			groupID,
-		).Scan(&group.ID, &group.TelegramChatID, &group.Name, &group.CreatedAt, &group.CreatedBy)
+		).Scan(&group.ID, &group.TelegramChatID, &group.Name, &group.CreatedAt, &group.CreatedBy, &group.MessageThreadID, &group.IsForum)
 	})
 
 	if err == sql.ErrNoRows {
@@ -64,9 +64,9 @@ func (r *GroupRepository) GetGroupByTelegramChatID(ctx context.Context, telegram
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx,
-			`SELECT id, telegram_chat_id, name, created_at, created_by FROM groups WHERE telegram_chat_id = ?`,
+			`SELECT id, telegram_chat_id, name, created_at, created_by, message_thread_id, is_forum FROM groups WHERE telegram_chat_id = ?`,
 			telegramChatID,
-		).Scan(&group.ID, &group.TelegramChatID, &group.Name, &group.CreatedAt, &group.CreatedBy)
+		).Scan(&group.ID, &group.TelegramChatID, &group.Name, &group.CreatedAt, &group.CreatedBy, &group.MessageThreadID, &group.IsForum)
 	})
 
 	if err == sql.ErrNoRows {
@@ -85,7 +85,7 @@ func (r *GroupRepository) GetAllGroups(ctx context.Context) ([]*domain.Group, er
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx,
-			`SELECT id, telegram_chat_id, name, created_at, created_by FROM groups ORDER BY created_at DESC`,
+			`SELECT id, telegram_chat_id, name, created_at, created_by, message_thread_id, is_forum FROM groups ORDER BY created_at DESC`,
 		)
 		if err != nil {
 			return err
@@ -94,7 +94,7 @@ func (r *GroupRepository) GetAllGroups(ctx context.Context) ([]*domain.Group, er
 
 		for rows.Next() {
 			var group domain.Group
-			if err := rows.Scan(&group.ID, &group.TelegramChatID, &group.Name, &group.CreatedAt, &group.CreatedBy); err != nil {
+			if err := rows.Scan(&group.ID, &group.TelegramChatID, &group.Name, &group.CreatedAt, &group.CreatedBy, &group.MessageThreadID, &group.IsForum); err != nil {
 				return err
 			}
 			groups = append(groups, &group)
@@ -116,7 +116,7 @@ func (r *GroupRepository) GetUserGroups(ctx context.Context, userID int64) ([]*d
 
 	err := r.queue.Execute(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx,
-			`SELECT g.id, g.telegram_chat_id, g.name, g.created_at, g.created_by 
+			`SELECT g.id, g.telegram_chat_id, g.name, g.created_at, g.created_by, g.message_thread_id, g.is_forum 
 			 FROM groups g
 			 INNER JOIN group_memberships gm ON g.id = gm.group_id
 			 WHERE gm.user_id = ? AND gm.status = ?
@@ -130,7 +130,7 @@ func (r *GroupRepository) GetUserGroups(ctx context.Context, userID int64) ([]*d
 
 		for rows.Next() {
 			var group domain.Group
-			if err := rows.Scan(&group.ID, &group.TelegramChatID, &group.Name, &group.CreatedAt, &group.CreatedBy); err != nil {
+			if err := rows.Scan(&group.ID, &group.TelegramChatID, &group.Name, &group.CreatedAt, &group.CreatedBy, &group.MessageThreadID, &group.IsForum); err != nil {
 				return err
 			}
 			groups = append(groups, &group)

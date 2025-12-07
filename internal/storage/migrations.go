@@ -108,6 +108,20 @@ CREATE INDEX IF NOT EXISTS idx_ratings_group_id ON ratings(group_id);
 ALTER TABLE events ADD COLUMN poll_message_id INTEGER;
 `,
 	},
+	{
+		Version:     5,
+		Description: "Add forum support: message_thread_id to events and groups, is_forum flag to groups",
+		SQL: `
+-- Add message_thread_id to events table for forum topic support
+ALTER TABLE events ADD COLUMN message_thread_id INTEGER;
+
+-- Add message_thread_id to groups table for default forum topic
+ALTER TABLE groups ADD COLUMN message_thread_id INTEGER;
+
+-- Add is_forum flag to groups table
+ALTER TABLE groups ADD COLUMN is_forum INTEGER NOT NULL DEFAULT 0;
+`,
+	},
 }
 
 // columnExists checks if a column exists in a table
@@ -192,6 +206,27 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 				}
 				if exists {
 					// Column already exists, just mark migration as complete
+					_, err = db.Exec(
+						"INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)",
+						migration.Version,
+						migration.Description,
+					)
+					if err != nil {
+						return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+					}
+					continue
+				}
+			}
+
+			// Special handling for migration 5 - check if columns already exist
+			if migration.Version == 5 {
+				// Check if message_thread_id already exists in events table
+				exists, err := columnExists(db, "events", "message_thread_id")
+				if err != nil {
+					return fmt.Errorf("failed to check column existence: %w", err)
+				}
+				if exists {
+					// Columns already exist, just mark migration as complete
 					_, err = db.Exec(
 						"INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)",
 						migration.Version,

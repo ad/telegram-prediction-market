@@ -6,20 +6,27 @@ import (
 
 // GroupCreationContext holds data during group creation flow
 type GroupCreationContext struct {
-	GroupName      string `json:"group_name"`
-	TelegramChatID int64  `json:"telegram_chat_id"`
-	MessageIDs     []int  `json:"message_ids"` // All message IDs to delete on error/cancel
-	ChatID         int64  `json:"chat_id"`
+	GroupName       string `json:"group_name"`
+	TelegramChatID  int64  `json:"telegram_chat_id"`
+	MessageIDs      []int  `json:"message_ids"` // All message IDs to delete on error/cancel
+	ChatID          int64  `json:"chat_id"`
+	MessageThreadID *int   `json:"message_thread_id,omitempty"` // Telegram forum topic thread ID
+	IsForum         bool   `json:"is_forum"`                    // Whether this group is a forum
 }
 
 // ToMap converts GroupCreationContext to a map for JSON serialization
 func (c *GroupCreationContext) ToMap() map[string]interface{} {
-	return map[string]interface{}{
+	m := map[string]interface{}{
 		"group_name":       c.GroupName,
 		"telegram_chat_id": c.TelegramChatID,
 		"message_ids":      c.MessageIDs,
 		"chat_id":          c.ChatID,
+		"is_forum":         c.IsForum,
 	}
+	if c.MessageThreadID != nil {
+		m["message_thread_id"] = *c.MessageThreadID
+	}
+	return m
 }
 
 // FromMap populates GroupCreationContext from a map after JSON deserialization
@@ -61,6 +68,19 @@ func (c *GroupCreationContext) FromMap(data map[string]interface{}) error {
 		c.ChatID = chatID
 	} else if chatID, ok := data["chat_id"].(int); ok {
 		c.ChatID = int64(chatID)
+	}
+
+	// Parse message_thread_id (optional)
+	if threadID, ok := data["message_thread_id"].(float64); ok {
+		tid := int(threadID)
+		c.MessageThreadID = &tid
+	} else if threadID, ok := data["message_thread_id"].(int); ok {
+		c.MessageThreadID = &threadID
+	}
+
+	// Parse is_forum
+	if isForum, ok := data["is_forum"].(bool); ok {
+		c.IsForum = isForum
 	}
 
 	return nil

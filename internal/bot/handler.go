@@ -1178,6 +1178,21 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 		return
 	}
 
+	// Log message_thread_id if this is a forum topic message
+	if update.Message.MessageThreadID != 0 {
+		textPreview := update.Message.Text
+		if len(textPreview) > 50 {
+			textPreview = textPreview[:50]
+		}
+		h.logger.Info("message received in forum topic",
+			"chat_id", update.Message.Chat.ID,
+			"chat_title", update.Message.Chat.Title,
+			"message_thread_id", update.Message.MessageThreadID,
+			"is_forum", update.Message.Chat.IsForum,
+			"text_preview", textPreview,
+		)
+	}
+
 	userID := update.Message.From.ID
 
 	// Check if user has active group creation FSM session
@@ -1255,6 +1270,28 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 			// Route to FSM
 			if err := h.eventCreationFSM.HandleCallback(ctx, callback); err != nil {
 				h.logger.Error("FSM callback handling failed", "user_id", userID, "error", err)
+			}
+			return
+		}
+	}
+
+	// Check if this is a group creation FSM callback
+	if strings.HasPrefix(data, "group_is_forum:") {
+		// Check if user has active group creation FSM session
+		hasSession, err := h.groupCreationFSM.HasSession(ctx, userID)
+		if err != nil {
+			h.logger.Error("failed to check group creation FSM session for callback", "user_id", userID, "error", err)
+			// Answer callback query to remove loading state
+			_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+				CallbackQueryID: callback.ID,
+			})
+			return
+		}
+
+		if hasSession {
+			// Route to group creation FSM
+			if err := h.groupCreationFSM.HandleCallback(ctx, callback); err != nil {
+				h.logger.Error("group creation FSM callback handling failed", "user_id", userID, "error", err)
 			}
 			return
 		}
@@ -1495,8 +1532,22 @@ func (h *BotHandler) HandleCreateGroup(ctx context.Context, b *bot.Bot, update *
 		return
 	}
 
-	// Start FSM session for user
-	if err := h.groupCreationFSM.Start(ctx, userID, chatID); err != nil {
+	// Check if command was sent from a forum topic
+	var messageThreadID *int
+	isForum := false
+	if update.Message.MessageThreadID != 0 {
+		threadID := update.Message.MessageThreadID
+		messageThreadID = &threadID
+		isForum = true
+		h.logger.Info("create_group command sent from forum topic",
+			"user_id", userID,
+			"chat_id", update.Message.Chat.ID,
+			"message_thread_id", threadID,
+		)
+	}
+
+	// Start FSM session for user with forum info
+	if err := h.groupCreationFSM.StartWithForumInfo(ctx, userID, chatID, messageThreadID, isForum); err != nil {
 		h.logger.Error("failed to start group creation FSM session", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
@@ -1505,10 +1556,19 @@ func (h *BotHandler) HandleCreateGroup(ctx context.Context, b *bot.Bot, update *
 		return
 	}
 
+	// Build prompt message
+	promptText := "🏗️ СОЗДАНИЕ ГРУППЫ\n\n"
+	if isForum && messageThreadID != nil {
+		promptText += fmt.Sprintf("✅ Обнаружен форум!\n"+
+			"📍 ID темы: %d\n"+
+			"Группа будет настроена для работы с этой темой.\n\n", *messageThreadID)
+	}
+	promptText += "Шаг 1/2: Введите название новой группы:"
+
 	// Prompt for group name
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
-		Text:   "🏗️ СОЗДАНИЕ ГРУППЫ\n\nШаг 1/2: Введите название новой группы:",
+		Text:   promptText,
 	})
 	if err != nil {
 		h.logger.Error("failed to send create group prompt", "error", err)
@@ -1914,6 +1974,7 @@ func (h *BotHandler) HandleMyChatMember(ctx context.Context, b *bot.Bot, update 
 			"chat_title", chat.Title,
 			"added_by_user_id", addedBy.ID,
 			"added_by_username", addedBy.Username,
+			"is_forum", chat.IsForum,
 		)
 
 		// Get display name for the user who added the bot
@@ -1936,17 +1997,47 @@ func (h *BotHandler) HandleMyChatMember(ctx context.Context, b *bot.Bot, update 
 			displayName = fmt.Sprintf("@%s", displayName)
 		}
 
-		// Notify all admins with "Leave Group" button
+		// Build notification message
 		notificationMsg := fmt.Sprintf(
 			"🤖 БОТ ДОБАВЛЕН В ТЕЛЕГРАМ-ГРУППУ\n\n"+
 				"👤 Кто добавил: %s\n"+
 				"💬 Название группы: %s\n"+
-				"🆔 ID чата: %d\n\n"+
-				"Для регистрации этой группы в системе используйте команду /create_group",
+				"🆔 ID чата: <code>%d</code>\n",
 			displayName,
 			chat.Title,
 			chat.ID,
 		)
+
+		// Add forum information if this is a forum
+		if chat.IsForum {
+			notificationMsg += "\n🗂 Тип: Форум (супергруппа с темами)\n"
+
+			// Try to get forum topics using GetForumTopicIconStickers
+			// Note: We can't directly list topics, but we can get chat info
+			chatInfo, err := h.bot.GetChat(ctx, &bot.GetChatParams{
+				ChatID: chat.ID,
+			})
+			if err != nil {
+				h.logger.Error("failed to get chat info", "chat_id", chat.ID, "error", err)
+			} else if chatInfo != nil {
+				h.logger.Info("forum chat info retrieved",
+					"chat_id", chat.ID,
+					"is_forum", chatInfo.IsForum,
+					"active_usernames", chatInfo.ActiveUsernames,
+				)
+			}
+
+			notificationMsg += "\n📋 Как зарегистрировать форум:\n"
+			notificationMsg += "1. Перейдите в нужную тему форума\n"
+			notificationMsg += "2. Отправьте команду /create_group прямо в теме\n"
+			notificationMsg += "3. Бот автоматически определит ID темы!\n\n"
+			notificationMsg += "✨ Бот автоматически настроит группу для работы с этой темой.\n"
+			notificationMsg += "Все события будут отправляться в выбранную тему.\n"
+		} else {
+			notificationMsg += "🗂 Тип: Обычная группа\n"
+		}
+
+		notificationMsg += "\nДпля регистрации используйте команду /create_group"
 
 		// Create inline keyboard with "Leave Group" button
 		kb := &models.InlineKeyboardMarkup{
@@ -1973,11 +2064,24 @@ func (h *BotHandler) HandleMyChatMember(ctx context.Context, b *bot.Bot, update 
 		if len(groups) > 0 {
 			userNotificationMsg := fmt.Sprintf(
 				"✅ Вы добавили бота в чат!\n\n"+
-					"🆔 ID чата для регистрации:\n"+
-					"<code>%d</code>\n\n"+
-					"Чтобы зарегистрировать эту группу в системе, используйте команду /create_group",
+					"💬 Название: %s\n"+
+					"🆔 ID чата: <code>%d</code>\n",
+				chat.Title,
 				chat.ID,
 			)
+
+			if chat.IsForum {
+				userNotificationMsg += "🗂 Тип: Форум\n\n"
+				userNotificationMsg += "📋 Для регистрации форума:\n"
+				userNotificationMsg += "1. Перейдите в нужную тему форума\n"
+				userNotificationMsg += "2. Отправьте /create_group прямо в теме\n"
+				userNotificationMsg += "3. Бот автоматически определит ID темы!\n\n"
+				userNotificationMsg += "✨ Все события будут отправляться в выбранную тему.\n"
+			} else {
+				userNotificationMsg += "🗂 Тип: Обычная группа\n\n"
+			}
+
+			userNotificationMsg += "� Испо:льзуйте /create_group для регистрации"
 
 			_, err = h.bot.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID:    addedBy.ID,

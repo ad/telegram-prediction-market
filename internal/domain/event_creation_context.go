@@ -25,11 +25,12 @@ type EventCreationContext struct {
 	LastErrorMessageID    int       `json:"last_error_message_id"`
 	ConfirmationMessageID int       `json:"confirmation_message_id"`
 	ChatID                int64     `json:"chat_id"`
+	MessageThreadID       *int      `json:"message_thread_id,omitempty"` // Telegram forum topic thread ID
 }
 
 // ToMap converts EventCreationContext to a map for JSON serialization
 func (c *EventCreationContext) ToMap() map[string]interface{} {
-	return map[string]interface{}{
+	m := map[string]interface{}{
 		"group_id":                c.GroupID,
 		"question":                c.Question,
 		"event_type":              string(c.EventType),
@@ -41,6 +42,10 @@ func (c *EventCreationContext) ToMap() map[string]interface{} {
 		"confirmation_message_id": c.ConfirmationMessageID,
 		"chat_id":                 c.ChatID,
 	}
+	if c.MessageThreadID != nil {
+		m["message_thread_id"] = *c.MessageThreadID
+	}
+	return m
 }
 
 // FromMap populates EventCreationContext from a map after JSON deserialization
@@ -114,6 +119,14 @@ func (c *EventCreationContext) FromMap(data map[string]interface{}) error {
 		c.ChatID = chatID
 	} else if chatID, ok := data["chat_id"].(int); ok {
 		c.ChatID = int64(chatID)
+	}
+
+	// Parse message_thread_id (optional)
+	if threadID, ok := data["message_thread_id"].(float64); ok {
+		tid := int(threadID)
+		c.MessageThreadID = &tid
+	} else if threadID, ok := data["message_thread_id"].(int); ok {
+		c.MessageThreadID = &threadID
 	}
 
 	return nil

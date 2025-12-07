@@ -912,16 +912,33 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 			pollOptions[i] = models.InputPollOption{Text: opt}
 		}
 
+		// Use MessageThreadID from context if provided, otherwise use group's default
+		var messageThreadID *int
+		if context.MessageThreadID != nil {
+			messageThreadID = context.MessageThreadID
+			event.MessageThreadID = context.MessageThreadID
+		} else if group.MessageThreadID != nil {
+			messageThreadID = group.MessageThreadID
+			event.MessageThreadID = group.MessageThreadID
+		}
+
 		isAnonymous := false
-		pollMsg, err := f.bot.SendPoll(ctx, &bot.SendPollParams{
+		pollParams := &bot.SendPollParams{
 			ChatID:                group.TelegramChatID,
 			Question:              event.Question,
 			Options:               pollOptions,
 			IsAnonymous:           &isAnonymous,
 			AllowsMultipleAnswers: false,
-		})
+		}
+
+		// Add MessageThreadID if this is a forum group
+		if messageThreadID != nil {
+			pollParams.MessageThreadID = *messageThreadID
+		}
+
+		pollMsg, err := f.bot.SendPoll(ctx, pollParams)
 		if err != nil {
-			f.logger.Error("failed to send poll", "event_id", event.ID, "group_id", context.GroupID, "telegram_chat_id", group.TelegramChatID, "error", err)
+			f.logger.Error("failed to send poll", "event_id", event.ID, "group_id", context.GroupID, "telegram_chat_id", group.TelegramChatID, "message_thread_id", messageThreadID, "error", err)
 			_, _ = f.sendMessage(ctx, chatID, "❌ Ошибка при публикации опроса.", nil)
 			// Delete session
 			_ = f.storage.Delete(ctx, userID)
@@ -1046,10 +1063,17 @@ func (f *EventCreationFSM) sendAchievementNotification(ctx context.Context, user
 	}
 
 	// Announce in group
-	_, err = f.bot.SendMessage(ctx, &bot.SendMessageParams{
+	msgParams := &bot.SendMessageParams{
 		ChatID: telegramChatID,
 		Text:   fmt.Sprintf("🎉 %s получил ачивку: %s!", displayName, name),
-	})
+	}
+
+	// Add MessageThreadID if this is a forum group
+	if group != nil && group.MessageThreadID != nil {
+		msgParams.MessageThreadID = *group.MessageThreadID
+	}
+
+	_, err = f.bot.SendMessage(ctx, msgParams)
 	if err != nil {
 		f.logger.Error("failed to send achievement announcement to group", "error", err)
 		return err
