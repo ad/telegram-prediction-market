@@ -108,14 +108,21 @@ func (f *EventCreationFSM) Start(ctx context.Context, userID int64, chatID int64
 
 // HasSession checks if a user has an active FSM session
 func (f *EventCreationFSM) HasSession(ctx context.Context, userID int64) (bool, error) {
-	_, _, err := f.storage.Get(ctx, userID)
+	state, _, err := f.storage.Get(ctx, userID)
 	if err != nil {
 		if err == storage.ErrSessionNotFound {
 			return false, nil
 		}
 		return false, err
 	}
-	return true, nil
+
+	// Only return true if the state is an event creation state
+	switch state {
+	case StateSelectGroup, StateAskQuestion, StateAskEventType, StateAskOptions, StateAskDeadline, StateConfirm, StateComplete:
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 // HandleMessage routes messages to the appropriate state handler

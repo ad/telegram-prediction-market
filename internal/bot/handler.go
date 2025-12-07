@@ -9,6 +9,7 @@ import (
 
 	"github.com/ad/gitelegram-prediction-market/internal/config"
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -151,6 +152,96 @@ func (h *BotHandler) logAdminAction(userID int64, action string, eventID int64, 
 		"details", details,
 		"timestamp", time.Now(),
 	)
+}
+
+// handleSessionConflictCallback handles user's choice when there's a conflicting session
+func (h *BotHandler) handleSessionConflictCallback(ctx context.Context, b *bot.Bot, callback *models.CallbackQuery) {
+	userID := callback.From.ID
+	chatID := callback.Message.Message.Chat.ID
+	data := callback.Data
+
+	// Answer callback query to remove loading state
+	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: callback.ID,
+	})
+
+	// Delete the conflict message
+	if callback.Message.Message != nil {
+		_, _ = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: callback.Message.Message.ID,
+		})
+	}
+
+	if data == "session_conflict:continue" {
+		// User wants to continue the existing session
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "✅ Продолжаем предыдущую сессию. Отправьте следующее сообщение.",
+		})
+		h.logger.Info("user chose to continue existing session", "user_id", userID)
+		return
+	}
+
+	if strings.HasPrefix(data, "session_conflict:restart:") {
+		// User wants to restart with a new session
+		sessionType := strings.TrimPrefix(data, "session_conflict:restart:")
+
+		// Delete the old session
+		if err := h.eventCreationFSM.storage.Delete(ctx, userID); err != nil {
+			h.logger.Error("failed to delete old session", "user_id", userID, "error", err)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Ошибка при завершении предыдущей сессии.",
+			})
+			return
+		}
+
+		h.logger.Info("old session deleted, starting new session", "user_id", userID, "new_type", sessionType)
+
+		// Start the new session based on type
+		switch sessionType {
+		case "event_creation":
+			// Recreate the update to call HandleCreateEvent
+			newUpdate := &models.Update{
+				Message: &models.Message{
+					From: &callback.From,
+					Chat: models.Chat{ID: chatID},
+					Text: "/create_event",
+				},
+			}
+			h.HandleCreateEvent(ctx, b, newUpdate)
+
+		case "group_creation":
+			// Recreate the update to call HandleCreateGroup
+			newUpdate := &models.Update{
+				Message: &models.Message{
+					From: &callback.From,
+					Chat: models.Chat{ID: chatID},
+					Text: "/create_group",
+				},
+			}
+			h.HandleCreateGroup(ctx, b, newUpdate)
+
+		case "event_resolution":
+			// Recreate the update to call HandleResolveEvent
+			newUpdate := &models.Update{
+				Message: &models.Message{
+					From: &callback.From,
+					Chat: models.Chat{ID: chatID},
+					Text: "/resolve_event",
+				},
+			}
+			h.HandleResolveEvent(ctx, b, newUpdate)
+
+		default:
+			h.logger.Error("unknown session type for restart", "type", sessionType)
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "❌ Неизвестный тип сессии.",
+			})
+		}
+	}
 }
 
 // HandleStart handles the /start command
@@ -928,10 +1019,66 @@ func (h *BotHandler) HandlePollAnswer(ctx context.Context, b *bot.Bot, update *m
 	}
 }
 
+// checkConflictingSession checks if user has an active session of a different type
+// Returns the conflicting session type name or empty string if no conflict
+func (h *BotHandler) checkConflictingSession(ctx context.Context, userID int64, requestedType string) (string, error) {
+	state, _, err := h.eventCreationFSM.storage.Get(ctx, userID)
+	if err != nil {
+		if err == storage.ErrSessionNotFound || err == storage.ErrSessionExpired {
+			return "", nil
+		}
+		return "", err
+	}
+
+	// Check which FSM owns this state
+	switch state {
+	case StateSelectGroup, StateAskQuestion, StateAskEventType, StateAskOptions, StateAskDeadline, StateConfirm, StateComplete:
+		if requestedType != "event_creation" {
+			return "создания события", nil
+		}
+	case StateGroupAskName, StateGroupAskChatID, StateGroupComplete:
+		if requestedType != "group_creation" {
+			return "создания группы", nil
+		}
+	case StateResolveSelectEvent, StateResolveSelectOption, StateResolveComplete:
+		if requestedType != "event_resolution" {
+			return "завершения события", nil
+		}
+	}
+
+	return "", nil
+}
+
 // HandleCreateEvent handles the /create_event command (multi-step conversation)
 func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *models.Update) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
+
+	// Check for conflicting sessions
+	conflictType, err := h.checkConflictingSession(ctx, userID, "event_creation")
+	if err != nil {
+		h.logger.Error("failed to check conflicting session", "user_id", userID, "error", err)
+	} else if conflictType != "" {
+		// User has an active session of a different type
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{Text: "✅ Продолжить предыдущую", CallbackData: "session_conflict:continue"},
+				},
+				{
+					{Text: "🔄 Завершить и начать новую", CallbackData: "session_conflict:restart:event_creation"},
+				},
+			},
+		}
+
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text: fmt.Sprintf("⚠️ У вас уже есть активная сессия %s.\n\n"+
+				"Что вы хотите сделать?", conflictType),
+			ReplyMarkup: kb,
+		})
+		return
+	}
 
 	// Admins are exempt from participation requirement
 	if !h.isAdmin(userID) {
@@ -1071,6 +1218,12 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 	userID := callback.From.ID
 	data := callback.Data
 
+	// Handle session conflict resolution callbacks
+	if strings.HasPrefix(data, "session_conflict:") {
+		h.handleSessionConflictCallback(ctx, b, callback)
+		return
+	}
+
 	// Check if this is an event creation FSM callback (group selection, event_type selection or confirmation)
 	if strings.HasPrefix(data, "select_group:") || strings.HasPrefix(data, "event_type:") || strings.HasPrefix(data, "confirm:") {
 		// Check if user has active FSM session
@@ -1138,6 +1291,32 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
 
+	// Check for conflicting sessions
+	conflictType, err := h.checkConflictingSession(ctx, userID, "event_resolution")
+	if err != nil {
+		h.logger.Error("failed to check conflicting session", "user_id", userID, "error", err)
+	} else if conflictType != "" {
+		// User has an active session of a different type
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{Text: "✅ Продолжить предыдущую", CallbackData: "session_conflict:continue"},
+				},
+				{
+					{Text: "🔄 Завершить и начать новую", CallbackData: "session_conflict:restart:event_resolution"},
+				},
+			},
+		}
+
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text: fmt.Sprintf("⚠️ У вас уже есть активная сессия %s.\n\n"+
+				"Что вы хотите сделать?", conflictType),
+			ReplyMarkup: kb,
+		})
+		return
+	}
+
 	// Start FSM session for user
 	if err := h.eventResolutionFSM.Start(ctx, userID, chatID); err != nil {
 		h.logger.Error("failed to start resolution FSM session", "user_id", userID, "error", err)
@@ -1150,7 +1329,6 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 
 	// Get all groups where user has access (admin sees all, others see their groups)
 	var groups []*domain.Group
-	var err error
 	if h.isAdmin(userID) {
 		groups, err = h.groupRepo.GetAllGroups(ctx)
 	} else {
@@ -1391,6 +1569,32 @@ func (h *BotHandler) HandleCreateGroup(ctx context.Context, b *bot.Bot, update *
 
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
+
+	// Check for conflicting sessions
+	conflictType, err := h.checkConflictingSession(ctx, userID, "group_creation")
+	if err != nil {
+		h.logger.Error("failed to check conflicting session", "user_id", userID, "error", err)
+	} else if conflictType != "" {
+		// User has an active session of a different type
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{Text: "✅ Продолжить предыдущую", CallbackData: "session_conflict:continue"},
+				},
+				{
+					{Text: "🔄 Завершить и начать новую", CallbackData: "session_conflict:restart:group_creation"},
+				},
+			},
+		}
+
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text: fmt.Sprintf("⚠️ У вас уже есть активная сессия %s.\n\n"+
+				"Что вы хотите сделать?", conflictType),
+			ReplyMarkup: kb,
+		})
+		return
+	}
 
 	// Start FSM session for user
 	if err := h.groupCreationFSM.Start(ctx, userID, chatID); err != nil {

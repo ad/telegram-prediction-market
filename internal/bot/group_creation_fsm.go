@@ -71,14 +71,21 @@ func (f *GroupCreationFSM) Start(ctx context.Context, userID int64, chatID int64
 
 // HasSession checks if user has an active FSM session
 func (f *GroupCreationFSM) HasSession(ctx context.Context, userID int64) (bool, error) {
-	_, _, err := f.storage.Get(ctx, userID)
+	state, _, err := f.storage.Get(ctx, userID)
 	if err != nil {
 		if err == storage.ErrSessionNotFound {
 			return false, nil
 		}
 		return false, err
 	}
-	return true, nil
+
+	// Only return true if the state is a group creation state
+	switch state {
+	case StateGroupAskName, StateGroupAskChatID, StateGroupComplete:
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 // HandleMessage processes text messages for the group creation flow

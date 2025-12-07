@@ -82,14 +82,21 @@ func (f *EventResolutionFSM) Start(ctx context.Context, userID int64, chatID int
 
 // HasSession checks if user has an active FSM session
 func (f *EventResolutionFSM) HasSession(ctx context.Context, userID int64) (bool, error) {
-	_, _, err := f.storage.Get(ctx, userID)
+	state, _, err := f.storage.Get(ctx, userID)
 	if err != nil {
 		if err == storage.ErrSessionNotFound {
 			return false, nil
 		}
 		return false, err
 	}
-	return true, nil
+
+	// Only return true if the state is an event resolution state
+	switch state {
+	case StateResolveSelectEvent, StateResolveSelectOption, StateResolveComplete:
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 // HandleCallback processes callback queries for the resolution flow
