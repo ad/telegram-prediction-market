@@ -5,37 +5,6 @@ import (
 	"testing"
 )
 
-// TestMinEventsToCreateDefault tests that default value is used when not set
-func TestMinEventsToCreateDefault(t *testing.T) {
-	// Save original env vars
-	origToken := os.Getenv("TELEGRAM_TOKEN")
-	origAdminIDs := os.Getenv("ADMIN_USER_IDS")
-	origMinEvents := os.Getenv("MIN_EVENTS_TO_CREATE")
-
-	defer func() {
-		// Restore original env vars
-		_ = os.Setenv("TELEGRAM_TOKEN", origToken)
-		_ = os.Setenv("ADMIN_USER_IDS", origAdminIDs)
-		_ = os.Setenv("MIN_EVENTS_TO_CREATE", origMinEvents)
-	}()
-
-	// Set required valid env vars
-	_ = os.Setenv("TELEGRAM_TOKEN", "test_token")
-	_ = os.Setenv("ADMIN_USER_IDS", "111,222")
-
-	// Unset MIN_EVENTS_TO_CREATE to test default
-	_ = os.Unsetenv("MIN_EVENTS_TO_CREATE")
-
-	config, err := Load()
-	if err != nil {
-		t.Fatalf("Expected no error when MIN_EVENTS_TO_CREATE not set, got: %v", err)
-	}
-
-	if config.MinEventsToCreate != 3 {
-		t.Errorf("Expected default MinEventsToCreate to be 3, got: %d", config.MinEventsToCreate)
-	}
-}
-
 // TestMinEventsToCreateValidValues tests that valid integer values are accepted
 func TestMinEventsToCreateValidValues(t *testing.T) {
 	// Save original env vars

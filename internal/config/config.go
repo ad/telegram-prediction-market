@@ -24,6 +24,7 @@ type Config struct {
 	MinEventsToCreate     int    `json:"MIN_EVENTS_TO_CREATE"`
 	MaxGroupsPerAdmin     int    `json:"MAX_GROUPS_PER_ADMIN"`
 	MaxMembershipsPerUser int    `json:"MAX_MEMBERSHIPS_PER_USER"`
+	IDEncodingAlphabet    string `json:"ID_ENCODING_ALPHABET"`
 }
 
 // Load loads configuration from environment variables
@@ -37,6 +38,7 @@ func Load() (*Config, error) {
 		MinEventsToCreate:     lookupEnvOrInt("MIN_EVENTS_TO_CREATE", 0),
 		MaxGroupsPerAdmin:     lookupEnvOrInt("MAX_GROUPS_PER_ADMIN", 0),
 		MaxMembershipsPerUser: lookupEnvOrInt("MAX_MEMBERSHIPS_PER_USER", 0),
+		IDEncodingAlphabet:    os.Getenv("ID_ENCODING_ALPHABET"),
 	}
 
 	if _, err := os.Stat(ConfigFileName); err == nil {
@@ -94,6 +96,11 @@ func Load() (*Config, error) {
 		config.MaxMembershipsPerUser = 20
 	}
 
+	// Load ID encoding alphabet (default to base62)
+	if config.IDEncodingAlphabet == "" {
+		config.IDEncodingAlphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	}
+
 	return &Config{
 		TelegramToken:         config.TelegramToken,
 		AdminUserIDs:          adminIDs,
@@ -103,6 +110,7 @@ func Load() (*Config, error) {
 		MinEventsToCreate:     config.MinEventsToCreate,
 		MaxGroupsPerAdmin:     config.MaxGroupsPerAdmin,
 		MaxMembershipsPerUser: config.MaxMembershipsPerUser,
+		IDEncodingAlphabet:    config.IDEncodingAlphabet,
 	}, nil
 }
 

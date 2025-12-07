@@ -1,5 +1,5 @@
 {
-  "version": "0.1.2",
+  "version": "0.1.3",
   "name": "telegram-prediction-market",
   "slug": "telegram-prediction-market",
   "description": "",
@@ -20,7 +20,8 @@
     "TIMEZONE": "UTC",
     "MIN_EVENTS_TO_CREATE": 3,
     "MAX_GROUPS_PER_ADMIN": 10,
-    "MAX_MEMBERSHIPS_PER_USER": 20
+    "MAX_MEMBERSHIPS_PER_USER": 20,
+    "ID_ENCODING_ALPHABET": "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
   },
   "schema": {
     "TELEGRAM_TOKEN": "str",
@@ -30,6 +31,7 @@
     "TIMEZONE": "str",
     "MIN_EVENTS_TO_CREATE": "int",
     "MAX_GROUPS_PER_ADMIN": "int",
-    "MAX_MEMBERSHIPS_PER_USER": "int"
+    "MAX_MEMBERSHIPS_PER_USER": "int",
+    "ID_ENCODING_ALPHABET": "str"
   }
 }

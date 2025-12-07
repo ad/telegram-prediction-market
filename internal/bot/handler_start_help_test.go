@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/encoding"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
 	"github.com/leanovate/gopter"
@@ -222,15 +223,19 @@ func TestUnifiedStartCommand(t *testing.T) {
 	// Since we can't easily mock the bot, we test the logic separately
 
 	// Test deep-link parsing
-	deepLinkService := domain.NewDeepLinkService("testbot")
+	encoder, err := encoding.NewBaseNEncoder("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	if err != nil {
+		t.Fatalf("Failed to create encoder: %v", err)
+	}
+	deepLinkService := domain.NewDeepLinkService("testbot", encoder)
 
 	// Test valid deep-link
-	groupID, err := deepLinkService.ParseGroupIDFromStart("group_123")
+	groupID, err := deepLinkService.ParseGroupIDFromStart("group_1")
 	if err != nil {
 		t.Errorf("Failed to parse valid deep-link: %v", err)
 	}
-	if groupID != 123 {
-		t.Errorf("Expected group ID 123, got %d", groupID)
+	if groupID != 1 {
+		t.Errorf("Expected group ID 1, got %d", groupID)
 	}
 
 	// Test invalid deep-link

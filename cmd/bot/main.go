@@ -11,6 +11,7 @@ import (
 	"github.com/ad/gitelegram-prediction-market/internal/bot"
 	"github.com/ad/gitelegram-prediction-market/internal/config"
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/encoding"
 	"github.com/ad/gitelegram-prediction-market/internal/logger"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
@@ -137,8 +138,16 @@ func main() {
 	}
 	log.Info("Bot info retrieved", "username", botInfo.Username)
 
+	// Create ID encoder for deep-link service
+	idEncoder, err := encoding.NewBaseNEncoder(cfg.IDEncodingAlphabet)
+	if err != nil {
+		log.Error("Failed to create ID encoder", "error", err)
+		os.Exit(1)
+	}
+	log.Info("ID encoder created", "alphabet_length", len(cfg.IDEncodingAlphabet))
+
 	// Create deep-link service
-	deepLinkService := domain.NewDeepLinkService(botInfo.Username)
+	deepLinkService := domain.NewDeepLinkService(botInfo.Username, idEncoder)
 	log.Info("Deep-link service created")
 
 	// Create notification service
@@ -236,7 +245,7 @@ func main() {
 		b.Start(ctx)
 	}()
 
-	log.Info("Bot is running. Press Ctrl+C to stop.")
+	log.Info("Bot is running.")
 
 	// Wait for shutdown signal
 	<-ctx.Done()

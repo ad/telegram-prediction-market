@@ -1129,7 +1129,15 @@ func (h *BotHandler) handleCreateGroupInput(ctx context.Context, b *bot.Bot, upd
 	h.logAdminAction(userID, "create_group", group.ID, fmt.Sprintf("Created group: %s (chat ID: %d)", session.groupName, telegramChatID))
 
 	// Generate deep-link
-	deepLink := h.deepLinkService.GenerateGroupInviteLink(group.ID)
+	deepLink, err := h.deepLinkService.GenerateGroupInviteLink(group.ID)
+	if err != nil {
+		h.logger.Error("failed to generate deep-link", "error", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "❌ Ошибка при создании ссылки для приглашения",
+		})
+		return
+	}
 
 	// Send success message
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -1672,7 +1680,11 @@ func (h *BotHandler) HandleListGroups(ctx context.Context, b *bot.Bot, update *m
 		}
 
 		// Generate deep-link
-		deepLink := h.deepLinkService.GenerateGroupInviteLink(group.ID)
+		deepLink, err := h.deepLinkService.GenerateGroupInviteLink(group.ID)
+		if err != nil {
+			h.logger.Error("failed to generate deep-link", "group_id", group.ID, "error", err)
+			deepLink = "ошибка генерации ссылки"
+		}
 
 		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, group.Name))
 		sb.WriteString(fmt.Sprintf("   👥 Участников: %d\n", activeCount))

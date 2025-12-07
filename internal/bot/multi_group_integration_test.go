@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/encoding"
 	"github.com/ad/gitelegram-prediction-market/internal/logger"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
@@ -62,7 +63,11 @@ func TestIntegration_UserJoiningAndParticipating(t *testing.T) {
 	ratingRepo := storage.NewRatingRepository(queue)
 
 	// Create services
-	deepLinkService := domain.NewDeepLinkService(botUsername)
+	encoder, err := encoding.NewBaseNEncoder("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	if err != nil {
+		t.Fatalf("Failed to create encoder: %v", err)
+	}
+	deepLinkService := domain.NewDeepLinkService(botUsername, encoder)
 	eventManager := domain.NewEventManager(eventRepo, predictionRepo, log)
 	ratingCalculator := domain.NewRatingCalculator(ratingRepo, predictionRepo, eventRepo, log)
 
@@ -103,7 +108,10 @@ func TestIntegration_UserJoiningAndParticipating(t *testing.T) {
 	// Step 2: User joins group via deep-link (simulated)
 	t.Run("User joins group via deep-link", func(t *testing.T) {
 		// Generate deep-link
-		deepLink := deepLinkService.GenerateGroupInviteLink(groupID)
+		deepLink, err := deepLinkService.GenerateGroupInviteLink(groupID)
+		if err != nil {
+			t.Fatalf("Failed to generate deep-link: %v", err)
+		}
 		if deepLink == "" {
 			t.Fatal("Failed to generate deep-link")
 		}
@@ -780,7 +788,11 @@ func TestIntegration_AdminWorkflows(t *testing.T) {
 	achievementRepo := storage.NewAchievementRepository(queue)
 
 	// Create services
-	deepLinkService := domain.NewDeepLinkService(botUsername)
+	encoder, err := encoding.NewBaseNEncoder("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	if err != nil {
+		t.Fatalf("Failed to create encoder: %v", err)
+	}
+	deepLinkService := domain.NewDeepLinkService(botUsername, encoder)
 
 	// Test data
 	adminUserID := int64(99999)
@@ -819,7 +831,10 @@ func TestIntegration_AdminWorkflows(t *testing.T) {
 	// Step 2: Admin generates deep-links
 	t.Run("Admin generates deep-links", func(t *testing.T) {
 		// Generate deep-link for the group
-		deepLink := deepLinkService.GenerateGroupInviteLink(groupID)
+		deepLink, err := deepLinkService.GenerateGroupInviteLink(groupID)
+		if err != nil {
+			t.Fatalf("Failed to generate deep-link: %v", err)
+		}
 		if deepLink == "" {
 			t.Fatal("Failed to generate deep-link")
 		}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ad/gitelegram-prediction-market/internal/config"
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/encoding"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
 	_ "modernc.org/sqlite"
@@ -54,8 +55,12 @@ func TestCreateGroupCommand(t *testing.T) {
 	// Create test config with admin user
 	adminUserID := int64(12345)
 
-	// Create deep link service
-	deepLinkService := domain.NewDeepLinkService("testbot")
+	// Create ID encoder and deep link service
+	encoder, err := encoding.NewBaseNEncoder("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	if err != nil {
+		t.Fatalf("Failed to create encoder: %v", err)
+	}
+	deepLinkService := domain.NewDeepLinkService("testbot", encoder)
 
 	// Create a group directly (simulating the create_group flow)
 	group := &domain.Group{
@@ -65,7 +70,7 @@ func TestCreateGroupCommand(t *testing.T) {
 		CreatedBy:      adminUserID,
 	}
 
-	err := groupRepo.CreateGroup(ctx, group)
+	err = groupRepo.CreateGroup(ctx, group)
 	if err != nil {
 		t.Fatalf("Failed to create group: %v", err)
 	}
@@ -89,7 +94,10 @@ func TestCreateGroupCommand(t *testing.T) {
 	}
 
 	// Verify deep-link can be generated
-	deepLink := deepLinkService.GenerateGroupInviteLink(group.ID)
+	deepLink, err := deepLinkService.GenerateGroupInviteLink(group.ID)
+	if err != nil {
+		t.Fatalf("Failed to generate deep-link: %v", err)
+	}
 	if deepLink == "" {
 		t.Error("Deep-link generation failed")
 	}
