@@ -836,8 +836,7 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 		} else {
 			deadlineStr = "⏰ Дедлайн истёк"
 		}
-		sb.WriteString(deadlineStr + "\n")
-		sb.WriteString("\n───────────────────────────\n\n")
+		sb.WriteString(deadlineStr + "\n\n")
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
