@@ -10,6 +10,7 @@ import (
 
 	"github.com/ad/gitelegram-prediction-market/internal/config"
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/locale"
 	"github.com/ad/gitelegram-prediction-market/internal/logger"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
@@ -108,9 +109,15 @@ func TestProperty_SummaryContentCompleteness(t *testing.T) {
 				Timezone: time.UTC,
 			}
 			log := logger.New(logger.DEBUG)
+			localizer, err := locale.NewLocalizer(context.Background(), locale.NewLocale(locale.En))
+			if err != nil {
+				t.Logf("Failed to create localizer: %v", err)
+				return false
+			}
 			fsm := &EventCreationFSM{
-				config: cfg,
-				logger: log,
+				config:    cfg,
+				logger:    log,
+				localizer: localizer,
 			}
 
 			// Create deadline (always in future)
@@ -133,10 +140,10 @@ func TestProperty_SummaryContentCompleteness(t *testing.T) {
 				return false
 			}
 
-			// Check for event type
-			typePresent := containsString(summary, "Бинарное") ||
-				containsString(summary, "Множественный выбор") ||
-				containsString(summary, "Вероятностное")
+			// Check for event type (English translations)
+			typePresent := containsString(summary, "Binary") ||
+				containsString(summary, "Multiple Choice") ||
+				containsString(summary, "Probability")
 			if !typePresent {
 				t.Logf("Summary missing event type")
 				return false
@@ -1469,9 +1476,15 @@ func TestProperty_DeadlineTimezoneFormatting(t *testing.T) {
 				Timezone: tz,
 			}
 			log := logger.New(logger.DEBUG)
+			localizer, err := locale.NewLocalizer(context.Background(), locale.NewLocale(locale.En))
+			if err != nil {
+				t.Logf("Failed to create localizer: %v", err)
+				return false
+			}
 			fsm := &EventCreationFSM{
-				config: cfg,
-				logger: log,
+				config:    cfg,
+				logger:    log,
+				localizer: localizer,
 			}
 
 			// Create a deadline in UTC
@@ -1518,9 +1531,15 @@ func TestProperty_PollReferenceInSummary(t *testing.T) {
 				Timezone: time.UTC,
 			}
 			log := logger.New(logger.DEBUG)
+			localizer, err := locale.NewLocalizer(context.Background(), locale.NewLocale(locale.En))
+			if err != nil {
+				t.Logf("Failed to create localizer: %v", err)
+				return false
+			}
 			fsm := &EventCreationFSM{
-				config: cfg,
-				logger: log,
+				config:    cfg,
+				logger:    log,
+				localizer: localizer,
 			}
 
 			// Create an event

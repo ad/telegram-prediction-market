@@ -9,6 +9,7 @@ import (
 
 	"github.com/ad/gitelegram-prediction-market/internal/config"
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/locale"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
 	"github.com/go-telegram/bot"
@@ -36,6 +37,7 @@ type BotHandler struct {
 	deepLinkService          *domain.DeepLinkService
 	groupContextResolver     *domain.GroupContextResolver
 	ratingRepo               domain.RatingRepository
+	localizer                locale.Localizer
 }
 
 // NewBotHandler creates a new BotHandler with all dependencies
@@ -59,6 +61,7 @@ func NewBotHandler(
 	deepLinkService *domain.DeepLinkService,
 	groupContextResolver *domain.GroupContextResolver,
 	ratingRepo domain.RatingRepository,
+	localizer locale.Localizer,
 ) *BotHandler {
 	return &BotHandler{
 		bot:                      b,
@@ -80,6 +83,7 @@ func NewBotHandler(
 		deepLinkService:          deepLinkService,
 		groupContextResolver:     groupContextResolver,
 		ratingRepo:               ratingRepo,
+		localizer:                localizer,
 	}
 }
 
@@ -139,7 +143,7 @@ func (h *BotHandler) requireAdmin(ctx context.Context, update *models.Update) bo
 		if update.Message != nil {
 			_, err := h.bot.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
-				Text:   "❌ У вас нет прав для выполнения этой команды.",
+				Text:   h.localizer.MustLocalize(locale.ErrorUnauthorized),
 			})
 			if err != nil {
 				h.logger.Error("failed to send unauthorized message", "error", err)
@@ -201,7 +205,7 @@ func (h *BotHandler) handleSessionConflictCallback(ctx context.Context, b *bot.B
 		// User wants to continue the existing session
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "✅ Продолжаем предыдущую сессию. Отправьте следующее сообщение.",
+			Text:   h.localizer.MustLocalize(locale.SessionContinuePrevious),
 		})
 		h.logger.Info("user chose to continue existing session", "user_id", userID)
 		return
@@ -216,7 +220,7 @@ func (h *BotHandler) handleSessionConflictCallback(ctx context.Context, b *bot.B
 			h.logger.Error("failed to delete old session", "user_id", userID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "❌ Ошибка при завершении предыдущей сессии.",
+				Text:   h.localizer.MustLocalize(locale.SessionErrorDelete),
 			})
 			return
 		}
@@ -262,7 +266,7 @@ func (h *BotHandler) handleSessionConflictCallback(ctx context.Context, b *bot.B
 			h.logger.Error("unknown session type for restart", "type", sessionType)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "❌ Неизвестный тип сессии.",
+				Text:   h.localizer.MustLocalize(locale.SessionErrorUnknown),
 			})
 		}
 	}
@@ -297,57 +301,57 @@ func (h *BotHandler) displayHelp(ctx context.Context, b *bot.Bot, update *models
 	isAdmin := h.isAdmin(userID)
 
 	var helpText strings.Builder
-	helpText.WriteString("🤖 Telegram Prediction Market Bot\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpBotTitle) + "\n\n")
 
 	// User commands section
-	helpText.WriteString("👤 КОМАНДЫ ПОЛЬЗОВАТЕЛЯ\n")
-	helpText.WriteString("  /help — Показать эту справку\n")
-	helpText.WriteString("  /rating — Топ-10 участников по очкам\n")
-	helpText.WriteString("  /my — Ваша статистика и ачивки\n")
-	helpText.WriteString("  /events — Список активных событий\n")
-	helpText.WriteString("  /groups — Ваши группы\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpUserCommands) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandHelp) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandRating) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandMy) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandEvents) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandGroups) + "\n\n")
 
 	// Admin commands section (only for admins)
 	if isAdmin {
-		helpText.WriteString("👑 КОМАНДЫ АДМИНИСТРАТОРА\n")
-		helpText.WriteString("  /create_group — Создать новую группу\n")
-		helpText.WriteString("  /list_groups — Список всех групп с топиками\n")
-		helpText.WriteString("  /group_members — Список участников группы\n")
-		helpText.WriteString("  /remove_member — Удалить участника из группы\n")
-		helpText.WriteString("  /create_event — Создать новое событие\n")
-		helpText.WriteString("  /resolve_event — Завершить событие\n")
-		helpText.WriteString("  /edit_event — Редактировать событие\n\n")
-		helpText.WriteString("💡 В /list_groups можно удалять группы и топики\n\n")
+		helpText.WriteString(h.localizer.MustLocalize(locale.HelpAdminCommands) + "\n")
+		helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandCreateGroup) + "\n")
+		helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandListGroups) + "\n")
+		helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandGroupMembers) + "\n")
+		helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandRemoveMember) + "\n")
+		helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandCreateEvent) + "\n")
+		helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandResolveEvent) + "\n")
+		helpText.WriteString(h.localizer.MustLocalize(locale.HelpCommandEditEvent) + "\n\n")
+		helpText.WriteString(h.localizer.MustLocalize(locale.HelpListGroupsHint) + "\n\n")
 	}
 
 	// Rules and scoring information
-	helpText.WriteString("💰 ПРАВИЛА НАЧИСЛЕНИЯ ОЧКОВ\n")
-	helpText.WriteString("✅ За правильный прогноз:\n")
-	helpText.WriteString("  • Бинарное событие (Да/Нет): +10 очков\n")
-	helpText.WriteString("  • Множественный выбор (3-6 вариантов): +15 очков\n")
-	helpText.WriteString("  • Вероятностное событие: +15 очков\n\n")
-	helpText.WriteString("🎁 Бонусы:\n")
-	helpText.WriteString("  • Меньшинство (<40% голосов): +5 очков\n")
-	helpText.WriteString("  • Ранний голос (первые 12 часов): +3 очка\n")
-	helpText.WriteString("  • Участие в любом событии: +1 очко\n\n")
-	helpText.WriteString("❌ Штрафы:\n")
-	helpText.WriteString("  • Неправильный прогноз: -3 очка\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpScoringRules) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpScoringCorrect) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpScoringBinary) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpScoringMultiOption) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpScoringProbability) + "\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpScoringBonuses) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpScoringMinority) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpScoringEarlyVote) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpScoringParticipation) + "\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpScoringPenalties) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpScoringWrongPrediction) + "\n\n")
 
 	// Achievements
-	helpText.WriteString("🏆 АЧИВКИ\n")
-	helpText.WriteString("🎯 Меткий стрелок → 3 правильных прогноза подряд\n\n")
-	helpText.WriteString("🔮 Провидец → 10 правильных прогнозов подряд\n\n")
-	helpText.WriteString("🎲 Риск-мейкер → 3 правильных прогноза в меньшинстве подряд\n\n")
-	helpText.WriteString("📊 Аналитик недели → Больше всех очков за неделю\n\n")
-	helpText.WriteString("🏆 Старожил → Участие в 50 событиях\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpAchievements) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpAchievementSharpshooter) + "\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpAchievementProphet) + "\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpAchievementRiskTaker) + "\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpAchievementWeeklyAnalyst) + "\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpAchievementVeteran) + "\n\n")
 
 	// Event types
-	helpText.WriteString("🎲 ТИПЫ СОБЫТИЙ\n")
-	helpText.WriteString("1️⃣ Бинарное → Да/Нет вопросы\n\n")
-	helpText.WriteString("2️⃣ Множественный выбор → 2-6 вариантов ответа\n\n")
-	helpText.WriteString("3️⃣ Вероятностное → Диапазоны вероятности (0-25%, 25-50%, 50-75%, 75-100%)\n\n")
-	helpText.WriteString("⏰ Голосуйте до дедлайна!\n")
-	helpText.WriteString("За 24 часа до окончания придёт напоминание 🔔")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpEventTypes) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpEventTypeBinary) + "\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpEventTypeMultiOption) + "\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpEventTypeProbability) + "\n\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpEventVoteReminder) + "\n")
+	helpText.WriteString(h.localizer.MustLocalize(locale.HelpEventDeadlineReminder))
 
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
@@ -369,7 +373,7 @@ func (h *BotHandler) handleDeepLinkJoin(ctx context.Context, b *bot.Bot, update 
 		h.logger.Warn("invalid deep-link parameter", "user_id", userID, "param", startParam, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Неверная ссылка для приглашения. Пожалуйста, запросите новую ссылку у администратора.",
+			Text:   h.localizer.MustLocalize(locale.DeepLinkInvalidLink),
 		})
 		return
 	}
@@ -380,7 +384,7 @@ func (h *BotHandler) handleDeepLinkJoin(ctx context.Context, b *bot.Bot, update 
 		h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при проверке группы. Попробуйте позже.",
+			Text:   h.localizer.MustLocalize(locale.DeepLinkErrorCheck),
 		})
 		return
 	}
@@ -389,7 +393,7 @@ func (h *BotHandler) handleDeepLinkJoin(ctx context.Context, b *bot.Bot, update 
 		h.logger.Warn("group not found", "group_id", groupID, "user_id", userID)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Группа не найдена. Возможно, она была удалена.",
+			Text:   h.localizer.MustLocalize(locale.DeepLinkGroupNotFound),
 		})
 		return
 	}
@@ -400,7 +404,7 @@ func (h *BotHandler) handleDeepLinkJoin(ctx context.Context, b *bot.Bot, update 
 		h.logger.Error("failed to check membership", "group_id", groupID, "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при проверке членства. Попробуйте позже.",
+			Text:   h.localizer.MustLocalize(locale.DeepLinkErrorMembership),
 		})
 		return
 	}
@@ -409,7 +413,7 @@ func (h *BotHandler) handleDeepLinkJoin(ctx context.Context, b *bot.Bot, update 
 	if existingMembership != nil && existingMembership.Status == domain.MembershipStatusActive {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   fmt.Sprintf("ℹ️ Вы уже являетесь участником группы \"%s\".", group.Name),
+			Text:   h.localizer.MustLocalizeWithTemplate(locale.DeepLinkAlreadyMember, group.Name),
 		})
 		return
 	}
@@ -421,14 +425,14 @@ func (h *BotHandler) handleDeepLinkJoin(ctx context.Context, b *bot.Bot, update 
 			h.logger.Error("failed to reactivate membership", "group_id", groupID, "user_id", userID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "❌ Ошибка при восстановлении членства. Попробуйте позже.",
+				Text:   h.localizer.MustLocalize(locale.DeepLinkErrorReactivate),
 			})
 			return
 		}
 
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   fmt.Sprintf("✅ Добро пожаловать обратно в группу \"%s\"!", group.Name),
+			Text:   h.localizer.MustLocalizeWithTemplate(locale.DeepLinkWelcomeBack, group.Name),
 		})
 		h.logger.Info("membership reactivated", "group_id", groupID, "user_id", userID)
 		return
@@ -446,7 +450,7 @@ func (h *BotHandler) handleDeepLinkJoin(ctx context.Context, b *bot.Bot, update 
 		h.logger.Error("membership validation failed", "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка валидации членства.",
+			Text:   h.localizer.MustLocalize(locale.DeepLinkErrorValidation),
 		})
 		return
 	}
@@ -455,7 +459,7 @@ func (h *BotHandler) handleDeepLinkJoin(ctx context.Context, b *bot.Bot, update 
 		h.logger.Error("failed to create membership", "group_id", groupID, "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при создании членства. Попробуйте позже.",
+			Text:   h.localizer.MustLocalize(locale.DeepLinkErrorCreate),
 		})
 		return
 	}
@@ -493,10 +497,7 @@ func (h *BotHandler) handleDeepLinkJoin(ctx context.Context, b *bot.Bot, update 
 	// Send welcome message
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
-		Text: fmt.Sprintf("✅ Добро пожаловать в группу \"%s\"!\n\n"+
-			"Теперь вы можете участвовать в событиях этой группы.\n"+
-			"Используйте /events для просмотра активных событий.",
-			group.Name),
+		Text:   h.localizer.MustLocalizeWithTemplate(locale.DeepLinkWelcome, group.Name),
 	})
 	if err != nil {
 		h.logger.Error("failed to send welcome message", "error", err)
@@ -516,22 +517,21 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 		if err == domain.ErrNoGroupMembership {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text: "❌ Вы не состоите ни в одной группе.\n\n" +
-					"Чтобы присоединиться к группе, попросите администратора отправить вам ссылку-приглашение.",
+				Text:   h.localizer.MustLocalize(locale.GroupContextNoMembership),
 			})
 			return
 		}
 		if err == domain.ErrMultipleGroupsNeedChoice {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "❌ Вы состоите в нескольких группах. Пожалуйста, используйте команду /groups для просмотра ваших групп.",
+				Text:   h.localizer.MustLocalize(locale.GroupContextMultipleGroups),
 			})
 			return
 		}
 		h.logger.Error("failed to resolve group context", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при определении группы.",
+			Text:   h.localizer.MustLocalize(locale.ErrorGeneric),
 		})
 		return
 	}
@@ -542,7 +542,7 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 		h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при получении информации о группе.",
+			Text:   h.localizer.MustLocalize(locale.ErrorGeneric),
 		})
 		return
 	}
@@ -553,7 +553,7 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 		h.logger.Error("failed to get top ratings", "group_id", groupID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при получении рейтинга.",
+			Text:   h.localizer.MustLocalize(locale.ErrorGeneric),
 		})
 		return
 	}
@@ -561,15 +561,15 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 	if len(ratings) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   fmt.Sprintf("📊 Рейтинг группы \"%s\" пока пуст. Начните делать прогнозы!", group.Name),
+			Text:   h.localizer.MustLocalize(locale.RatingEmpty),
 		})
 		return
 	}
 
 	// Build rating message
 	var sb strings.Builder
-	sb.WriteString("🏆 ТОП-10 УЧАСТНИКОВ\n")
-	sb.WriteString(fmt.Sprintf("📍 Группа: %s\n\n", group.Name))
+	sb.WriteString(h.localizer.MustLocalize(locale.RatingTop10Title) + "\n")
+	sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.RatingGroupName, group.Name) + "\n\n")
 
 	medals := []string{"🥇", "🥈", "🥉"}
 	for i, rating := range ratings {
@@ -594,11 +594,11 @@ func (h *BotHandler) HandleRating(ctx context.Context, b *bot.Bot, update *model
 			displayName = fmt.Sprintf("@%s", displayName)
 		}
 
-		sb.WriteString(fmt.Sprintf("%s%s — %d очков\n", medal, displayName, rating.Score))
-		sb.WriteString(fmt.Sprintf("     📊 Точность: %.1f%%\n", accuracy))
-		sb.WriteString(fmt.Sprintf("     🔥 Серия: %d\n", rating.Streak))
-		sb.WriteString(fmt.Sprintf("     ✅ %d\n", rating.CorrectCount))
-		sb.WriteString(fmt.Sprintf("     ❌ %d\n\n", rating.WrongCount))
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.RatingUserPoints, medal, displayName, fmt.Sprintf("%d", rating.Score)) + "\n")
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.RatingUserAccuracy, fmt.Sprintf("%.1f", accuracy)) + "\n")
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.RatingUserStreak, fmt.Sprintf("%d", rating.Streak)) + "\n")
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.RatingUserCorrect, fmt.Sprintf("%d", rating.CorrectCount)) + "\n")
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.RatingUserWrong, fmt.Sprintf("%d", rating.WrongCount)) + "\n\n")
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -621,22 +621,21 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 		if err == domain.ErrNoGroupMembership {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text: "❌ Вы не состоите ни в одной группе.\n\n" +
-					"Чтобы присоединиться к группе, попросите администратора отправить вам ссылку-приглашение.",
+				Text:   h.localizer.MustLocalize(locale.GroupContextNoMembership),
 			})
 			return
 		}
 		if err == domain.ErrMultipleGroupsNeedChoice {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "❌ Вы состоите в нескольких группах. Пожалуйста, используйте команду /groups для просмотра ваших групп.",
+				Text:   h.localizer.MustLocalize(locale.GroupContextMultipleGroups),
 			})
 			return
 		}
 		h.logger.Error("failed to resolve group context", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при определении группы.",
+			Text:   h.localizer.MustLocalize(locale.ErrorGeneric),
 		})
 		return
 	}
@@ -647,7 +646,7 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 		h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при получении информации о группе.",
+			Text:   h.localizer.MustLocalize(locale.ErrorGeneric),
 		})
 		return
 	}
@@ -658,7 +657,7 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 		h.logger.Error("failed to get user rating", "user_id", userID, "group_id", groupID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при получении статистики.",
+			Text:   h.localizer.MustLocalize(locale.ErrorGeneric),
 		})
 		return
 	}
@@ -672,8 +671,8 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 
 	// Build stats message
 	var sb strings.Builder
-	sb.WriteString("📊 ВАША СТАТИСТИКА\n")
-	sb.WriteString(fmt.Sprintf("📍 Группа: %s\n\n", group.Name))
+	sb.WriteString(h.localizer.MustLocalize(locale.MyStatsTitle2) + "\n")
+	sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.MyStatsGroupName, group.Name) + "\n\n")
 
 	total := rating.CorrectCount + rating.WrongCount
 	accuracy := 0.0
@@ -681,22 +680,22 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 		accuracy = float64(rating.CorrectCount) / float64(total) * 100
 	}
 
-	sb.WriteString(fmt.Sprintf("💰 Очки: %d\n", rating.Score))
-	sb.WriteString(fmt.Sprintf("✅ Правильных: %d\n", rating.CorrectCount))
-	sb.WriteString(fmt.Sprintf("❌ Неправильных: %d\n", rating.WrongCount))
-	sb.WriteString(fmt.Sprintf("📈 Точность: %.1f%%\n", accuracy))
-	sb.WriteString(fmt.Sprintf("🔥 Текущая серия: %d\n", rating.Streak))
-	sb.WriteString(fmt.Sprintf("📝 Всего прогнозов: %d\n\n", total))
+	sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.MyStatsPoints2, fmt.Sprintf("%d", rating.Score)) + "\n")
+	sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.MyStatsCorrect2, fmt.Sprintf("%d", rating.CorrectCount)) + "\n")
+	sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.MyStatsWrong2, fmt.Sprintf("%d", rating.WrongCount)) + "\n")
+	sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.MyStatsAccuracy2, fmt.Sprintf("%.1f", accuracy)) + "\n")
+	sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.MyStatsCurrentStreak, fmt.Sprintf("%d", rating.Streak)) + "\n")
+	sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.MyStatsTotalPreds, fmt.Sprintf("%d", total)) + "\n\n")
 
 	// Add achievements
 	if len(achievements) > 0 {
-		sb.WriteString("🏆 ВАШИ АЧИВКИ\n")
+		sb.WriteString(h.localizer.MustLocalize(locale.MyStatsAchievements) + "\n")
 		achievementNames := map[domain.AchievementCode]string{
-			domain.AchievementSharpshooter:  "🎯 Меткий стрелок",
-			domain.AchievementProphet:       "🔮 Провидец",
-			domain.AchievementRiskTaker:     "🎲 Риск-мейкер",
-			domain.AchievementWeeklyAnalyst: "📊 Аналитик недели",
-			domain.AchievementVeteran:       "🏆 Старожил",
+			domain.AchievementSharpshooter:  h.localizer.MustLocalize(locale.AchievementSharpshooterName),
+			domain.AchievementProphet:       h.localizer.MustLocalize(locale.AchievementProphetName),
+			domain.AchievementRiskTaker:     h.localizer.MustLocalize(locale.AchievementRiskTakerName),
+			domain.AchievementWeeklyAnalyst: h.localizer.MustLocalize(locale.AchievementWeeklyAnalystName),
+			domain.AchievementVeteran:       h.localizer.MustLocalize(locale.AchievementVeteranName),
 		}
 		for _, ach := range achievements {
 			name := achievementNames[ach.Code]
@@ -706,8 +705,8 @@ func (h *BotHandler) HandleMy(ctx context.Context, b *bot.Bot, update *models.Up
 			sb.WriteString(fmt.Sprintf("  • %s\n", name))
 		}
 	} else {
-		sb.WriteString("🏆 АЧИВКИ\n")
-		sb.WriteString("Пока нет. Продолжайте делать прогнозы!")
+		sb.WriteString(h.localizer.MustLocalize(locale.MyStatsAchievements) + "\n")
+		sb.WriteString(h.localizer.MustLocalize(locale.MyStatsNoAchievements2))
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -730,7 +729,7 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 		h.logger.Error("failed to get user groups", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при получении списка групп.",
+			Text:   h.localizer.MustLocalize(locale.ErrorGeneric),
 		})
 		return
 	}
@@ -738,8 +737,7 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 	if len(groups) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text: "❌ Вы не состоите ни в одной группе.\n\n" +
-				"Чтобы присоединиться к группе, попросите администратора отправить вам ссылку-приглашение.",
+			Text:   h.localizer.MustLocalize(locale.GroupContextNoMembership),
 		})
 		return
 	}
@@ -760,36 +758,36 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 	if len(allEvents) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "📋 Нет активных событий в ваших группах. Ожидайте новых!",
+			Text:   h.localizer.MustLocalize(locale.EventsNoActive),
 		})
 		return
 	}
 
 	// Build events list message
 	var sb strings.Builder
-	sb.WriteString("📋 АКТИВНЫЕ СОБЫТИЯ\n\n")
+	sb.WriteString(h.localizer.MustLocalize(locale.EventsActiveTitle) + "\n\n")
 
 	for i, event := range allEvents {
 		// Include group name for context
 		groupName := groupNames[event.GroupID]
-		sb.WriteString(fmt.Sprintf("▸ %d. %s\n", i+1, event.Question))
-		sb.WriteString(fmt.Sprintf("📍 Группа: %s\n\n", groupName))
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.EventsItemNumber, fmt.Sprintf("%d", i+1), event.Question) + "\n")
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.EventsItemGroup, groupName) + "\n\n")
 
 		// Event type
 		typeStr := ""
 		typeIcon := ""
 		switch event.EventType {
 		case domain.EventTypeBinary:
-			typeStr = "Бинарное"
-			typeIcon = "1️⃣"
+			typeStr = h.localizer.MustLocalize(locale.EventTypeBinaryLabel)
+			typeIcon = h.localizer.MustLocalize(locale.EventTypeBinaryIcon)
 		case domain.EventTypeMultiOption:
-			typeStr = "Множественный выбор"
-			typeIcon = "2️⃣"
+			typeStr = h.localizer.MustLocalize(locale.EventTypeMultiOptionLabel)
+			typeIcon = h.localizer.MustLocalize(locale.EventTypeMultiOptionIcon)
 		case domain.EventTypeProbability:
-			typeStr = "Вероятностное"
-			typeIcon = "3️⃣"
+			typeStr = h.localizer.MustLocalize(locale.EventTypeProbabilityLabel)
+			typeIcon = h.localizer.MustLocalize(locale.EventTypeProbabilityIcon)
 		}
-		sb.WriteString(fmt.Sprintf("%s Тип: %s\n", typeIcon, typeStr))
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.EventsItemType, typeIcon, typeStr) + "\n")
 
 		// Get vote distribution for this event
 		predictions, err := h.predictionRepo.GetPredictionsByEvent(ctx, event.ID)
@@ -803,7 +801,7 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 		totalVotes := len(predictions)
 
 		// Options with vote percentages
-		sb.WriteString("\n📊 Варианты:\n")
+		sb.WriteString("\n" + h.localizer.MustLocalize(locale.EventsItemOptions) + "\n")
 		for j, opt := range event.Options {
 			percentage := voteDistribution[j]
 			// Create a simple progress bar
@@ -814,7 +812,7 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 			bar := strings.Repeat("▰", barLength) + strings.Repeat("▱", 10-barLength)
 			sb.WriteString(fmt.Sprintf("  %d) %s\n     %s %.1f%%\n", j+1, opt, bar, percentage))
 		}
-		sb.WriteString(fmt.Sprintf("\n👥 Всего проголосовало: %d\n", totalVotes))
+		sb.WriteString("\n" + h.localizer.MustLocalizeWithTemplate(locale.EventsItemVotes, fmt.Sprintf("%d", totalVotes)) + "\n")
 
 		// Deadline
 		timeUntil := time.Until(event.Deadline)
@@ -824,17 +822,17 @@ func (h *BotHandler) HandleEvents(ctx context.Context, b *bot.Bot, update *model
 			minutes := int(timeUntil.Minutes()) % 60
 			if hours > 24 {
 				days := hours / 24
-				deadlineStr = fmt.Sprintf("⏰ Осталось: %d дн. %d ч.", days, hours%24)
+				deadlineStr = h.localizer.MustLocalizeWithTemplate(locale.EventsItemTimeRemainingDays, fmt.Sprintf("%d", days), fmt.Sprintf("%d", hours%24))
 			} else if hours > 0 {
-				deadlineStr = fmt.Sprintf("⏰ Осталось: %d ч. %d мин.", hours, minutes)
+				deadlineStr = h.localizer.MustLocalizeWithTemplate(locale.EventsItemTimeRemainingHours, fmt.Sprintf("%d", hours), fmt.Sprintf("%d", minutes))
 			} else {
-				deadlineStr = fmt.Sprintf("⏰ Осталось: %d мин.", minutes)
+				deadlineStr = h.localizer.MustLocalizeWithTemplate(locale.EventsItemTimeRemainingMinutes, fmt.Sprintf("%d", minutes))
 			}
 			// Show deadline in local timezone
 			localDeadline := event.Deadline.In(h.config.Timezone)
-			deadlineStr += fmt.Sprintf(" (до %s)", localDeadline.Format("02.01 15:04"))
+			deadlineStr += h.localizer.MustLocalizeWithTemplate(locale.EventsItemDeadlineFormat, localDeadline.Format("02.01 15:04"))
 		} else {
-			deadlineStr = "⏰ Дедлайн истёк"
+			deadlineStr = h.localizer.MustLocalize(locale.EventsItemDeadlineExpired)
 		}
 		sb.WriteString(deadlineStr + "\n\n")
 	}
@@ -1037,15 +1035,15 @@ func (h *BotHandler) checkConflictingSession(ctx context.Context, userID int64, 
 	switch state {
 	case StateSelectGroup, StateAskQuestion, StateAskEventType, StateAskOptions, StateAskDeadline, StateConfirm, StateComplete:
 		if requestedType != "event_creation" {
-			return "создания события", nil
+			return h.localizer.MustLocalize(locale.SessionTypeEventCreation), nil
 		}
 	case StateGroupAskName, StateGroupAskChatID, StateGroupComplete:
 		if requestedType != "group_creation" {
-			return "создания группы", nil
+			return h.localizer.MustLocalize(locale.SessionTypeGroupCreation), nil
 		}
 	case StateResolveSelectEvent, StateResolveSelectOption, StateResolveComplete:
 		if requestedType != "event_resolution" {
-			return "завершения события", nil
+			return h.localizer.MustLocalize(locale.SessionTypeEventResolution), nil
 		}
 	}
 
@@ -1066,18 +1064,17 @@ func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *
 		kb := &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					{Text: "✅ Продолжить предыдущую", CallbackData: "session_conflict:continue"},
+					{Text: h.localizer.MustLocalize(locale.SessionConflictContinueButton), CallbackData: "session_conflict:continue"},
 				},
 				{
-					{Text: "🔄 Завершить и начать новую", CallbackData: "session_conflict:restart:event_creation"},
+					{Text: h.localizer.MustLocalize(locale.SessionConflictRestartButton), CallbackData: "session_conflict:restart:event_creation"},
 				},
 			},
 		}
 
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text: fmt.Sprintf("⚠️ У вас уже есть активная сессия %s.\n\n"+
-				"Что вы хотите сделать?", conflictType),
+			ChatID:      chatID,
+			Text:        h.localizer.MustLocalizeWithTemplate(locale.SessionConflictWarning, conflictType),
 			ReplyMarkup: kb,
 		})
 		return
@@ -1091,7 +1088,7 @@ func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *
 			h.logger.Error("failed to get user groups", "user_id", userID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "❌ Ошибка при проверке прав доступа. Попробуйте позже.",
+				Text:   h.localizer.MustLocalize(locale.EventResolutionErrorPermissionCheckRetry),
 			})
 			return
 		}
@@ -1099,8 +1096,7 @@ func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *
 		if len(groups) == 0 {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text: "❌ Вы не состоите ни в одной группе.\n\n" +
-					"Чтобы присоединиться к группе, попросите администратора отправить вам ссылку-приглашение.",
+				Text:   h.localizer.MustLocalize(locale.EventCreationErrorNoGroups),
 			})
 			return
 		}
@@ -1127,7 +1123,7 @@ func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *
 			// User doesn't have enough participation in any group
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   fmt.Sprintf("❌ Для создания событий нужно участвовать минимум в %d завершенных событиях в группе. Ваше максимальное участие: %d.", h.config.MinEventsToCreate, maxParticipation),
+				Text:   h.localizer.MustLocalizeWithTemplate(locale.EventCreationPermissionDenied, fmt.Sprintf("%d", h.config.MinEventsToCreate), fmt.Sprintf("%d", maxParticipation)),
 			})
 			h.logger.Info("event creation denied due to insufficient participation", "user_id", userID, "max_participation", maxParticipation, "required", h.config.MinEventsToCreate)
 			return
@@ -1141,14 +1137,9 @@ func (h *BotHandler) HandleCreateEvent(ctx context.Context, b *bot.Bot, update *
 		// Provide user-friendly error message based on error type
 		var errorMsg string
 		if err == domain.ErrNoGroupMembership {
-			errorMsg = "❌ Вы не состоите ни в одной группе.\n\n" +
-				"Для создания событий необходимо:\n" +
-				"1️⃣ Добавить бота в группу\n" +
-				"2️⃣ Зарегистрировать группу командой /create_group\n" +
-				"3️⃣ Принять участие в событиях группы\n\n" +
-				"Используйте /help для получения дополнительной информации."
+			errorMsg = h.localizer.MustLocalize(locale.EventCreationErrorNoGroupsHelp)
 		} else {
-			errorMsg = "❌ Ошибка при создании события. Попробуйте позже."
+			errorMsg = h.localizer.MustLocalize(locale.EventCreationErrorStart)
 		}
 
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -1196,7 +1187,7 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 			// Inform user to restart
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
-				Text:   "❌ Произошла ошибка. Пожалуйста, начните заново с /create_group",
+				Text:   h.localizer.MustLocalize(locale.FSMErrorRestartGroup),
 			})
 		}
 		return
@@ -1217,7 +1208,7 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 			// Inform user to restart
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
-				Text:   "❌ Произошла ошибка. Пожалуйста, начните заново с /create_event",
+				Text:   h.localizer.MustLocalize(locale.FSMErrorRestartEvent),
 			})
 		}
 		return
@@ -1235,7 +1226,7 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 			// Inform user to restart
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
-				Text:   "❌ Произошла ошибка. Попробуйте начать заново с /list_groups",
+				Text:   h.localizer.MustLocalize(locale.FSMErrorRestartRename),
 			})
 		}
 		return
@@ -1253,7 +1244,7 @@ func (h *BotHandler) HandleMessage(ctx context.Context, b *bot.Bot, update *mode
 			// Inform user to restart
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
-				Text:   "❌ Произошла ошибка при редактировании события.",
+				Text:   h.localizer.MustLocalize(locale.FSMErrorRestartEdit),
 			})
 		}
 		return
@@ -1436,18 +1427,17 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 		kb := &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					{Text: "✅ Продолжить предыдущую", CallbackData: "session_conflict:continue"},
+					{Text: h.localizer.MustLocalize(locale.SessionConflictContinueButton), CallbackData: "session_conflict:continue"},
 				},
 				{
-					{Text: "🔄 Завершить и начать новую", CallbackData: "session_conflict:restart:event_resolution"},
+					{Text: h.localizer.MustLocalize(locale.SessionConflictRestartButton), CallbackData: "session_conflict:restart:event_resolution"},
 				},
 			},
 		}
 
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text: fmt.Sprintf("⚠️ У вас уже есть активная сессия %s.\n\n"+
-				"Что вы хотите сделать?", conflictType),
+			ChatID:      chatID,
+			Text:        h.localizer.MustLocalizeWithTemplate(locale.SessionConflictWarning, conflictType),
 			ReplyMarkup: kb,
 		})
 		return
@@ -1458,7 +1448,7 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 		h.logger.Error("failed to start resolution FSM session", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при запуске процесса завершения события.",
+			Text:   h.localizer.MustLocalize(locale.EventResolutionErrorStart),
 		})
 		return
 	}
@@ -1474,7 +1464,7 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 		h.logger.Error("failed to get groups", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при получении списка групп.",
+			Text:   h.localizer.MustLocalize(locale.EventResolutionErrorGroups),
 		})
 		return
 	}
@@ -1493,7 +1483,7 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 	if len(allEvents) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "📋 Нет активных событий для завершения.",
+			Text:   h.localizer.MustLocalize(locale.EventResolutionNoEvents),
 		})
 		return
 	}
@@ -1514,7 +1504,7 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 	if len(manageableEvents) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ У вас нет прав для управления активными событиями.",
+			Text:   h.localizer.MustLocalize(locale.EventResolutionNoPermission),
 		})
 		return
 	}
@@ -1536,7 +1526,7 @@ func (h *BotHandler) HandleResolveEvent(ctx context.Context, b *bot.Bot, update 
 
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
-		Text:        "🏁 ЗАВЕРШЕНИЕ СОБЫТИЯ\n\nВыберите событие для завершения:",
+		Text:        h.localizer.MustLocalize(locale.EventResolutionTitle2) + "\n\n" + h.localizer.MustLocalize(locale.EventResolutionSelectPrompt),
 		ReplyMarkup: kb,
 	})
 	if err != nil {
@@ -1571,7 +1561,7 @@ func (h *BotHandler) HandleEditEvent(ctx context.Context, b *bot.Bot, update *mo
 
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   "ℹ️ Редактирование событий временно недоступно. Пожалуйста, создайте новое событие с /create_event",
+		Text:   h.localizer.MustLocalize(locale.EditEventUnavailable),
 	})
 }
 
@@ -1594,18 +1584,17 @@ func (h *BotHandler) HandleCreateGroup(ctx context.Context, b *bot.Bot, update *
 		kb := &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					{Text: "✅ Продолжить предыдущую", CallbackData: "session_conflict:continue"},
+					{Text: h.localizer.MustLocalize(locale.SessionConflictContinueButton), CallbackData: "session_conflict:continue"},
 				},
 				{
-					{Text: "🔄 Завершить и начать новую", CallbackData: "session_conflict:restart:group_creation"},
+					{Text: h.localizer.MustLocalize(locale.SessionConflictRestartButton), CallbackData: "session_conflict:restart:group_creation"},
 				},
 			},
 		}
 
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text: fmt.Sprintf("⚠️ У вас уже есть активная сессия %s.\n\n"+
-				"Что вы хотите сделать?", conflictType),
+			ChatID:      chatID,
+			Text:        h.localizer.MustLocalizeWithTemplate(locale.SessionConflictWarning, conflictType),
 			ReplyMarkup: kb,
 		})
 		return
@@ -1630,19 +1619,17 @@ func (h *BotHandler) HandleCreateGroup(ctx context.Context, b *bot.Bot, update *
 		h.logger.Error("failed to start group creation FSM session", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при запуске процесса создания группы.",
+			Text:   h.localizer.MustLocalize(locale.CreateGroupErrorStart),
 		})
 		return
 	}
 
 	// Build prompt message
-	promptText := "🏗️ СОЗДАНИЕ ГРУППЫ\n\n"
+	promptText := h.localizer.MustLocalize(locale.GroupCreationTitle) + "\n\n"
 	if isForum && messageThreadID != nil {
-		promptText += fmt.Sprintf("✅ Обнаружен форум!\n"+
-			"📍 ID темы: %d\n"+
-			"Группа будет настроена для работы с этой темой.\n\n", *messageThreadID)
+		promptText += h.localizer.MustLocalizeWithTemplate(locale.GroupCreationForumDetectedFull, fmt.Sprintf("%d", *messageThreadID))
 	}
-	promptText += "Введите название новой группы:"
+	promptText += h.localizer.MustLocalize(locale.GroupCreationPromptName)
 
 	// Prompt for group name
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
@@ -1683,7 +1670,7 @@ func (h *BotHandler) HandleListGroups(ctx context.Context, b *bot.Bot, update *m
 		h.logger.Error("failed to get all groups", "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Ошибка при получении списка групп.",
+			Text:   h.localizer.MustLocalize(locale.ListGroupsErrorGet),
 		})
 		return
 	}
@@ -1691,14 +1678,14 @@ func (h *BotHandler) HandleListGroups(ctx context.Context, b *bot.Bot, update *m
 	if len(groups) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
-			Text:   "📋 Нет созданных групп.\n/create_group — для создания новой группы",
+			Text:   h.localizer.MustLocalize(locale.ListGroupsEmpty),
 		})
 		return
 	}
 
 	// Build groups list message with deep-links and topics
 	var sb strings.Builder
-	sb.WriteString("📋 СПИСОК ГРУПП\n\n")
+	sb.WriteString(h.localizer.MustLocalize(locale.ListGroupsTitle) + "\n\n")
 
 	for i, group := range groups {
 		// Get member count
@@ -1720,7 +1707,7 @@ func (h *BotHandler) HandleListGroups(ctx context.Context, b *bot.Bot, update *m
 		deepLink, err := h.deepLinkService.GenerateGroupInviteLink(group.ID)
 		if err != nil {
 			h.logger.Error("failed to generate deep-link", "group_id", group.ID, "error", err)
-			deepLink = "ошибка генерации ссылки"
+			deepLink = h.localizer.MustLocalize(locale.ListGroupsLinkError)
 		}
 
 		// Add status indicator
@@ -1728,29 +1715,29 @@ func (h *BotHandler) HandleListGroups(ctx context.Context, b *bot.Bot, update *m
 		statusText := ""
 		if group.Status == domain.GroupStatusDeleted {
 			statusIcon = "🗑"
-			statusText = " (удалена)"
+			statusText = h.localizer.MustLocalize(locale.ListGroupsItemDeleted)
 		}
 
 		sb.WriteString(fmt.Sprintf("%d. %s %s%s\n", i+1, statusIcon, group.Name, statusText))
-		sb.WriteString(fmt.Sprintf("   👥 Участников: %d\n", activeCount))
-		sb.WriteString(fmt.Sprintf("   🔗 Ссылка: %s\n", deepLink))
-		sb.WriteString(fmt.Sprintf("   🆔 ID: %d\n", group.ID))
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.ListGroupsItemMembersFormat, fmt.Sprintf("%d", activeCount)))
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.ListGroupsItemLinkFormat, deepLink))
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.ListGroupsItemID, fmt.Sprintf("%d", group.ID)))
 
 		// If this is a forum, show topics
 		if group.IsForum {
-			sb.WriteString("   🗂 Тип: Форум\n")
+			sb.WriteString(h.localizer.MustLocalize(locale.ListGroupsItemTypeFormat))
 
 			// Get forum topics for this group
 			topics, err := h.forumTopicRepo.GetForumTopicsByGroup(ctx, group.ID)
 			if err != nil {
 				h.logger.Error("failed to get forum topics", "group_id", group.ID, "error", err)
 			} else if len(topics) > 0 {
-				sb.WriteString("   📌 Топики:\n")
+				sb.WriteString(h.localizer.MustLocalize(locale.ListGroupsItemTopicsHeader))
 				for _, topic := range topics {
 					sb.WriteString(fmt.Sprintf("      • %s (Thread ID: %d, ID: %d)\n", topic.Name, topic.MessageThreadID, topic.ID))
 				}
 			} else {
-				sb.WriteString("   📌 Топики: нет\n")
+				sb.WriteString(h.localizer.MustLocalize(locale.ListGroupsItemNoTopics))
 			}
 		}
 
@@ -1760,15 +1747,15 @@ func (h *BotHandler) HandleListGroups(ctx context.Context, b *bot.Bot, update *m
 	// Add management buttons
 	var buttons [][]models.InlineKeyboardButton
 	buttons = append(buttons, []models.InlineKeyboardButton{
-		{Text: "✏️ Переименовать группу", CallbackData: "rename_group_select"},
-		{Text: "✏️ Переименовать топик", CallbackData: "rename_topic_select"},
+		{Text: h.localizer.MustLocalize(locale.ListGroupsButtonRenameGroup), CallbackData: "rename_group_select"},
+		{Text: h.localizer.MustLocalize(locale.ListGroupsButtonRenameTopic), CallbackData: "rename_topic_select"},
 	})
 	buttons = append(buttons, []models.InlineKeyboardButton{
-		{Text: "🗑 Пометить удаленной", CallbackData: "soft_delete_group_select"},
-		{Text: "♻️ Восстановить группу", CallbackData: "restore_group_select"},
+		{Text: h.localizer.MustLocalize(locale.ListGroupsButtonSoftDelete), CallbackData: "soft_delete_group_select"},
+		{Text: h.localizer.MustLocalize(locale.ListGroupsButtonRestore), CallbackData: "restore_group_select"},
 	})
 	buttons = append(buttons, []models.InlineKeyboardButton{
-		{Text: "🗑 Удалить топик", CallbackData: "delete_topic_select"},
+		{Text: h.localizer.MustLocalize(locale.ListGroupsButtonDeleteTopic), CallbackData: "delete_topic_select"},
 	})
 
 	kb := &models.InlineKeyboardMarkup{
@@ -1799,7 +1786,7 @@ func (h *BotHandler) HandleGroupMembers(ctx context.Context, b *bot.Bot, update 
 		h.logger.Error("failed to get all groups", "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Ошибка при получении списка групп.",
+			Text:   h.localizer.MustLocalize(locale.ListGroupsErrorGet),
 		})
 		return
 	}
@@ -1807,7 +1794,7 @@ func (h *BotHandler) HandleGroupMembers(ctx context.Context, b *bot.Bot, update 
 	if len(groups) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
-			Text:   "📋 Нет созданных групп.\n/create_group — для создания новой группы",
+			Text:   h.localizer.MustLocalize(locale.ListGroupsEmpty),
 		})
 		return
 	}
@@ -1829,7 +1816,7 @@ func (h *BotHandler) HandleGroupMembers(ctx context.Context, b *bot.Bot, update 
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      update.Message.Chat.ID,
-		Text:        "👥 УЧАСТНИКИ ГРУППЫ\n\nВыберите группу:",
+		Text:        h.localizer.MustLocalize(locale.GroupMembersTitle) + "\n\n" + h.localizer.MustLocalize(locale.GroupMembersSelectGroup),
 		ReplyMarkup: kb,
 	})
 	if err != nil {
@@ -1850,7 +1837,7 @@ func (h *BotHandler) HandleRemoveMember(ctx context.Context, b *bot.Bot, update 
 		h.logger.Error("failed to get all groups", "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Ошибка при получении списка групп.",
+			Text:   h.localizer.MustLocalize(locale.ListGroupsErrorGet),
 		})
 		return
 	}
@@ -1858,7 +1845,7 @@ func (h *BotHandler) HandleRemoveMember(ctx context.Context, b *bot.Bot, update 
 	if len(groups) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
-			Text:   "📋 Нет созданных групп.\n/create_group — для создания новой группы",
+			Text:   h.localizer.MustLocalize(locale.ListGroupsEmpty),
 		})
 		return
 	}
@@ -1880,7 +1867,7 @@ func (h *BotHandler) HandleRemoveMember(ctx context.Context, b *bot.Bot, update 
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      update.Message.Chat.ID,
-		Text:        "🚫 УДАЛЕНИЕ УЧАСТНИКА\n\nВыберите группу:",
+		Text:        h.localizer.MustLocalize(locale.RemoveMemberTitle) + "\n\n" + h.localizer.MustLocalize(locale.RemoveMemberSelectGroup),
 		ReplyMarkup: kb,
 	})
 	if err != nil {
@@ -1894,7 +1881,7 @@ func (h *BotHandler) handleGroupMembersCallback(ctx context.Context, b *bot.Bot,
 	if !h.isAdmin(userID) {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ У вас нет прав для выполнения этой команды.",
+			Text:            h.localizer.MustLocalize(locale.ErrorUnauthorized),
 		})
 		return
 	}
@@ -1918,7 +1905,7 @@ func (h *BotHandler) handleGroupMembersCallback(ctx context.Context, b *bot.Bot,
 		h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   "❌ Ошибка при получении группы.",
+			Text:   h.localizer.MustLocalize(locale.GroupMembersErrorGroup),
 		})
 		return
 	}
@@ -1926,7 +1913,7 @@ func (h *BotHandler) handleGroupMembersCallback(ctx context.Context, b *bot.Bot,
 	if group == nil {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   "❌ Группа не найдена.",
+			Text:   h.localizer.MustLocalize(locale.GroupErrorNotFound),
 		})
 		return
 	}
@@ -1937,7 +1924,7 @@ func (h *BotHandler) handleGroupMembersCallback(ctx context.Context, b *bot.Bot,
 		h.logger.Error("failed to get group members", "group_id", groupID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   "❌ Ошибка при получении участников группы.",
+			Text:   h.localizer.MustLocalize(locale.GroupMembersErrorGet),
 		})
 		return
 	}
@@ -1945,14 +1932,14 @@ func (h *BotHandler) handleGroupMembersCallback(ctx context.Context, b *bot.Bot,
 	if len(members) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   fmt.Sprintf("📋 В группе \"%s\" пока нет участников.", group.Name),
+			Text:   h.localizer.MustLocalizeWithTemplate(locale.GroupEmptyMembers, group.Name),
 		})
 		return
 	}
 
 	// Build members list message
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("👥 УЧАСТНИКИ ГРУППЫ \"%s\"\n\n", group.Name))
+	sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.GroupMembersTitleWithName, group.Name))
 
 	for i, member := range members {
 		// Get user rating for this group
@@ -1984,9 +1971,9 @@ func (h *BotHandler) handleGroupMembersCallback(ctx context.Context, b *bot.Bot,
 		}
 
 		sb.WriteString(fmt.Sprintf("%d. %s %s\n", i+1, statusIcon, displayName))
-		sb.WriteString(fmt.Sprintf("   💰 Очки: %d\n", rating.Score))
-		sb.WriteString(fmt.Sprintf("   🏆 Ачивки: %d\n", len(achievements)))
-		sb.WriteString(fmt.Sprintf("   📅 Присоединился: %s\n\n", member.JoinedAt.Format("02.01.2006")))
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.GroupMembersItemPointsFormat, fmt.Sprintf("%d", rating.Score)))
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.GroupMembersItemAchievementsFormat, fmt.Sprintf("%d", len(achievements))))
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.GroupMembersItemJoinedFormat, member.JoinedAt.Format("02.01.2006")))
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -2014,7 +2001,7 @@ func (h *BotHandler) HandleGroups(ctx context.Context, b *bot.Bot, update *model
 		h.logger.Error("failed to get user groups", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при получении списка групп.",
+			Text:   h.localizer.MustLocalize(locale.ListGroupsErrorGet),
 		})
 		return
 	}
@@ -2023,15 +2010,15 @@ func (h *BotHandler) HandleGroups(ctx context.Context, b *bot.Bot, update *model
 	if len(groups) == 0 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text: "📋 У вас пока нет групп.\n\n" +
-				"Чтобы присоединиться к группе, попросите администратора отправить вам ссылку-приглашение.",
+			Text: h.localizer.MustLocalize(locale.GroupsNoGroups) + "\n\n" +
+				h.localizer.MustLocalize(locale.GroupsJoinInstructions),
 		})
 		return
 	}
 
 	// Build groups list message
 	var sb strings.Builder
-	sb.WriteString("📋 ВАШИ ГРУППЫ\n\n")
+	sb.WriteString(h.localizer.MustLocalize(locale.GroupsYourGroups) + "\n\n")
 
 	// Get memberships to access join dates (groups are already ordered by join date DESC)
 	for i, group := range groups {
@@ -2062,8 +2049,8 @@ func (h *BotHandler) HandleGroups(ctx context.Context, b *bot.Bot, update *model
 		}
 
 		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, group.Name))
-		sb.WriteString(fmt.Sprintf("   👥 Участников: %d\n", activeCount))
-		sb.WriteString(fmt.Sprintf("   📅 Присоединились: %s\n\n", membership.JoinedAt.Format("02.01.2006")))
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.GroupsItemMembersFormat, fmt.Sprintf("%d", activeCount)))
+		sb.WriteString(h.localizer.MustLocalizeWithTemplate(locale.GroupsItemJoinedFormat, membership.JoinedAt.Format("02.01.2006")))
 	}
 
 	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -2122,19 +2109,14 @@ func (h *BotHandler) HandleMyChatMember(ctx context.Context, b *bot.Bot, update 
 		}
 
 		// Build notification message
-		notificationMsg := fmt.Sprintf(
-			"🤖 БОТ ДОБАВЛЕН В ТЕЛЕГРАМ-ГРУППУ\n\n"+
-				"👤 Кто добавил: %s\n"+
-				"💬 Название группы: %s\n"+
-				"🆔 ID чата: <code>%d</code>\n",
-			displayName,
-			chat.Title,
-			chat.ID,
-		)
+		notificationMsg := h.localizer.MustLocalize(locale.BotAddedTitle) + "\n\n" +
+			h.localizer.MustLocalizeWithTemplate(locale.BotAddedBy, displayName) +
+			h.localizer.MustLocalizeWithTemplate(locale.BotAddedGroupNameFormat, chat.Title) +
+			h.localizer.MustLocalizeWithTemplate(locale.BotAddedChatIDFormat, fmt.Sprintf("%d", chat.ID))
 
 		// Add forum information if this is a forum
 		if chat.IsForum {
-			notificationMsg += "\n🗂 Тип: Форум (супергруппа с темами)\n"
+			notificationMsg += "\n" + h.localizer.MustLocalize(locale.BotAddedTypeForum) + "\n"
 
 			// Try to get forum topics using GetForumTopicIconStickers
 			// Note: We can't directly list topics, but we can get chat info
@@ -2151,24 +2133,24 @@ func (h *BotHandler) HandleMyChatMember(ctx context.Context, b *bot.Bot, update 
 				)
 			}
 
-			notificationMsg += "\n📋 Как зарегистрировать форум:\n"
-			notificationMsg += "1. Перейдите в нужную тему форума\n"
-			notificationMsg += "2. Отправьте команду /create_group прямо в теме\n"
-			notificationMsg += "3. Бот автоматически определит ID темы!\n\n"
-			notificationMsg += "✨ Бот автоматически настроит группу для работы с этой темой.\n"
-			notificationMsg += "Все события будут отправляться в выбранную тему.\n"
+			notificationMsg += "\n" + h.localizer.MustLocalize(locale.BotAddedForumInstructions) + "\n"
+			notificationMsg += h.localizer.MustLocalize(locale.BotAddedForumInstructionsStep1)
+			notificationMsg += h.localizer.MustLocalize(locale.BotAddedForumInstructionsStep2)
+			notificationMsg += h.localizer.MustLocalize(locale.BotAddedForumInstructionsStep3)
+			notificationMsg += h.localizer.MustLocalize(locale.BotAddedForumSetup)
+			notificationMsg += h.localizer.MustLocalize(locale.BotAddedForumEvents)
 		} else {
-			notificationMsg += "🗂 Тип: Обычная группа\n"
+			notificationMsg += h.localizer.MustLocalize(locale.BotAddedTypeRegular) + "\n"
 		}
 
-		notificationMsg += "\nДпля регистрации используйте команду /create_group"
+		notificationMsg += "\n" + h.localizer.MustLocalize(locale.BotAddedRegisterCommand)
 
 		// Create inline keyboard with "Leave Group" button
 		kb := &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
 					{
-						Text:         "🚪 Выйти из группы",
+						Text:         h.localizer.MustLocalize(locale.LeaveGroupButton),
 						CallbackData: fmt.Sprintf("leave_group:%d", chat.ID),
 					},
 				},
@@ -2186,26 +2168,20 @@ func (h *BotHandler) HandleMyChatMember(ctx context.Context, b *bot.Bot, update 
 
 		// If user is a member, send them a notification
 		if len(groups) > 0 {
-			userNotificationMsg := fmt.Sprintf(
-				"✅ Вы добавили бота в чат!\n\n"+
-					"💬 Название: %s\n"+
-					"🆔 ID чата: <code>%d</code>\n",
-				chat.Title,
-				chat.ID,
-			)
+			userNotificationMsg := h.localizer.MustLocalizeWithTemplate(locale.BotAddedUserNotification, chat.Title, fmt.Sprintf("%d", chat.ID)) + "\n\n"
 
 			if chat.IsForum {
-				userNotificationMsg += "🗂 Тип: Форум\n\n"
-				userNotificationMsg += "📋 Для регистрации форума:\n"
-				userNotificationMsg += "1. Перейдите в нужную тему форума\n"
-				userNotificationMsg += "2. Отправьте /create_group прямо в теме\n"
-				userNotificationMsg += "3. Бот автоматически определит ID темы!\n\n"
-				userNotificationMsg += "✨ Все события будут отправляться в выбранную тему.\n"
+				userNotificationMsg += h.localizer.MustLocalize(locale.BotAddedTypeForum) + "\n\n"
+				userNotificationMsg += h.localizer.MustLocalize(locale.BotAddedUserForumInstructions) + "\n"
+				userNotificationMsg += h.localizer.MustLocalize(locale.BotAddedForumInstructionsStep1)
+				userNotificationMsg += h.localizer.MustLocalize(locale.BotAddedUserForumStep2)
+				userNotificationMsg += h.localizer.MustLocalize(locale.BotAddedForumInstructionsStep3)
+				userNotificationMsg += h.localizer.MustLocalize(locale.BotAddedUserForumEvents)
 			} else {
-				userNotificationMsg += "🗂 Тип: Обычная группа\n\n"
+				userNotificationMsg += h.localizer.MustLocalize(locale.BotAddedTypeRegular) + "\n\n"
 			}
 
-			userNotificationMsg += "� Испо:льзуйте /create_group для регистрации"
+			userNotificationMsg += h.localizer.MustLocalize(locale.BotAddedUserRegisterCommand)
 
 			_, err = h.bot.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID:    addedBy.ID,
@@ -2225,7 +2201,7 @@ func (h *BotHandler) handleLeaveGroupCallback(ctx context.Context, b *bot.Bot, c
 	if !h.isAdmin(userID) {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ У вас нет прав для выполнения этой команды.",
+			Text:            h.localizer.MustLocalize(locale.ErrorUnauthorized),
 		})
 		return
 	}
@@ -2236,7 +2212,7 @@ func (h *BotHandler) handleLeaveGroupCallback(ctx context.Context, b *bot.Bot, c
 		h.logger.Error("invalid leave_group callback data", "data", data)
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ Ошибка: неверный формат данных.",
+			Text:            h.localizer.MustLocalize(locale.ErrorInvalidDataFormat),
 		})
 		return
 	}
@@ -2246,7 +2222,7 @@ func (h *BotHandler) handleLeaveGroupCallback(ctx context.Context, b *bot.Bot, c
 		h.logger.Error("failed to parse chat ID", "error", err)
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ Ошибка: неверный ID чата.",
+			Text:            h.localizer.MustLocalize(locale.ErrorInvalidChatID),
 		})
 		return
 	}
@@ -2259,7 +2235,7 @@ func (h *BotHandler) handleLeaveGroupCallback(ctx context.Context, b *bot.Bot, c
 		h.logger.Error("failed to leave chat", "chat_id", chatID, "error", err)
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ Ошибка при выходе из группы.",
+			Text:            h.localizer.MustLocalize(locale.LeaveGroupError),
 		})
 
 		// Edit message to show error
@@ -2267,7 +2243,7 @@ func (h *BotHandler) handleLeaveGroupCallback(ctx context.Context, b *bot.Bot, c
 			_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 				ChatID:    callback.Message.Message.Chat.ID,
 				MessageID: callback.Message.Message.ID,
-				Text:      callback.Message.Message.Text + "\n\n❌ Ошибка при выходе из группы.",
+				Text:      callback.Message.Message.Text + "\n\n" + h.localizer.MustLocalize(locale.LeaveGroupError),
 			})
 		}
 		return
@@ -2278,7 +2254,7 @@ func (h *BotHandler) handleLeaveGroupCallback(ctx context.Context, b *bot.Bot, c
 	// Answer callback query
 	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 		CallbackQueryID: callback.ID,
-		Text:            "✅ Бот вышел из группы.",
+		Text:            h.localizer.MustLocalize(locale.LeaveGroupSuccess),
 	})
 
 	// Edit message to show success
@@ -2286,7 +2262,7 @@ func (h *BotHandler) handleLeaveGroupCallback(ctx context.Context, b *bot.Bot, c
 		_, _ = b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    callback.Message.Message.Chat.ID,
 			MessageID: callback.Message.Message.ID,
-			Text:      callback.Message.Message.Text + "\n\n✅ Бот вышел из группы.",
+			Text:      callback.Message.Message.Text + "\n\n" + h.localizer.MustLocalize(locale.LeaveGroupSuccess),
 		})
 	}
 }
@@ -2297,7 +2273,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 	if !h.isAdmin(userID) {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ У вас нет прав для выполнения этой команды.",
+			Text:            h.localizer.MustLocalize(locale.ErrorUnauthorized),
 		})
 		return
 	}
@@ -2323,7 +2299,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении группы.",
+				Text:   h.localizer.MustLocalize(locale.GroupMembersErrorGroup),
 			})
 			return
 		}
@@ -2331,7 +2307,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 		if group == nil {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Группа не найдена.",
+				Text:   h.localizer.MustLocalize(locale.GroupErrorNotFound),
 			})
 			return
 		}
@@ -2342,7 +2318,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 			h.logger.Error("failed to get group members", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении участников группы.",
+				Text:   h.localizer.MustLocalize(locale.GroupMembersErrorGet),
 			})
 			return
 		}
@@ -2358,7 +2334,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 		if len(activeMembers) == 0 {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   fmt.Sprintf("📋 В группе \"%s\" нет активных участников.", group.Name),
+				Text:   h.localizer.MustLocalizeWithTemplate(locale.GroupEmptyActiveMembers, group.Name),
 			})
 			return
 		}
@@ -2381,7 +2357,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      callback.Message.Message.Chat.ID,
-			Text:        fmt.Sprintf("🚫 УДАЛЕНИЕ УЧАСТНИКА ИЗ \"%s\"\n\nВыберите участника:", group.Name),
+			Text:        h.localizer.MustLocalizeWithTemplate(locale.RemoveMemberPromptWithName, group.Name),
 			ReplyMarkup: kb,
 		})
 		if err != nil {
@@ -2422,7 +2398,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении группы.",
+				Text:   h.localizer.MustLocalize(locale.GroupMembersErrorGroup),
 			})
 			return
 		}
@@ -2430,7 +2406,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 		if group == nil {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Группа не найдена.",
+				Text:   h.localizer.MustLocalize(locale.GroupErrorNotFound),
 			})
 			return
 		}
@@ -2441,7 +2417,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 			h.logger.Error("failed to update membership status", "group_id", groupID, "user_id", memberUserID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при удалении участника.",
+				Text:   h.localizer.MustLocalize(locale.RemoveMemberErrorUpdate),
 			})
 			return
 		}
@@ -2455,7 +2431,7 @@ func (h *BotHandler) handleRemoveMemberCallback(ctx context.Context, b *bot.Bot,
 		// Send confirmation
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   fmt.Sprintf("✅ Участник %s удален из группы \"%s\".", displayName, group.Name),
+			Text:   h.localizer.MustLocalizeWithTemplate(locale.RemoveMemberSuccessFormat, displayName, group.Name),
 		})
 		if err != nil {
 			h.logger.Error("failed to send confirmation", "error", err)
@@ -2486,7 +2462,7 @@ func (h *BotHandler) handleResolveEventFromCallback(ctx context.Context, b *bot.
 		h.logger.Error("failed to parse event ID from callback", "user_id", userID, "data", callback.Data, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при обработке запроса.",
+			Text:   h.localizer.MustLocalize(locale.ErrorRequestProcessing),
 		})
 		return
 	}
@@ -2497,7 +2473,7 @@ func (h *BotHandler) handleResolveEventFromCallback(ctx context.Context, b *bot.
 		h.logger.Error("failed to check event management permission", "user_id", userID, "event_id", eventID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при проверке прав доступа.",
+			Text:   h.localizer.MustLocalize(locale.EventResolutionErrorPermissionCheck),
 		})
 		return
 	}
@@ -2505,7 +2481,7 @@ func (h *BotHandler) handleResolveEventFromCallback(ctx context.Context, b *bot.
 	if !canManage {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ У вас нет прав для управления этим событием.",
+			Text:   h.localizer.MustLocalize(locale.EventResolutionErrorUnauthorized),
 		})
 		return
 	}
@@ -2515,7 +2491,7 @@ func (h *BotHandler) handleResolveEventFromCallback(ctx context.Context, b *bot.
 		h.logger.Error("failed to start resolution FSM session", "user_id", userID, "error", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при запуске процесса завершения события.",
+			Text:   h.localizer.MustLocalize(locale.EventResolutionErrorStart),
 		})
 		return
 	}
@@ -2533,7 +2509,7 @@ func (h *BotHandler) handleEditEventCallback(ctx context.Context, b *bot.Bot, ca
 	if !h.isAdmin(userID) {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ У вас нет прав для редактирования событий.",
+			Text:            h.localizer.MustLocalize(locale.ErrorEditEventNoPermission),
 			ShowAlert:       true,
 		})
 		return
@@ -2544,7 +2520,7 @@ func (h *BotHandler) handleEditEventCallback(ctx context.Context, b *bot.Bot, ca
 	if len(parts) < 2 {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ Неверный формат данных.",
+			Text:            h.localizer.MustLocalize(locale.ErrorInvalidDataFormat),
 			ShowAlert:       true,
 		})
 		return
@@ -2554,7 +2530,7 @@ func (h *BotHandler) handleEditEventCallback(ctx context.Context, b *bot.Bot, ca
 	if err != nil {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ Неверный ID события.",
+			Text:            h.localizer.MustLocalize(locale.ErrorInvalidEventID),
 			ShowAlert:       true,
 		})
 		return
@@ -2566,7 +2542,7 @@ func (h *BotHandler) handleEditEventCallback(ctx context.Context, b *bot.Bot, ca
 		h.logger.Error("failed to check if event can be edited", "event_id", eventID, "error", err)
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ Ошибка при проверке события.",
+			Text:            h.localizer.MustLocalize(locale.ErrorRequestProcessing),
 			ShowAlert:       true,
 		})
 		return
@@ -2575,7 +2551,7 @@ func (h *BotHandler) handleEditEventCallback(ctx context.Context, b *bot.Bot, ca
 	if !canEdit {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ Событие нельзя редактировать — уже есть голоса.",
+			Text:            h.localizer.MustLocalize(locale.ErrorEditEventHasVotes),
 			ShowAlert:       true,
 		})
 		return
@@ -2600,12 +2576,12 @@ func (h *BotHandler) handleEditEventCallback(ctx context.Context, b *bot.Bot, ca
 		if err == domain.ErrEventHasVotes {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "❌ Событие нельзя редактировать — уже есть голоса.",
+				Text:   h.localizer.MustLocalize(locale.ErrorEditEventHasVotes),
 			})
 		} else {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "❌ Ошибка при запуске редактирования.",
+				Text:   h.localizer.MustLocalize(locale.ErrorEditEventStart),
 			})
 		}
 		return
@@ -2620,7 +2596,7 @@ func (h *BotHandler) handleDeleteGroupCallback(ctx context.Context, b *bot.Bot, 
 	if !h.isAdmin(userID) {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ У вас нет прав для выполнения этой команды.",
+			Text:            h.localizer.MustLocalize(locale.ErrorUnauthorized),
 		})
 		return
 	}
@@ -2633,7 +2609,7 @@ func (h *BotHandler) handleDeleteGroupCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get all groups", "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении списка групп.",
+				Text:   h.localizer.MustLocalize(locale.ListGroupsErrorGet),
 			})
 			return
 		}
@@ -2641,7 +2617,7 @@ func (h *BotHandler) handleDeleteGroupCallback(ctx context.Context, b *bot.Bot, 
 		if len(groups) == 0 {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "📋 Нет групп для удаления.",
+				Text:   h.localizer.MustLocalize(locale.DeleteGroupEmpty),
 			})
 			return
 		}
@@ -2663,7 +2639,7 @@ func (h *BotHandler) handleDeleteGroupCallback(ctx context.Context, b *bot.Bot, 
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      callback.Message.Message.Chat.ID,
-			Text:        "🗑 УДАЛЕНИЕ ГРУППЫ\n\nВыберите группу для удаления:",
+			Text:        h.localizer.MustLocalize(locale.DeleteGroupTitle) + "\n\n" + h.localizer.MustLocalize(locale.DeleteGroupSelectPrompt),
 			ReplyMarkup: kb,
 		})
 		if err != nil {
@@ -2698,7 +2674,7 @@ func (h *BotHandler) handleDeleteGroupCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении группы.",
+				Text:   h.localizer.MustLocalize(locale.GroupMembersErrorGroup),
 			})
 			return
 		}
@@ -2706,7 +2682,7 @@ func (h *BotHandler) handleDeleteGroupCallback(ctx context.Context, b *bot.Bot, 
 		if group == nil {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Группа не найдена.",
+				Text:   h.localizer.MustLocalize(locale.GroupErrorNotFound),
 			})
 			return
 		}
@@ -2717,7 +2693,7 @@ func (h *BotHandler) handleDeleteGroupCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to delete group", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при удалении группы.",
+				Text:   h.localizer.MustLocalize(locale.DeleteGroupError),
 			})
 			return
 		}
@@ -2728,7 +2704,7 @@ func (h *BotHandler) handleDeleteGroupCallback(ctx context.Context, b *bot.Bot, 
 		// Send confirmation
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   fmt.Sprintf("✅ Группа \"%s\" успешно удалена.", group.Name),
+			Text:   h.localizer.MustLocalizeWithTemplate(locale.GroupDeletedSuccess, group.Name),
 		})
 		if err != nil {
 			h.logger.Error("failed to send confirmation", "error", err)
@@ -2748,7 +2724,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 	if !h.isAdmin(userID) {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ У вас нет прав для выполнения этой команды.",
+			Text:            h.localizer.MustLocalize(locale.ErrorUnauthorized),
 		})
 		return
 	}
@@ -2761,7 +2737,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get all groups", "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении списка групп.",
+				Text:   h.localizer.MustLocalize(locale.ListGroupsErrorGet),
 			})
 			return
 		}
@@ -2777,7 +2753,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 		if len(forumGroups) == 0 {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "📋 Нет форумов с топиками.",
+				Text:   h.localizer.MustLocalize(locale.RenameTopicEmpty),
 			})
 			return
 		}
@@ -2799,7 +2775,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      callback.Message.Message.Chat.ID,
-			Text:        "🗑 УДАЛЕНИЕ ТОПИКА\n\nВыберите форум:",
+			Text:        h.localizer.MustLocalize(locale.DeleteTopicTitle) + "\n\n" + h.localizer.MustLocalize(locale.DeleteTopicSelectForum),
 			ReplyMarkup: kb,
 		})
 		if err != nil {
@@ -2834,7 +2810,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении группы.",
+				Text:   h.localizer.MustLocalize(locale.GroupMembersErrorGroup),
 			})
 			return
 		}
@@ -2842,7 +2818,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 		if group == nil {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Группа не найдена.",
+				Text:   h.localizer.MustLocalize(locale.GroupErrorNotFound),
 			})
 			return
 		}
@@ -2853,7 +2829,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get forum topics", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении топиков.",
+				Text:   h.localizer.MustLocalize(locale.ErrorRequestProcessing),
 			})
 			return
 		}
@@ -2861,7 +2837,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 		if len(topics) == 0 {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   fmt.Sprintf("📋 В форуме \"%s\" нет топиков.", group.Name),
+				Text:   h.localizer.MustLocalizeWithTemplate(locale.RenameTopicNoTopics, group.Name),
 			})
 			return
 		}
@@ -2883,7 +2859,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      callback.Message.Message.Chat.ID,
-			Text:        fmt.Sprintf("🗑 УДАЛЕНИЕ ТОПИКА ИЗ \"%s\"\n\nВыберите топик:", group.Name),
+			Text:        h.localizer.MustLocalizeWithTemplate(locale.DeleteTopicPromptWithName, group.Name),
 			ReplyMarkup: kb,
 		})
 		if err != nil {
@@ -2918,7 +2894,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get topic", "topic_id", topicID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении топика.",
+				Text:   h.localizer.MustLocalize(locale.ErrorRequestProcessing),
 			})
 			return
 		}
@@ -2926,7 +2902,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 		if topic == nil {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Топик не найден.",
+				Text:   h.localizer.MustLocalize(locale.ErrorTopicNotFound),
 			})
 			return
 		}
@@ -2937,7 +2913,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to delete topic", "topic_id", topicID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при удалении топика.",
+				Text:   h.localizer.MustLocalize(locale.DeleteTopicError),
 			})
 			return
 		}
@@ -2948,7 +2924,7 @@ func (h *BotHandler) handleDeleteTopicCallback(ctx context.Context, b *bot.Bot, 
 		// Send confirmation
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   fmt.Sprintf("✅ Топик \"%s\" успешно удален.", topic.Name),
+			Text:   h.localizer.MustLocalizeWithTemplate(locale.TopicDeletedSuccess, topic.Name),
 		})
 		if err != nil {
 			h.logger.Error("failed to send confirmation", "error", err)
@@ -2968,7 +2944,7 @@ func (h *BotHandler) handleSoftDeleteGroupCallback(ctx context.Context, b *bot.B
 	if !h.isAdmin(userID) {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ У вас нет прав для выполнения этой команды.",
+			Text:            h.localizer.MustLocalize(locale.ErrorUnauthorized),
 		})
 		return
 	}
@@ -2980,7 +2956,7 @@ func (h *BotHandler) handleSoftDeleteGroupCallback(ctx context.Context, b *bot.B
 			h.logger.Error("failed to get all groups", "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении списка групп.",
+				Text:   h.localizer.MustLocalize(locale.ListGroupsErrorGet),
 			})
 			return
 		}
@@ -2996,7 +2972,7 @@ func (h *BotHandler) handleSoftDeleteGroupCallback(ctx context.Context, b *bot.B
 		if len(activeGroups) == 0 {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "📋 Нет активных групп для пометки удаленными.",
+				Text:   h.localizer.MustLocalize(locale.SoftDeleteGroupEmpty),
 			})
 			return
 		}
@@ -3018,7 +2994,7 @@ func (h *BotHandler) handleSoftDeleteGroupCallback(ctx context.Context, b *bot.B
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      callback.Message.Message.Chat.ID,
-			Text:        "🗑 ПОМЕТИТЬ ГРУППУ УДАЛЕННОЙ\n\nВыберите группу:",
+			Text:        h.localizer.MustLocalize(locale.SoftDeleteGroupTitle) + "\n\n" + h.localizer.MustLocalize(locale.SoftDeleteGroupSelectPrompt),
 			ReplyMarkup: kb,
 		})
 		if err != nil {
@@ -3049,7 +3025,7 @@ func (h *BotHandler) handleSoftDeleteGroupCallback(ctx context.Context, b *bot.B
 			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении группы.",
+				Text:   h.localizer.MustLocalize(locale.GroupMembersErrorGroup),
 			})
 			return
 		}
@@ -3057,7 +3033,7 @@ func (h *BotHandler) handleSoftDeleteGroupCallback(ctx context.Context, b *bot.B
 		if group == nil {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Группа не найдена.",
+				Text:   h.localizer.MustLocalize(locale.GroupErrorNotFound),
 			})
 			return
 		}
@@ -3068,7 +3044,7 @@ func (h *BotHandler) handleSoftDeleteGroupCallback(ctx context.Context, b *bot.B
 			h.logger.Error("failed to update group status", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при обновлении статуса группы.",
+				Text:   h.localizer.MustLocalize(locale.SoftDeleteGroupError),
 			})
 			return
 		}
@@ -3077,7 +3053,7 @@ func (h *BotHandler) handleSoftDeleteGroupCallback(ctx context.Context, b *bot.B
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   fmt.Sprintf("✅ Группа \"%s\" помечена как удаленная.\n\nОна больше недоступна для вступления и создания событий.", group.Name),
+			Text:   h.localizer.MustLocalizeWithTemplate(locale.GroupMarkedDeleted, group.Name),
 		})
 		if err != nil {
 			h.logger.Error("failed to send confirmation", "error", err)
@@ -3096,7 +3072,7 @@ func (h *BotHandler) handleRestoreGroupCallback(ctx context.Context, b *bot.Bot,
 	if !h.isAdmin(userID) {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ У вас нет прав для выполнения этой команды.",
+			Text:            h.localizer.MustLocalize(locale.ErrorUnauthorized),
 		})
 		return
 	}
@@ -3108,7 +3084,7 @@ func (h *BotHandler) handleRestoreGroupCallback(ctx context.Context, b *bot.Bot,
 			h.logger.Error("failed to get all groups", "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении списка групп.",
+				Text:   h.localizer.MustLocalize(locale.ListGroupsErrorGet),
 			})
 			return
 		}
@@ -3124,7 +3100,7 @@ func (h *BotHandler) handleRestoreGroupCallback(ctx context.Context, b *bot.Bot,
 		if len(deletedGroups) == 0 {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "📋 Нет удаленных групп для восстановления.",
+				Text:   h.localizer.MustLocalize(locale.RestoreGroupEmpty),
 			})
 			return
 		}
@@ -3146,7 +3122,7 @@ func (h *BotHandler) handleRestoreGroupCallback(ctx context.Context, b *bot.Bot,
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      callback.Message.Message.Chat.ID,
-			Text:        "♻️ ВОССТАНОВИТЬ ГРУППУ\n\nВыберите группу:",
+			Text:        h.localizer.MustLocalize(locale.RestoreGroupTitle) + "\n\n" + h.localizer.MustLocalize(locale.RestoreGroupSelectPrompt),
 			ReplyMarkup: kb,
 		})
 		if err != nil {
@@ -3177,7 +3153,7 @@ func (h *BotHandler) handleRestoreGroupCallback(ctx context.Context, b *bot.Bot,
 			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении группы.",
+				Text:   h.localizer.MustLocalize(locale.GroupMembersErrorGroup),
 			})
 			return
 		}
@@ -3185,7 +3161,7 @@ func (h *BotHandler) handleRestoreGroupCallback(ctx context.Context, b *bot.Bot,
 		if group == nil {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Группа не найдена.",
+				Text:   h.localizer.MustLocalize(locale.GroupErrorNotFound),
 			})
 			return
 		}
@@ -3196,7 +3172,7 @@ func (h *BotHandler) handleRestoreGroupCallback(ctx context.Context, b *bot.Bot,
 			h.logger.Error("failed to update group status", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при обновлении статуса группы.",
+				Text:   h.localizer.MustLocalize(locale.SoftDeleteGroupError),
 			})
 			return
 		}
@@ -3205,7 +3181,7 @@ func (h *BotHandler) handleRestoreGroupCallback(ctx context.Context, b *bot.Bot,
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   fmt.Sprintf("✅ Группа \"%s\" восстановлена.\n\nТеперь она снова доступна для вступления и создания событий.", group.Name),
+			Text:   h.localizer.MustLocalizeWithTemplate(locale.GroupRestored, group.Name),
 		})
 		if err != nil {
 			h.logger.Error("failed to send confirmation", "error", err)
@@ -3224,7 +3200,7 @@ func (h *BotHandler) handleRenameGroupCallback(ctx context.Context, b *bot.Bot, 
 	if !h.isAdmin(userID) {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ У вас нет прав для выполнения этой команды.",
+			Text:            h.localizer.MustLocalize(locale.ErrorUnauthorized),
 		})
 		return
 	}
@@ -3235,7 +3211,7 @@ func (h *BotHandler) handleRenameGroupCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get all groups", "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении списка групп.",
+				Text:   h.localizer.MustLocalize(locale.ListGroupsErrorGet),
 			})
 			return
 		}
@@ -3243,7 +3219,7 @@ func (h *BotHandler) handleRenameGroupCallback(ctx context.Context, b *bot.Bot, 
 		if len(groups) == 0 {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "📋 Нет групп для переименования.",
+				Text:   h.localizer.MustLocalize(locale.RenameGroupEmpty),
 			})
 			return
 		}
@@ -3264,7 +3240,7 @@ func (h *BotHandler) handleRenameGroupCallback(ctx context.Context, b *bot.Bot, 
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      callback.Message.Message.Chat.ID,
-			Text:        "✏️ ПЕРЕИМЕНОВАТЬ ГРУППУ\n\nВыберите группу:",
+			Text:        h.localizer.MustLocalize(locale.RenameGroupTitle) + "\n\n" + h.localizer.MustLocalize(locale.RenameGroupSelectPrompt),
 			ReplyMarkup: kb,
 		})
 		if err != nil {
@@ -3295,7 +3271,7 @@ func (h *BotHandler) handleRenameGroupCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении группы.",
+				Text:   h.localizer.MustLocalize(locale.GroupMembersErrorGroup),
 			})
 			return
 		}
@@ -3303,7 +3279,7 @@ func (h *BotHandler) handleRenameGroupCallback(ctx context.Context, b *bot.Bot, 
 		if group == nil {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Группа не найдена.",
+				Text:   h.localizer.MustLocalize(locale.GroupErrorNotFound),
 			})
 			return
 		}
@@ -3314,14 +3290,14 @@ func (h *BotHandler) handleRenameGroupCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to start rename FSM", "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при запуске переименования.",
+				Text:   h.localizer.MustLocalize(locale.RenameGroupErrorStart),
 			})
 			return
 		}
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   fmt.Sprintf("✏️ Переименование группы \"%s\"\n\nВведите новое название:", group.Name),
+			Text:   h.localizer.MustLocalizeWithTemplate(locale.RenameGroupPromptWithName, group.Name),
 		})
 		if err != nil {
 			h.logger.Error("failed to send rename prompt", "error", err)
@@ -3340,7 +3316,7 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 	if !h.isAdmin(userID) {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: callback.ID,
-			Text:            "❌ У вас нет прав для выполнения этой команды.",
+			Text:            h.localizer.MustLocalize(locale.ErrorUnauthorized),
 		})
 		return
 	}
@@ -3351,7 +3327,7 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get all groups", "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении списка групп.",
+				Text:   h.localizer.MustLocalize(locale.ListGroupsErrorGet),
 			})
 			return
 		}
@@ -3366,7 +3342,7 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 		if len(forumGroups) == 0 {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "📋 Нет форумов с топиками.",
+				Text:   h.localizer.MustLocalize(locale.RenameTopicEmpty),
 			})
 			return
 		}
@@ -3387,7 +3363,7 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      callback.Message.Message.Chat.ID,
-			Text:        "✏️ ПЕРЕИМЕНОВАТЬ ТОПИК\n\nВыберите форум:",
+			Text:        h.localizer.MustLocalize(locale.RenameTopicTitle) + "\n\n" + h.localizer.MustLocalize(locale.RenameTopicSelectForum),
 			ReplyMarkup: kb,
 		})
 		if err != nil {
@@ -3418,7 +3394,7 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get group", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении группы.",
+				Text:   h.localizer.MustLocalize(locale.GroupMembersErrorGroup),
 			})
 			return
 		}
@@ -3426,7 +3402,7 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 		if group == nil {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Группа не найдена.",
+				Text:   h.localizer.MustLocalize(locale.GroupErrorNotFound),
 			})
 			return
 		}
@@ -3437,7 +3413,7 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get forum topics", "group_id", groupID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении топиков.",
+				Text:   h.localizer.MustLocalize(locale.ErrorRequestProcessing),
 			})
 			return
 		}
@@ -3445,7 +3421,7 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 		if len(topics) == 0 {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   fmt.Sprintf("📋 В форуме \"%s\" нет топиков.", group.Name),
+				Text:   h.localizer.MustLocalizeWithTemplate(locale.RenameTopicNoTopics, group.Name),
 			})
 			return
 		}
@@ -3467,7 +3443,7 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      callback.Message.Message.Chat.ID,
-			Text:        fmt.Sprintf("✏️ ПЕРЕИМЕНОВАТЬ ТОПИК ИЗ \"%s\"\n\nВыберите топик:", group.Name),
+			Text:        h.localizer.MustLocalizeWithTemplate(locale.RenameTopicPromptWithName, group.Name),
 			ReplyMarkup: kb,
 		})
 		if err != nil {
@@ -3498,7 +3474,7 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to get topic", "topic_id", topicID, "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при получении топика.",
+				Text:   h.localizer.MustLocalize(locale.ErrorRequestProcessing),
 			})
 			return
 		}
@@ -3506,7 +3482,7 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 		if topic == nil {
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Топик не найден.",
+				Text:   h.localizer.MustLocalize(locale.ErrorTopicNotFound),
 			})
 			return
 		}
@@ -3517,14 +3493,14 @@ func (h *BotHandler) handleRenameTopicCallback(ctx context.Context, b *bot.Bot, 
 			h.logger.Error("failed to start rename FSM", "error", err)
 			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: callback.Message.Message.Chat.ID,
-				Text:   "❌ Ошибка при запуске переименования.",
+				Text:   h.localizer.MustLocalize(locale.RenameGroupErrorStart),
 			})
 			return
 		}
 
 		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: callback.Message.Message.Chat.ID,
-			Text:   fmt.Sprintf("✏️ Переименование топика \"%s\"\n\nВведите новое название:", topic.Name),
+			Text:   h.localizer.MustLocalizeWithTemplate(locale.RenameTopicPromptWithName, topic.Name),
 		})
 		if err != nil {
 			h.logger.Error("failed to send rename prompt", "error", err)

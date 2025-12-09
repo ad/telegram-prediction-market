@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/locale"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
 	"github.com/go-telegram/bot"
@@ -25,6 +26,7 @@ type RenameFSM struct {
 	groupRepo      domain.GroupRepository
 	forumTopicRepo domain.ForumTopicRepository
 	logger         domain.Logger
+	localizer      locale.Localizer
 }
 
 // NewRenameFSM creates a new FSM for rename operations
@@ -34,6 +36,7 @@ func NewRenameFSM(
 	groupRepo domain.GroupRepository,
 	forumTopicRepo domain.ForumTopicRepository,
 	logger domain.Logger,
+	localizer locale.Localizer,
 ) *RenameFSM {
 	return &RenameFSM{
 		storage:        storage,
@@ -41,6 +44,7 @@ func NewRenameFSM(
 		groupRepo:      groupRepo,
 		forumTopicRepo: forumTopicRepo,
 		logger:         logger,
+		localizer:      localizer,
 	}
 }
 
@@ -117,7 +121,7 @@ func (f *RenameFSM) HandleMessage(ctx context.Context, update *models.Update) er
 	if newName == "" {
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Название не может быть пустым. Попробуйте ещё раз:",
+			Text:   f.localizer.MustLocalize(locale.RenameErrorEmptyName),
 		})
 		return nil
 	}
@@ -125,7 +129,7 @@ func (f *RenameFSM) HandleMessage(ctx context.Context, update *models.Update) er
 	if len(newName) > 100 {
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Название слишком длинное (максимум 100 символов). Попробуйте ещё раз:",
+			Text:   f.localizer.MustLocalize(locale.RenameErrorNameTooLong),
 		})
 		return nil
 	}
@@ -148,7 +152,7 @@ func (f *RenameFSM) handleGroupRename(ctx context.Context, userID int64, chatID 
 		f.logger.Error("failed to get group_id from context", "context", contextData)
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при получении данных. Попробуйте начать заново с /list_groups",
+			Text:   f.localizer.MustLocalize(locale.RenameErrorGetContext),
 		})
 		_ = f.storage.Delete(ctx, userID)
 		return fmt.Errorf("invalid group_id in context")
@@ -163,7 +167,7 @@ func (f *RenameFSM) handleGroupRename(ctx context.Context, userID int64, chatID 
 		f.logger.Error("failed to update group name", "group_id", groupID, "error", err)
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при переименовании группы.",
+			Text:   f.localizer.MustLocalize(locale.RenameErrorUpdateGroup),
 		})
 		_ = f.storage.Delete(ctx, userID)
 		return err
@@ -174,7 +178,7 @@ func (f *RenameFSM) handleGroupRename(ctx context.Context, userID int64, chatID 
 	// Send confirmation
 	_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
-		Text:   fmt.Sprintf("✅ Группа успешно переименована!\n\nСтарое название: %s\nНовое название: %s", oldName, newName),
+		Text:   f.localizer.MustLocalizeWithTemplate(locale.RenameGroupSuccess, oldName, newName),
 	})
 
 	// Clear session
@@ -190,7 +194,7 @@ func (f *RenameFSM) handleTopicRename(ctx context.Context, userID int64, chatID 
 		f.logger.Error("failed to get topic_id from context", "context", contextData)
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при получении данных. Попробуйте начать заново с /list_groups",
+			Text:   f.localizer.MustLocalize(locale.RenameErrorGetContext),
 		})
 		_ = f.storage.Delete(ctx, userID)
 		return fmt.Errorf("invalid topic_id in context")
@@ -205,7 +209,7 @@ func (f *RenameFSM) handleTopicRename(ctx context.Context, userID int64, chatID 
 		f.logger.Error("failed to update topic name", "topic_id", topicID, "error", err)
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при переименовании топика.",
+			Text:   f.localizer.MustLocalize(locale.RenameErrorUpdateTopic),
 		})
 		_ = f.storage.Delete(ctx, userID)
 		return err
@@ -216,7 +220,7 @@ func (f *RenameFSM) handleTopicRename(ctx context.Context, userID int64, chatID 
 	// Send confirmation
 	_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
-		Text:   fmt.Sprintf("✅ Топик успешно переименован!\n\nСтарое название: %s\nНовое название: %s", oldName, newName),
+		Text:   f.localizer.MustLocalizeWithTemplate(locale.RenameTopicSuccess, oldName, newName),
 	})
 
 	// Clear session

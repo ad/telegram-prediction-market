@@ -1,5 +1,5 @@
 {
-  "version": "0.3.9",
+  "version": "0.4.0",
   "name": "telegram-prediction-market",
   "slug": "telegram-prediction-market",
   "description": "",
@@ -16,6 +16,7 @@
     "TELEGRAM_TOKEN": "",
     "ADMIN_USER_IDS": "",
     "DATABASE": "/config/telegram-prediction-market.db",
+    "LOCALE": "en",
     "LOG_LEVEL": "info",
     "TIMEZONE": "UTC",
     "MIN_EVENTS_TO_CREATE": 3,
@@ -27,6 +28,7 @@
     "TELEGRAM_TOKEN": "str",
     "ADMIN_USER_IDS": "str",
     "DATABASE": "str",
+    "LOCALE": "str",
     "LOG_LEVEL": "str",
     "TIMEZONE": "str",
     "MIN_EVENTS_TO_CREATE": "int",

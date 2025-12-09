@@ -50,7 +50,6 @@ func setupMultiGroupTestDB(t *testing.T) (*storage.DBQueue, func()) {
 
 // TestIntegration_UserJoiningAndParticipating tests the complete user journey:
 // User joins group via deep-link, creates event, votes, and views rating
-// Requirements: 3.1, 4.1, 8.2, 7.1
 func TestIntegration_UserJoiningAndParticipating(t *testing.T) {
 	ctx := context.Background()
 	queue, cleanup := setupMultiGroupTestDB(t)
@@ -354,7 +353,6 @@ func TestIntegration_UserJoiningAndParticipating(t *testing.T) {
 
 // TestIntegration_MultiGroupUser tests a user participating in multiple groups:
 // User joins multiple groups, creates events in different groups, votes in different groups
-// Requirements: 3.5, 4.1, 1.4
 func TestIntegration_MultiGroupUser(t *testing.T) {
 	ctx := context.Background()
 	queue, cleanup := setupMultiGroupTestDB(t)
@@ -777,7 +775,6 @@ func TestIntegration_MultiGroupUser(t *testing.T) {
 
 // TestIntegration_AdminWorkflows tests admin operations:
 // Admin creates group, generates deep-links, views members, removes member
-// Requirements: 12.1, 12.2, 12.3, 12.4
 func TestIntegration_AdminWorkflows(t *testing.T) {
 	ctx := context.Background()
 	queue, cleanup := setupMultiGroupTestDB(t)
@@ -1119,7 +1116,6 @@ func TestIntegration_AdminWorkflows(t *testing.T) {
 
 // TestIntegration_DataMigration tests the migration of existing data to multi-group model:
 // Run migration on existing data, verify default group is created, verify all data is associated with default group
-// Requirements: 1.1
 func TestIntegration_DataMigration(t *testing.T) {
 	ctx := context.Background()
 	db, err := sql.Open("sqlite", ":memory:")

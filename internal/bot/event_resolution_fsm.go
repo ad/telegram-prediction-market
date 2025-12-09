@@ -8,6 +8,7 @@ import (
 
 	"github.com/ad/gitelegram-prediction-market/internal/config"
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/locale"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
 	"github.com/go-telegram/bot"
@@ -35,6 +36,7 @@ type EventResolutionFSM struct {
 	notificationService      *domain.NotificationService
 	config                   *config.Config
 	logger                   domain.Logger
+	localizer                locale.Localizer
 }
 
 // NewEventResolutionFSM creates a new FSM for event resolution
@@ -51,6 +53,7 @@ func NewEventResolutionFSM(
 	notificationService *domain.NotificationService,
 	cfg *config.Config,
 	logger domain.Logger,
+	localizer locale.Localizer,
 ) *EventResolutionFSM {
 	return &EventResolutionFSM{
 		storage:                  storage,
@@ -65,6 +68,7 @@ func NewEventResolutionFSM(
 		notificationService:      notificationService,
 		config:                   cfg,
 		logger:                   logger,
+		localizer:                localizer,
 	}
 }
 
@@ -163,7 +167,7 @@ func (f *EventResolutionFSM) handleEventSelection(ctx context.Context, callback 
 		f.logger.Error("failed to check event management permission", "user_id", userID, "event_id", eventID, "error", err)
 		msg, _ := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: context.ChatID,
-			Text:   "❌ Ошибка при проверке прав доступа.",
+			Text:   f.localizer.MustLocalize(locale.EventResolutionErrorPermissionCheck),
 		})
 		if msg != nil {
 			context.MessageIDs = append(context.MessageIDs, msg.ID)
@@ -175,7 +179,7 @@ func (f *EventResolutionFSM) handleEventSelection(ctx context.Context, callback 
 		f.logger.Warn("unauthorized event management attempt", "user_id", userID, "event_id", eventID)
 		msg, _ := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: context.ChatID,
-			Text:   "❌ У вас нет прав для управления этим событием.",
+			Text:   f.localizer.MustLocalize(locale.EventResolutionErrorUnauthorized),
 		})
 		if msg != nil {
 			context.MessageIDs = append(context.MessageIDs, msg.ID)
@@ -189,7 +193,7 @@ func (f *EventResolutionFSM) handleEventSelection(ctx context.Context, callback 
 		f.logger.Error("failed to get event", "event_id", eventID, "error", err)
 		msg, _ := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: context.ChatID,
-			Text:   "❌ Ошибка при получении события.",
+			Text:   f.localizer.MustLocalize(locale.EventResolutionErrorGetEvent),
 		})
 		if msg != nil {
 			context.MessageIDs = append(context.MessageIDs, msg.ID)
@@ -217,7 +221,7 @@ func (f *EventResolutionFSM) handleEventSelection(ctx context.Context, callback 
 
 	msg, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      context.ChatID,
-		Text:        fmt.Sprintf("🎯 ВЫБОР ПРАВИЛЬНОГО ОТВЕТА\n\n▸ Событие: %s\n\nВыберите правильный ответ:", event.Question),
+		Text:        f.localizer.MustLocalizeWithTemplate(locale.EventResolutionSelectCorrectAnswer, event.Question),
 		ReplyMarkup: kb,
 	})
 	if err != nil {
@@ -266,7 +270,7 @@ func (f *EventResolutionFSM) handleOptionSelection(ctx context.Context, callback
 		f.logger.Error("failed to resolve event", "event_id", context.EventID, "error", err)
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: context.ChatID,
-			Text:   "❌ Ошибка при завершении события.",
+			Text:   f.localizer.MustLocalize(locale.EventResolutionErrorResolve),
 		})
 		// Clean up session
 		_ = f.storage.Delete(ctx, userID)
@@ -354,7 +358,7 @@ func (f *EventResolutionFSM) handleOptionSelection(ctx context.Context, callback
 	// Send confirmation to user (final message - not deleted)
 	_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: context.ChatID,
-		Text:   fmt.Sprintf("✅ Событие завершено!\n\nПравильный ответ: %s", event.Options[optionIndex]),
+		Text:   f.localizer.MustLocalize(locale.EventResolutionSuccess),
 	})
 
 	// Clean up session
@@ -402,26 +406,17 @@ func (f *EventResolutionFSM) checkAndNotifyEventCreationPermission(ctx context.C
 			return
 		}
 
-		groupName := "группе"
+		groupName := f.localizer.MustLocalize(locale.GroupReferenceDefault)
 		if group != nil && group.Name != "" {
-			groupName = fmt.Sprintf("группе \"%s\"", group.Name)
+			groupName = f.localizer.MustLocalizeWithTemplate(locale.GroupReferenceNamed, group.Name)
 		}
 
 		// Send notification with instructions
-		message := fmt.Sprintf(
-			"🎉 Поздравляем!\n\n"+
-				"Вы приняли участие в %d завершенных событиях в %s и теперь можете создавать свои собственные события!\n\n"+
-				"📝 Как создать событие:\n"+
-				"1️⃣ Используйте команду /create_event\n"+
-				"2️⃣ Выберите группу\n"+
-				"3️⃣ Введите вопрос события\n"+
-				"4️⃣ Выберите тип события\n"+
-				"5️⃣ Укажите варианты ответов\n"+
-				"6️⃣ Установите дедлайн\n\n"+
-				"Удачи в создании интересных событий! 🚀",
-			participationCount,
+		message := f.localizer.MustLocalizeWithTemplate(
+			locale.EventResolutionPermissionGranted,
+			fmt.Sprintf("%d", participationCount),
 			groupName,
-		)
+		) + "\n\n" + f.localizer.MustLocalize(locale.EventResolutionPermissionInstructions)
 
 		_, err = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: userID,
@@ -438,14 +433,14 @@ func (f *EventResolutionFSM) checkAndNotifyEventCreationPermission(ctx context.C
 // sendAchievementNotification sends achievement notification to user
 func (f *EventResolutionFSM) sendAchievementNotification(ctx context.Context, userID int64, achievement *domain.Achievement) {
 	achievementNames := map[domain.AchievementCode]string{
-		domain.AchievementSharpshooter:    "🎯 Меткий стрелок",
-		domain.AchievementProphet:         "🔮 Провидец",
-		domain.AchievementRiskTaker:       "🎲 Риск-мейкер",
-		domain.AchievementWeeklyAnalyst:   "📊 Аналитик недели",
-		domain.AchievementVeteran:         "🏆 Старожил",
-		domain.AchievementEventOrganizer:  "🎪 Организатор событий",
-		domain.AchievementActiveOrganizer: "🎭 Активный организатор",
-		domain.AchievementMasterOrganizer: "🎬 Мастер организатор",
+		domain.AchievementSharpshooter:    f.localizer.MustLocalize(locale.AchievementSharpshooterName),
+		domain.AchievementProphet:         f.localizer.MustLocalize(locale.AchievementProphetName),
+		domain.AchievementRiskTaker:       f.localizer.MustLocalize(locale.AchievementRiskTakerName),
+		domain.AchievementWeeklyAnalyst:   f.localizer.MustLocalize(locale.AchievementWeeklyAnalystName),
+		domain.AchievementVeteran:         f.localizer.MustLocalize(locale.AchievementVeteranName),
+		domain.AchievementEventOrganizer:  f.localizer.MustLocalize(locale.AchievementEventOrganizerName),
+		domain.AchievementActiveOrganizer: f.localizer.MustLocalize(locale.AchievementActiveOrganizerName),
+		domain.AchievementMasterOrganizer: f.localizer.MustLocalize(locale.AchievementMasterOrganizerName),
 	}
 
 	name := achievementNames[achievement.Code]
@@ -459,14 +454,14 @@ func (f *EventResolutionFSM) sendAchievementNotification(ctx context.Context, us
 		f.logger.Error("failed to get group for achievement notification", "group_id", achievement.GroupID, "error", err)
 	}
 
-	groupName := "группе"
+	groupName := f.localizer.MustLocalize(locale.LabelGroup)
 	if group != nil && group.Name != "" {
-		groupName = fmt.Sprintf("группе \"%s\"", group.Name)
+		groupName = f.localizer.MustLocalizeWithTemplate(locale.AchievementNotificationGroup, group.Name)
 	}
 
 	// Send to user with group context
 	_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: userID,
-		Text:   fmt.Sprintf("🎉 Поздравляем! Вы получили ачивку в %s:\n\n%s", groupName, name),
+		Text:   f.localizer.MustLocalizeWithTemplate(locale.EventResolutionAchievementNotification, groupName, name),
 	})
 }

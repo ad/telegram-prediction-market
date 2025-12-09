@@ -18,6 +18,7 @@ type Config struct {
 	AdminUserIDs          []int64
 	AdminIDsStr           string `json:"ADMIN_USER_IDS"`
 	DatabasePath          string `json:"DATABASE"`
+	Locale                string `json:"LOCALE"`
 	LogLevel              string `json:"LOG_LEVEL"`
 	Timezone              *time.Location
 	TimezoneStr           string `json:"TIMEZONE"`
@@ -33,6 +34,7 @@ func Load() (*Config, error) {
 		TelegramToken:         os.Getenv("TELEGRAM_TOKEN"),
 		AdminIDsStr:           os.Getenv("ADMIN_USER_IDS"),
 		DatabasePath:          os.Getenv("DATABASE_PATH"),
+		Locale:                os.Getenv("LOCALE"),
 		LogLevel:              os.Getenv("LOG_LEVEL"),
 		TimezoneStr:           os.Getenv("TIMEZONE"),
 		MinEventsToCreate:     0,
@@ -72,6 +74,10 @@ func Load() (*Config, error) {
 		config.DatabasePath = "/config/telegram-prediction-market.db" // default value
 	}
 
+	if config.Locale == "" {
+		config.Locale = "en" // default value
+	}
+
 	if config.LogLevel == "" {
 		config.LogLevel = "INFO" // default value
 	}
@@ -109,6 +115,7 @@ func Load() (*Config, error) {
 		TelegramToken:         config.TelegramToken,
 		AdminUserIDs:          adminIDs,
 		DatabasePath:          config.DatabasePath,
+		Locale:                config.Locale,
 		LogLevel:              config.LogLevel,
 		Timezone:              timezone,
 		MinEventsToCreate:     config.MinEventsToCreate,

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/locale"
 	"github.com/ad/gitelegram-prediction-market/internal/logger"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
@@ -38,10 +39,17 @@ func TestSessionConflictDetection(t *testing.T) {
 
 	fsmStorage := storage.NewFSMStorage(queue, log)
 
+	// Create localizer for tests
+	localizer, err := locale.NewLocalizer(context.Background(), locale.NewLocale(locale.Ru))
+	if err != nil {
+		t.Fatalf("failed to create localizer: %v", err)
+	}
+
 	// Создаем handler с минимальными зависимостями
 	handler := &BotHandler{
 		eventCreationFSM: &EventCreationFSM{storage: fsmStorage},
 		logger:           log,
+		localizer:        localizer,
 	}
 
 	userID := int64(12345)
@@ -76,8 +84,9 @@ func TestSessionConflictDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if conflictType != "создания события" {
-		t.Errorf("expected conflict 'создания события', got: %s", conflictType)
+	expectedConflict := localizer.MustLocalize("SessionTypeEventCreation")
+	if conflictType != expectedConflict {
+		t.Errorf("expected conflict '%s', got: %s", expectedConflict, conflictType)
 	}
 
 	// Тест 3: Создаем сессию создания группы
@@ -93,8 +102,9 @@ func TestSessionConflictDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if conflictType != "создания группы" {
-		t.Errorf("expected conflict 'создания группы', got: %s", conflictType)
+	expectedConflict = localizer.MustLocalize("SessionTypeGroupCreation")
+	if conflictType != expectedConflict {
+		t.Errorf("expected conflict '%s', got: %s", expectedConflict, conflictType)
 	}
 
 	// Тест 4: Создаем сессию завершения события
@@ -110,8 +120,9 @@ func TestSessionConflictDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if conflictType != "завершения события" {
-		t.Errorf("expected conflict 'завершения события', got: %s", conflictType)
+	expectedConflict = localizer.MustLocalize("SessionTypeEventResolution")
+	if conflictType != expectedConflict {
+		t.Errorf("expected conflict '%s', got: %s", expectedConflict, conflictType)
 	}
 }
 

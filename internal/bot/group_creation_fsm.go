@@ -9,6 +9,7 @@ import (
 
 	"github.com/ad/gitelegram-prediction-market/internal/config"
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/locale"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
 	"github.com/go-telegram/bot"
@@ -33,6 +34,7 @@ type GroupCreationFSM struct {
 	deepLinkService *domain.DeepLinkService
 	config          *config.Config
 	logger          domain.Logger
+	localizer       locale.Localizer
 }
 
 // NewGroupCreationFSM creates a new FSM for group creation
@@ -44,6 +46,7 @@ func NewGroupCreationFSM(
 	deepLinkService *domain.DeepLinkService,
 	cfg *config.Config,
 	logger domain.Logger,
+	localizer locale.Localizer,
 ) *GroupCreationFSM {
 	return &GroupCreationFSM{
 		storage:         storage,
@@ -53,6 +56,7 @@ func NewGroupCreationFSM(
 		deepLinkService: deepLinkService,
 		config:          cfg,
 		logger:          logger,
+		localizer:       localizer,
 	}
 }
 
@@ -149,7 +153,7 @@ func (f *GroupCreationFSM) handleGroupNameInput(ctx context.Context, update *mod
 	if input == "" {
 		msg, _ := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Название группы не может быть пустым. Попробуйте снова:",
+			Text:   f.localizer.MustLocalize(locale.GroupCreationErrorInvalidName),
 		})
 		if msg != nil {
 			context.MessageIDs = append(context.MessageIDs, msg.ID)
@@ -165,12 +169,9 @@ func (f *GroupCreationFSM) handleGroupNameInput(ctx context.Context, update *mod
 	// Send confirmation and ask for chat ID
 	msg, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
-		Text: "✅ Название сохранено: " + input + "\n\n" +
-			"Введите ID группового чата Telegram, к которому будет привязана эта группа.\n\n" +
-			"💡 Как получить ID чата:\n" +
-			"1. Добавьте бота @userinfobot в ваш групповой чат\n" +
-			"2. Он отправит ID чата (например: -1001234567890)\n" +
-			"3. Скопируйте и отправьте этот ID сюда",
+		Text: f.localizer.MustLocalizeWithTemplate(locale.GroupCreationNameSaved, input) + "\n\n" +
+			f.localizer.MustLocalize(locale.GroupCreationAskChatID) + "\n\n" +
+			f.localizer.MustLocalizeWithTemplate(locale.GroupCreationAskChatIDInstructions, input),
 	})
 	if err != nil {
 		f.logger.Error("failed to send chat ID prompt", "error", err)
@@ -201,7 +202,7 @@ func (f *GroupCreationFSM) handleChatIDInput(ctx context.Context, update *models
 	if err != nil || telegramChatID == 0 {
 		msg, _ := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Неверный формат ID чата. Введите числовой ID (например: -1001234567890):",
+			Text:   f.localizer.MustLocalize(locale.GroupCreationErrorInvalidChatID),
 		})
 		if msg != nil {
 			context.MessageIDs = append(context.MessageIDs, msg.ID)
@@ -224,15 +225,15 @@ func (f *GroupCreationFSM) handleChatIDInput(ctx context.Context, update *models
 		kb := &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					{Text: "💬 Форум", CallbackData: "group_is_forum:yes"},
-					{Text: "👥 Обычная группа", CallbackData: "group_is_forum:no"},
+					{Text: f.localizer.MustLocalize(locale.GroupCreationButtonForum), CallbackData: "group_is_forum:yes"},
+					{Text: f.localizer.MustLocalize(locale.GroupCreationButtonRegular), CallbackData: "group_is_forum:no"},
 				},
 			},
 		}
 
 		msg, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      chatID,
-			Text:        "🗂 Является ли эта группа форумом (супергруппа с темами)?",
+			Text:        f.localizer.MustLocalize(locale.GroupCreationAskIsForum),
 			ReplyMarkup: kb,
 		})
 		if err != nil {
@@ -268,7 +269,7 @@ func (f *GroupCreationFSM) createGroup(ctx context.Context, userID int64, chatID
 		f.logger.Error("failed to check existing group", "error", err)
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при проверке существующей группы: " + err.Error(),
+			Text:   f.localizer.MustLocalizeWithTemplate(locale.GroupCreationErrorCheckExisting, err.Error()),
 		})
 		_ = f.storage.Delete(ctx, userID)
 		return err
@@ -291,7 +292,7 @@ func (f *GroupCreationFSM) createGroup(ctx context.Context, userID int64, chatID
 			f.logger.Error("group validation failed", "error", err)
 			_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "❌ Ошибка валидации группы: " + err.Error(),
+				Text:   f.localizer.MustLocalizeWithTemplate(locale.GroupCreationErrorValidation, err.Error()),
 			})
 			_ = f.storage.Delete(ctx, userID)
 			return err
@@ -301,7 +302,7 @@ func (f *GroupCreationFSM) createGroup(ctx context.Context, userID int64, chatID
 			f.logger.Error("failed to create group", "error", err)
 			_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "❌ Ошибка при создании группы: " + err.Error(),
+				Text:   f.localizer.MustLocalizeWithTemplate(locale.GroupCreationErrorCreate, err.Error()),
 			})
 			_ = f.storage.Delete(ctx, userID)
 			return err
@@ -360,7 +361,7 @@ func (f *GroupCreationFSM) createGroup(ctx context.Context, userID int64, chatID
 		f.logger.Error("failed to generate deep-link", "error", err)
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при создании ссылки для приглашения",
+			Text:   f.localizer.MustLocalize(locale.GroupCreationErrorInviteLink),
 		})
 		_ = f.storage.Delete(ctx, userID)
 		return err
@@ -369,34 +370,32 @@ func (f *GroupCreationFSM) createGroup(ctx context.Context, userID int64, chatID
 	// Build success message
 	var successMsg string
 	if isNewGroup {
-		successMsg = fmt.Sprintf("✅ Группа создана!\n\n"+
-			"📋 Название: %s\n"+
-			"🆔 ID группы: %d\n"+
-			"🆔 ID чата: %d\n",
-			context.GroupName, group.ID, context.TelegramChatID)
+		successMsg = f.localizer.MustLocalize(locale.GroupCreationSuccessNew)
 	} else {
-		successMsg = fmt.Sprintf("✅ Используется существующая группа!\n\n"+
-			"📋 Название: %s\n"+
-			"🆔 ID группы: %d\n"+
-			"🆔 ID чата: %d\n",
-			group.Name, group.ID, context.TelegramChatID)
+		successMsg = f.localizer.MustLocalize(locale.GroupCreationSuccessExisting)
 	}
 
+	// Add group details
+	successMsg += f.localizer.MustLocalizeWithTemplate(
+		locale.GroupCreationSuccessDetails,
+		group.Name,
+		fmt.Sprintf("%d", group.ID),
+		fmt.Sprintf("%d", context.TelegramChatID),
+	)
+
 	if context.IsForum {
-		successMsg += "🗂 Тип: Форум\n"
+		successMsg += "\n" + f.localizer.MustLocalize(locale.GroupCreationSuccessForumType)
 		if context.MessageThreadID != nil {
-			successMsg += fmt.Sprintf("📍 ID темы: %d\n", *context.MessageThreadID)
+			successMsg += "\n" + f.localizer.MustLocalizeWithTemplate(locale.GroupCreationSuccessThreadID, fmt.Sprintf("%d", *context.MessageThreadID))
 			if topicCreated {
-				successMsg += "\n✨ Тема форума зарегистрирована! События будут отправляться в эту тему.\n"
+				successMsg += "\n\n" + f.localizer.MustLocalize(locale.GroupCreationSuccessTopicRegistered)
 			}
 		}
 	} else {
-		successMsg += "🗂 Тип: Обычная группа\n"
+		successMsg += "\n" + f.localizer.MustLocalize(locale.GroupCreationSuccessRegularType)
 	}
 
-	successMsg += fmt.Sprintf("\n🔗 Ссылка для присоединения к группе:\n%s\n\n"+
-		"👉 Перейдите по этой ссылке для создания Событий в группе.\n"+
-		"Отправьте эту ссылку пользователям для присоединения к группе.", deepLink)
+	successMsg += f.localizer.MustLocalizeWithTemplate(locale.GroupCreationInviteLink, deepLink)
 
 	// Send success message (final message - not deleted)
 	_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
@@ -436,16 +435,12 @@ func (f *GroupCreationFSM) notifyAdminsAboutGroupCreation(ctx context.Context, c
 		}
 	}
 
-	notificationMsg := fmt.Sprintf(
-		"🎉 СОЗДАНА НОВАЯ ГРУППА\n\n"+
-			"👤 Создатель: %s\n"+
-			"📋 Название: %s\n"+
-			"🆔 ID группы: %d\n"+
-			"💬 ID чата: %d",
+	notificationMsg := f.localizer.MustLocalizeWithTemplate(
+		locale.GroupCreationAdminNotification,
 		creatorName,
 		group.Name,
-		group.ID,
-		group.TelegramChatID,
+		fmt.Sprintf("%d", group.ID),
+		fmt.Sprintf("%d", group.TelegramChatID),
 	)
 
 	// Send notification to all admins
@@ -512,12 +507,8 @@ func (f *GroupCreationFSM) handleIsForumCallback(ctx context.Context, userID int
 
 		msg, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text: "📍 Введите ID темы форума:\n\n" +
-				"Чтобы узнать ID темы:\n" +
-				"1. Откройте тему в веб-версии Telegram (web.telegram.org)\n" +
-				"2. URL будет вида: https://web.telegram.org/k/#-1001234567890_123\n" +
-				"3. Число после '_' - это ID темы (в примере: 123)\n\n" +
-				"Или отправьте 0, если хотите пропустить (события будут в основной чат):",
+			Text: f.localizer.MustLocalize(locale.GroupCreationAskForumTopicID) + "\n\n" +
+				f.localizer.MustLocalize(locale.GroupCreationAskThreadIDInstructions),
 		})
 		if err != nil {
 			f.logger.Error("failed to send thread ID prompt", "error", err)
@@ -554,7 +545,7 @@ func (f *GroupCreationFSM) handleThreadIDInput(ctx context.Context, update *mode
 	if err != nil {
 		msg, _ := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Неверный формат ID темы. Введите число (например: 123) или 0 для пропуска:",
+			Text:   f.localizer.MustLocalize(locale.GroupCreationErrorInvalidTopicID),
 		})
 		if msg != nil {
 			context.MessageIDs = append(context.MessageIDs, msg.ID)

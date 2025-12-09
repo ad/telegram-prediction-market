@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/ad/gitelegram-prediction-market/internal/bot"
 	"github.com/ad/gitelegram-prediction-market/internal/config"
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
 	"github.com/ad/gitelegram-prediction-market/internal/encoding"
+	"github.com/ad/gitelegram-prediction-market/internal/locale"
 	"github.com/ad/gitelegram-prediction-market/internal/logger"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
@@ -32,10 +34,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize Localizer (fail-fast if initialization fails)
+	localizer, errLocaleInit := locale.NewLocalizer(context.Background(), locale.NewLocale(cfg.Locale))
+	if errLocaleInit != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize Localizer: %v\n", errLocaleInit)
+		os.Exit(1)
+	}
+
 	// Initialize logger
 	logLevel := logger.ParseLevel(cfg.LogLevel)
 	log := logger.New(logLevel)
-	log.Info("Starting Telegram Prediction Bot", "log_level", cfg.LogLevel)
+
+	log.Info(localizer.MustLocalize(locale.StartingTelegramPredictionBot))
+
+	// Create database directory if it doesn't exist
+	dbDir := filepath.Dir(cfg.DatabasePath)
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		log.Error("Failed to create database directory", "path", dbDir, "error", err)
+		os.Exit(1)
+	}
 
 	// Initialize database
 	db, err := sql.Open("sqlite", cfg.DatabasePath)
@@ -164,6 +181,7 @@ func main() {
 		ratingRepo,
 		reminderRepo,
 		log,
+		localizer,
 	)
 
 	log.Info("Notification service created")
@@ -180,6 +198,7 @@ func main() {
 		ratingRepo,
 		cfg,
 		log,
+		localizer,
 	)
 	log.Info("Event creation FSM created")
 
@@ -207,6 +226,7 @@ func main() {
 		notificationService,
 		cfg,
 		log,
+		localizer,
 	)
 	log.Info("Event resolution FSM created")
 
@@ -219,6 +239,7 @@ func main() {
 		deepLinkService,
 		cfg,
 		log,
+		localizer,
 	)
 	log.Info("Group creation FSM created")
 
@@ -229,6 +250,7 @@ func main() {
 		groupRepo,
 		forumTopicRepo,
 		log,
+		localizer,
 	)
 	log.Info("Rename FSM created")
 
@@ -241,6 +263,7 @@ func main() {
 		forumTopicRepo,
 		cfg,
 		log,
+		localizer,
 	)
 	log.Info("Event edit FSM created")
 
@@ -265,6 +288,7 @@ func main() {
 		deepLinkService,
 		groupContextResolver,
 		ratingRepo,
+		localizer,
 	)
 
 	log.Info("Bot handler created")
@@ -308,7 +332,7 @@ func main() {
 		b.Start(ctx)
 	}()
 
-	log.Info("Bot is running.")
+	log.Info(localizer.MustLocalize(locale.BotStarted))
 
 	// Wait for shutdown signal
 	<-ctx.Done()
