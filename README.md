@@ -8,6 +8,8 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?logo=telegram)](https://telegram.org/)
 
+[English](README.en.md) | Русский
+
 [Возможности](#-возможности) • [Быстрый старт](#-быстрый-старт) • [Использование](#-использование) • [Архитектура](#-архитектура)
 
 </div>
