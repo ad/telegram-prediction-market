@@ -8,6 +8,7 @@ import (
 
 	"github.com/ad/gitelegram-prediction-market/internal/config"
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/locale"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -130,6 +131,7 @@ type EventEditFSM struct {
 	forumTopicRepo domain.ForumTopicRepository
 	config         *config.Config
 	logger         domain.Logger
+	localizer      locale.Localizer
 }
 
 // NewEventEditFSM creates a new FSM for event editing
@@ -141,6 +143,7 @@ func NewEventEditFSM(
 	forumTopicRepo domain.ForumTopicRepository,
 	cfg *config.Config,
 	logger domain.Logger,
+	localizer locale.Localizer,
 ) *EventEditFSM {
 	return &EventEditFSM{
 		storage:        storage,
@@ -150,6 +153,7 @@ func NewEventEditFSM(
 		forumTopicRepo: forumTopicRepo,
 		config:         cfg,
 		logger:         logger,
+		localizer:      localizer,
 	}
 }
 
@@ -203,12 +207,12 @@ func (f *EventEditFSM) Start(ctx context.Context, userID int64, chatID int64, ev
 func (f *EventEditFSM) sendFieldSelectionMenu(ctx context.Context, userID int64, chatID int64, editCtx *EventEditContext) error {
 	// Build current state summary
 	var sb strings.Builder
-	sb.WriteString("✏️ РЕДАКТИРОВАНИЕ СОБЫТИЯ\n\n")
-	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", editCtx.NewQuestion))
+	sb.WriteString(f.localizer.MustLocalize(locale.EventEditTitle) + "\n\n")
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventEditCurrentQuestion, editCtx.NewQuestion) + "\n\n")
 
 	// Only show options for multi-option events
 	if editCtx.EventType == domain.EventTypeMultiOption {
-		sb.WriteString("📊 Варианты:\n")
+		sb.WriteString(f.localizer.MustLocalize(locale.EventEditCurrentOptions) + "\n")
 		for i, opt := range editCtx.NewOptions {
 			sb.WriteString(fmt.Sprintf("  %d) %s\n", i+1, opt))
 		}
@@ -216,28 +220,28 @@ func (f *EventEditFSM) sendFieldSelectionMenu(ctx context.Context, userID int64,
 	}
 
 	localDeadline := editCtx.NewDeadline.In(f.config.Timezone)
-	sb.WriteString(fmt.Sprintf("⏰ Дедлайн: %s\n\n", localDeadline.Format("02.01.2006 15:04")))
-	sb.WriteString("Выберите, что хотите изменить:")
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventEditCurrentDeadline, localDeadline.Format("02.01.2006 15:04")) + "\n\n")
+	sb.WriteString(f.localizer.MustLocalize(locale.EventEditSelectFieldPrompt))
 
 	// Build keyboard based on event type
 	var buttons [][]models.InlineKeyboardButton
 	buttons = append(buttons, []models.InlineKeyboardButton{
-		{Text: "📝 Вопрос", CallbackData: fmt.Sprintf("edit_field:question:%d", editCtx.EventID)},
+		{Text: f.localizer.MustLocalize(locale.EventEditButtonQuestion), CallbackData: fmt.Sprintf("edit_field:question:%d", editCtx.EventID)},
 	})
 
 	// Only allow editing options for multi-option events
 	if editCtx.EventType == domain.EventTypeMultiOption {
 		buttons = append(buttons, []models.InlineKeyboardButton{
-			{Text: "📊 Варианты", CallbackData: fmt.Sprintf("edit_field:options:%d", editCtx.EventID)},
+			{Text: f.localizer.MustLocalize(locale.EventEditButtonOptions), CallbackData: fmt.Sprintf("edit_field:options:%d", editCtx.EventID)},
 		})
 	}
 
 	buttons = append(buttons, []models.InlineKeyboardButton{
-		{Text: "⏰ Дедлайн", CallbackData: fmt.Sprintf("edit_field:deadline:%d", editCtx.EventID)},
+		{Text: f.localizer.MustLocalize(locale.EventEditButtonDeadline), CallbackData: fmt.Sprintf("edit_field:deadline:%d", editCtx.EventID)},
 	})
 	buttons = append(buttons, []models.InlineKeyboardButton{
-		{Text: "✅ Сохранить", CallbackData: fmt.Sprintf("edit_field:save:%d", editCtx.EventID)},
-		{Text: "❌ Отмена", CallbackData: fmt.Sprintf("edit_field:cancel:%d", editCtx.EventID)},
+		{Text: f.localizer.MustLocalize(locale.EventEditButtonSave), CallbackData: fmt.Sprintf("edit_field:save:%d", editCtx.EventID)},
+		{Text: f.localizer.MustLocalize(locale.EventEditButtonCancel), CallbackData: fmt.Sprintf("edit_field:cancel:%d", editCtx.EventID)},
 	})
 
 	kb := &models.InlineKeyboardMarkup{InlineKeyboard: buttons}
@@ -292,7 +296,7 @@ func (f *EventEditFSM) HandleCallback(ctx context.Context, callback *models.Call
 		if err == storage.ErrSessionExpired {
 			_, _ = f.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 				CallbackQueryID: callback.ID,
-				Text:            "⏱ Время сессии истекло",
+				Text:            f.localizer.MustLocalize(locale.SessionExpiredShort),
 			})
 			return nil
 		}
@@ -357,7 +361,7 @@ func (f *EventEditFSM) handleFieldSelectionCallback(ctx context.Context, userID 
 func (f *EventEditFSM) promptEditQuestion(ctx context.Context, userID int64, chatID int64, editCtx *EventEditContext) error {
 	msg, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
-		Text:   fmt.Sprintf("📝 Текущий вопрос:\n%s\n\nВведите новый вопрос:", editCtx.NewQuestion),
+		Text:   f.localizer.MustLocalizeWithTemplate(locale.EventEditPromptQuestion, editCtx.NewQuestion),
 	})
 	if err != nil {
 		return err
@@ -369,11 +373,11 @@ func (f *EventEditFSM) promptEditQuestion(ctx context.Context, userID int64, cha
 
 func (f *EventEditFSM) promptEditOptions(ctx context.Context, userID int64, chatID int64, editCtx *EventEditContext) error {
 	var sb strings.Builder
-	sb.WriteString("📊 Текущие варианты:\n")
+	sb.WriteString(f.localizer.MustLocalize(locale.EventEditCurrentOptions) + "\n")
 	for i, opt := range editCtx.NewOptions {
 		sb.WriteString(fmt.Sprintf("  %d) %s\n", i+1, opt))
 	}
-	sb.WriteString("\nВведите новые варианты (2-6 штук), каждый с новой строки:")
+	sb.WriteString("\n" + f.localizer.MustLocalize(locale.EventEditPromptOptionsHelp))
 
 	msg, err := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
@@ -392,17 +396,19 @@ func (f *EventEditFSM) promptEditDeadline(ctx context.Context, userID int64, cha
 	exampleDate := time.Now().In(f.config.Timezone).AddDate(0, 0, 7)
 	exampleDate = time.Date(exampleDate.Year(), exampleDate.Month(), exampleDate.Day(), 12, 0, 0, 0, f.config.Timezone)
 
-	text := fmt.Sprintf("⏰ Текущий дедлайн: %s\n\n📅 Введите новый дедлайн в формате:\nДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: <code>%s</code>\n\nИли выберите готовый период:",
+	text := f.localizer.MustLocalizeWithTemplate(
+		locale.EventEditPromptDeadline,
 		localDeadline.Format("02.01.2006 15:04"),
-		exampleDate.Format("02.01.2006 15:04"))
+		exampleDate.Format("02.01.2006 15:04"),
+	)
 
 	kb := &models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{{Text: "1 день", CallbackData: fmt.Sprintf("edit_deadline_preset:1d:%d", editCtx.EventID)}},
-			{{Text: "3 дня", CallbackData: fmt.Sprintf("edit_deadline_preset:3d:%d", editCtx.EventID)}},
-			{{Text: "1 неделя", CallbackData: fmt.Sprintf("edit_deadline_preset:7d:%d", editCtx.EventID)}},
-			{{Text: "2 недели", CallbackData: fmt.Sprintf("edit_deadline_preset:14d:%d", editCtx.EventID)}},
-			{{Text: "1 месяц", CallbackData: fmt.Sprintf("edit_deadline_preset:30d:%d", editCtx.EventID)}},
+			{{Text: f.localizer.MustLocalize(locale.DeadlinePreset1Day), CallbackData: fmt.Sprintf("edit_deadline_preset:1d:%d", editCtx.EventID)}},
+			{{Text: f.localizer.MustLocalize(locale.DeadlinePreset3Days), CallbackData: fmt.Sprintf("edit_deadline_preset:3d:%d", editCtx.EventID)}},
+			{{Text: f.localizer.MustLocalize(locale.DeadlinePreset1Week), CallbackData: fmt.Sprintf("edit_deadline_preset:7d:%d", editCtx.EventID)}},
+			{{Text: f.localizer.MustLocalize(locale.DeadlinePreset2Weeks), CallbackData: fmt.Sprintf("edit_deadline_preset:2d:%d", editCtx.EventID)}},
+			{{Text: f.localizer.MustLocalize(locale.DeadlinePreset1Month), CallbackData: fmt.Sprintf("edit_deadline_preset:30d:%d", editCtx.EventID)}},
 		},
 	}
 
@@ -506,7 +512,7 @@ func (f *EventEditFSM) handleQuestionInput(ctx context.Context, userID int64, ch
 	if text == "" {
 		msg, _ := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Вопрос не может быть пустым. Попробуйте снова:",
+			Text:   f.localizer.MustLocalize(locale.EventEditErrorEmptyQuestion),
 		})
 		editCtx.LastErrorMessageID = msg.ID
 		return f.storage.Set(ctx, userID, StateEditQuestion, editCtx.ToMap())
@@ -523,7 +529,7 @@ func (f *EventEditFSM) handleOptionsInput(ctx context.Context, userID int64, cha
 	if text == "" {
 		msg, _ := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Варианты не могут быть пустыми. Попробуйте снова:",
+			Text:   f.localizer.MustLocalize(locale.EventEditErrorEmptyOptions),
 		})
 		editCtx.LastErrorMessageID = msg.ID
 		return f.storage.Set(ctx, userID, StateEditOptions, editCtx.ToMap())
@@ -542,7 +548,7 @@ func (f *EventEditFSM) handleOptionsInput(ctx context.Context, userID int64, cha
 	if len(options) < 2 || len(options) > 6 {
 		msg, _ := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Нужно 2-6 вариантов. Попробуйте снова:",
+			Text:   f.localizer.MustLocalize(locale.EventEditErrorOptionsCount),
 		})
 		editCtx.LastErrorMessageID = msg.ID
 		return f.storage.Set(ctx, userID, StateEditOptions, editCtx.ToMap())
@@ -562,7 +568,7 @@ func (f *EventEditFSM) handleDeadlineInput(ctx context.Context, userID int64, ch
 		exampleStr := exampleDate.Format("02.01.2006 15:04")
 		msg, _ := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:    chatID,
-			Text:      fmt.Sprintf("❌ Неверный формат. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: <code>%s</code>", exampleStr),
+			Text:      f.localizer.MustLocalizeWithTemplate(locale.EventEditErrorInvalidDeadline, exampleStr),
 			ParseMode: models.ParseModeHTML,
 		})
 		editCtx.LastErrorMessageID = msg.ID
@@ -572,7 +578,7 @@ func (f *EventEditFSM) handleDeadlineInput(ctx context.Context, userID int64, ch
 	if deadline.Before(time.Now()) {
 		msg, _ := f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Дедлайн должен быть в будущем. Попробуйте снова:",
+			Text:   f.localizer.MustLocalize(locale.EventEditErrorDeadlinePast),
 		})
 		editCtx.LastErrorMessageID = msg.ID
 		return f.storage.Set(ctx, userID, StateEditDeadline, editCtx.ToMap())
@@ -588,7 +594,7 @@ func (f *EventEditFSM) saveChanges(ctx context.Context, userID int64, chatID int
 	if err != nil {
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при получении события.",
+			Text:   f.localizer.MustLocalize(locale.EventEditErrorGetEvent),
 		})
 		_ = f.storage.Delete(ctx, userID)
 		return err
@@ -599,7 +605,7 @@ func (f *EventEditFSM) saveChanges(ctx context.Context, userID int64, chatID int
 	if err != nil || !canEdit {
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Событие больше нельзя редактировать — появились голоса.",
+			Text:   f.localizer.MustLocalize(locale.EventEditErrorHasVotes),
 		})
 		_ = f.storage.Delete(ctx, userID)
 		return domain.ErrEventHasVotes
@@ -613,7 +619,7 @@ func (f *EventEditFSM) saveChanges(ctx context.Context, userID int64, chatID int
 	if err := f.eventManager.UpdateEvent(ctx, event); err != nil {
 		_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
-			Text:   "❌ Ошибка при сохранении изменений.",
+			Text:   f.localizer.MustLocalize(locale.EventEditErrorSave),
 		})
 		_ = f.storage.Delete(ctx, userID)
 		return err
@@ -627,21 +633,21 @@ func (f *EventEditFSM) saveChanges(ctx context.Context, userID int64, chatID int
 
 	// Send success message
 	var sb strings.Builder
-	sb.WriteString("✅ СОБЫТИЕ ОБНОВЛЕНО!\n\n")
-	sb.WriteString(fmt.Sprintf("🆔 ID: %d\n\n", event.ID))
-	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
-	sb.WriteString("📊 Варианты:\n")
+	sb.WriteString(f.localizer.MustLocalize(locale.EventEditSuccess) + "\n\n")
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventFinalSummaryID, fmt.Sprintf("%d", event.ID)) + "\n\n")
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventSummaryQuestion, event.Question) + "\n\n")
+	sb.WriteString(f.localizer.MustLocalize(locale.EventSummaryOptions) + "\n")
 	for i, opt := range event.Options {
 		sb.WriteString(fmt.Sprintf("  %d) %s\n", i+1, opt))
 	}
 	localDeadline := event.Deadline.In(f.config.Timezone)
-	sb.WriteString(fmt.Sprintf("\n⏰ Дедлайн: %s\n", localDeadline.Format("02.01.2006 15:04")))
+	sb.WriteString("\n" + f.localizer.MustLocalizeWithTemplate(locale.EventSummaryDeadline, localDeadline.Format("02.01.2006 15:04")) + "\n")
 
 	kb := &models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
-				{Text: "✏️ Изменить", CallbackData: fmt.Sprintf("edit_event:%d", event.ID)},
-				{Text: "🏁 Завершить", CallbackData: fmt.Sprintf("resolve:%d", event.ID)},
+				{Text: f.localizer.MustLocalize(locale.ActionButtonEdit), CallbackData: fmt.Sprintf("edit_event:%d", event.ID)},
+				{Text: f.localizer.MustLocalize(locale.ActionButtonResolve), CallbackData: fmt.Sprintf("resolve:%d", event.ID)},
 			},
 		},
 	}
@@ -731,13 +737,13 @@ func (f *EventEditFSM) updatePollInGroup(ctx context.Context, event *domain.Even
 func (f *EventEditFSM) cancelEdit(ctx context.Context, userID int64, chatID int64) error {
 	_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
-		Text:   "❌ Редактирование отменено.",
+		Text:   f.localizer.MustLocalize(locale.EventEditCancelled),
 	})
 	f.logger.Info("event edit cancelled", "user_id", userID)
 	return f.storage.Delete(ctx, userID)
 }
 
-// deleteMessages is a helper to delete multiple messages
-func (f *EventEditFSM) deleteMessages(ctx context.Context, chatID int64, messageIDs ...int) {
-	deleteMessages(ctx, f.bot, f.logger, chatID, messageIDs...)
-}
+// // deleteMessages is a helper to delete multiple messages
+// func (f *EventEditFSM) deleteMessages(ctx context.Context, chatID int64, messageIDs ...int) {
+// 	deleteMessages(ctx, f.bot, f.logger, chatID, messageIDs...)
+// }

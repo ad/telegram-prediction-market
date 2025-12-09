@@ -9,6 +9,7 @@ import (
 
 	"github.com/ad/gitelegram-prediction-market/internal/config"
 	"github.com/ad/gitelegram-prediction-market/internal/domain"
+	"github.com/ad/gitelegram-prediction-market/internal/locale"
 	"github.com/ad/gitelegram-prediction-market/internal/storage"
 
 	"github.com/go-telegram/bot"
@@ -38,6 +39,7 @@ type EventCreationFSM struct {
 	ratingRepo           domain.RatingRepository
 	config               *config.Config
 	logger               domain.Logger
+	localizer            locale.Localizer
 }
 
 // NewEventCreationFSM creates a new FSM for event creation
@@ -52,6 +54,7 @@ func NewEventCreationFSM(
 	ratingRepo domain.RatingRepository,
 	cfg *config.Config,
 	logger domain.Logger,
+	localizer locale.Localizer,
 ) *EventCreationFSM {
 	return &EventCreationFSM{
 		storage:              storage,
@@ -64,6 +67,7 @@ func NewEventCreationFSM(
 		ratingRepo:           ratingRepo,
 		config:               cfg,
 		logger:               logger,
+		localizer:            localizer,
 	}
 }
 
@@ -149,7 +153,7 @@ func (f *EventCreationFSM) HandleMessage(ctx context.Context, update *models.Upd
 			// Send expiration message
 			_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: chatID,
-				Text:   "⏱ Время сессии истекло. Начните заново с /create_event",
+				Text:   f.localizer.MustLocalize(locale.SessionExpiredLong),
 			})
 			return nil
 		}
@@ -197,12 +201,12 @@ func (f *EventCreationFSM) HandleCallback(ctx context.Context, callback *models.
 			// Answer callback query and send expiration message
 			_, _ = f.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 				CallbackQueryID: callback.ID,
-				Text:            "⏱ Время сессии истекло",
+				Text:            f.localizer.MustLocalize(locale.SessionExpiredShort),
 			})
 			if callback.Message.Message != nil {
 				_, _ = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 					ChatID: callback.Message.Message.Chat.ID,
-					Text:   "⏱ Время сессии истекло. Начните заново с /create_event",
+					Text:   f.localizer.MustLocalize(locale.SessionExpiredLong),
 				})
 			}
 			return nil
@@ -286,7 +290,7 @@ func (f *EventCreationFSM) handleSelectGroup(ctx context.Context, userID int64, 
 
 	if len(groups) == 0 {
 		// This shouldn't happen as we check in Start, but handle it gracefully
-		_, _ = f.sendMessage(ctx, chatID, "❌ У вас нет доступных групп для создания события.", nil)
+		_, _ = f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.EventCreationNoGroupsAvailable), nil)
 		_ = f.storage.Delete(ctx, userID)
 		return fmt.Errorf("no groups available for user")
 	}
@@ -336,7 +340,10 @@ func (f *EventCreationFSM) handleSelectGroup(ctx context.Context, userID int64, 
 	}
 
 	// Send message
-	messageID, err := f.sendMessage(ctx, chatID, "📝 СОЗДАНИЕ НОВОГО СОБЫТИЯ\n\nВыберите группу (и тему, если это форум) для события:", kb)
+	messageText := fmt.Sprintf("%s\n\n%s",
+		f.localizer.MustLocalize(locale.EventCreationTitle),
+		f.localizer.MustLocalize(locale.EventCreationSelectGroup))
+	messageID, err := f.sendMessage(ctx, chatID, messageText, kb)
 	if err != nil {
 		return err
 	}
@@ -425,7 +432,10 @@ func (f *EventCreationFSM) handleGroupSelectionCallback(ctx context.Context, use
 // handleAskQuestion sends the initial question prompt
 func (f *EventCreationFSM) handleAskQuestion(ctx context.Context, userID int64, chatID int64) error {
 	// Send message
-	messageID, err := f.sendMessage(ctx, chatID, "📝 СОЗДАНИЕ НОВОГО СОБЫТИЯ\n\nВведите вопрос для прогноза:", nil)
+	messageText := fmt.Sprintf("%s\n\n%s",
+		f.localizer.MustLocalize(locale.EventCreationTitle),
+		f.localizer.MustLocalize(locale.EventCreationAskQuestion))
+	messageID, err := f.sendMessage(ctx, chatID, messageText, nil)
 	if err != nil {
 		return err
 	}
@@ -467,7 +477,7 @@ func (f *EventCreationFSM) handleQuestionInput(ctx context.Context, userID int64
 		f.deleteMessages(ctx, chatID, userMessageID)
 
 		// Send error message and store its ID
-		errorMessageID, err := f.sendMessage(ctx, chatID, "❌ Вопрос не может быть пустым. Попробуйте снова:", nil)
+		errorMessageID, err := f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.EventCreationErrorInvalidQuestion), nil)
 		if err != nil {
 			return err
 		}
@@ -504,18 +514,18 @@ func (f *EventCreationFSM) handleQuestionInput(ctx context.Context, userID int64
 	kb := &models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
-				{Text: "Бинарное (Да/Нет)", CallbackData: "event_type:binary"},
+				{Text: f.localizer.MustLocalize(locale.EventTypeBinaryButton), CallbackData: "event_type:binary"},
 			},
 			{
-				{Text: "Множественный выбор", CallbackData: "event_type:multi"},
+				{Text: f.localizer.MustLocalize(locale.EventTypeMultiOptionButton), CallbackData: "event_type:multi"},
 			},
 			{
-				{Text: "Вероятностное", CallbackData: "event_type:probability"},
+				{Text: f.localizer.MustLocalize(locale.EventTypeProbabilityButton), CallbackData: "event_type:probability"},
 			},
 		},
 	}
 
-	messageID, err := f.sendMessage(ctx, chatID, "Выберите тип события:", kb)
+	messageID, err := f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.EventCreationSelectType), kb)
 	if err != nil {
 		return err
 	}
@@ -557,22 +567,30 @@ func (f *EventCreationFSM) handleEventTypeCallback(ctx context.Context, userID i
 	switch eventType {
 	case "binary":
 		context.EventType = domain.EventTypeBinary
-		context.Options = []string{"Да", "Нет"}
+		context.Options = []string{
+			f.localizer.MustLocalize(locale.EventOptionYes),
+			f.localizer.MustLocalize(locale.EventOptionNo),
+		}
 		nextState = StateAskDeadline
-		messageText = "✅ Выбран бинарный тип (Да/Нет)\n\n" + f.getDeadlinePromptMessage()
+		messageText = f.localizer.MustLocalize(locale.EventCreationTypeBinarySelected) + "\n\n" + f.getDeadlinePromptMessage()
 		useHTML = true
 
 	case "probability":
 		context.EventType = domain.EventTypeProbability
-		context.Options = []string{"0-25%", "25-50%", "50-75%", "75-100%"}
+		context.Options = []string{
+			f.localizer.MustLocalize(locale.EventOptionProbability0to25),
+			f.localizer.MustLocalize(locale.EventOptionProbability25to50),
+			f.localizer.MustLocalize(locale.EventOptionProbability50to75),
+			f.localizer.MustLocalize(locale.EventOptionProbability75to100),
+		}
 		nextState = StateAskDeadline
-		messageText = "✅ Выбран вероятностный тип\n\n" + f.getDeadlinePromptMessage()
+		messageText = f.localizer.MustLocalize(locale.EventCreationTypeProbabilitySelected) + "\n\n" + f.getDeadlinePromptMessage()
 		useHTML = true
 
 	case "multi":
 		context.EventType = domain.EventTypeMultiOption
 		nextState = StateAskOptions
-		messageText = "✅ Выбран множественный выбор\n\nВведите варианты ответа (2-6 штук), каждый с новой строки:"
+		messageText = f.localizer.MustLocalize(locale.EventCreationTypeMultiOptionSelected) + "\n\n" + f.localizer.MustLocalize(locale.EventCreationAskOptions)
 		useHTML = false
 
 	default:
@@ -627,7 +645,7 @@ func (f *EventCreationFSM) handleOptionsInput(ctx context.Context, userID int64,
 		f.deleteMessages(ctx, chatID, userMessageID)
 
 		// Send error message and store its ID
-		errorMessageID, err := f.sendMessage(ctx, chatID, "❌ Варианты не могут быть пустыми. Попробуйте снова:", nil)
+		errorMessageID, err := f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.EventCreationErrorInvalidOptions), nil)
 		if err != nil {
 			return err
 		}
@@ -669,7 +687,7 @@ func (f *EventCreationFSM) handleOptionsInput(ctx context.Context, userID int64,
 		f.deleteMessages(ctx, chatID, userMessageID)
 
 		// Send error message and store its ID
-		errorMessageID, err := f.sendMessage(ctx, chatID, "❌ Для этого типа события нужно 2-6 вариантов. Попробуйте снова:", nil)
+		errorMessageID, err := f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.EventCreationErrorOptionsCount), nil)
 		if err != nil {
 			return err
 		}
@@ -741,7 +759,7 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 		exampleDate := time.Now().In(f.config.Timezone).AddDate(0, 0, 7)
 		exampleDate = time.Date(exampleDate.Year(), exampleDate.Month(), exampleDate.Day(), 12, 0, 0, 0, f.config.Timezone)
 		exampleStr := exampleDate.Format("02.01.2006 15:04")
-		errorMessageID, sendErr := f.sendMessageHTML(ctx, chatID, fmt.Sprintf("❌ Неверный формат даты. Используйте: ДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: <code>%s</code>", exampleStr), nil)
+		errorMessageID, sendErr := f.sendMessageHTML(ctx, chatID, f.localizer.MustLocalizeWithTemplate(locale.EventCreationErrorDeadlineFormat, exampleStr), nil)
 		if sendErr != nil {
 			return sendErr
 		}
@@ -773,7 +791,7 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 		f.deleteMessages(ctx, chatID, userMessageID)
 
 		// Send error message and store its ID
-		errorMessageID, sendErr := f.sendMessage(ctx, chatID, "❌ Дедлайн должен быть в будущем. Попробуйте снова:", nil)
+		errorMessageID, sendErr := f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.EventCreationErrorDeadlinePast), nil)
 		if sendErr != nil {
 			return sendErr
 		}
@@ -813,8 +831,8 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 	kb := &models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
-				{Text: "✅ Подтвердить", CallbackData: "confirm:yes"},
-				{Text: "❌ Отменить", CallbackData: "confirm:no"},
+				{Text: f.localizer.MustLocalize(locale.ConfirmButtonYes), CallbackData: "confirm:yes"},
+				{Text: f.localizer.MustLocalize(locale.ConfirmButtonNo), CallbackData: "confirm:no"},
 			},
 		},
 	}
@@ -846,7 +864,7 @@ func (f *EventCreationFSM) getDeadlinePromptMessage() string {
 	exampleDate = time.Date(exampleDate.Year(), exampleDate.Month(), exampleDate.Day(), 12, 0, 0, 0, f.config.Timezone)
 	exampleStr := exampleDate.Format("02.01.2006 15:04")
 
-	return fmt.Sprintf("📅 Введите дедлайн в формате:\nДД.ММ.ГГГГ ЧЧ:ММ\n\nНапример: <code>%s</code>\n\nИли выберите готовый период:", exampleStr)
+	return f.localizer.MustLocalizeWithTemplate(locale.DeadlinePromptMessage, exampleStr)
 }
 
 // getDeadlinePresetKeyboard returns inline keyboard with preset deadline options
@@ -854,28 +872,28 @@ func (f *EventCreationFSM) getDeadlinePresetKeyboard() *models.InlineKeyboardMar
 	return &models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
-				{Text: "1 день", CallbackData: "deadline_preset:1d"},
+				{Text: f.localizer.MustLocalize(locale.DeadlinePreset1Day), CallbackData: "deadline_preset:1d"},
 			},
 			{
-				{Text: "3 дня", CallbackData: "deadline_preset:3d"},
+				{Text: f.localizer.MustLocalize(locale.DeadlinePreset3Days), CallbackData: "deadline_preset:3d"},
 			},
 			{
-				{Text: "1 неделя", CallbackData: "deadline_preset:7d"},
+				{Text: f.localizer.MustLocalize(locale.DeadlinePreset1Week), CallbackData: "deadline_preset:7d"},
 			},
 			{
-				{Text: "2 недели", CallbackData: "deadline_preset:14d"},
+				{Text: f.localizer.MustLocalize(locale.DeadlinePreset2Weeks), CallbackData: "deadline_preset:14d"},
 			},
 			{
-				{Text: "1 месяц", CallbackData: "deadline_preset:30d"},
+				{Text: f.localizer.MustLocalize(locale.DeadlinePreset1Month), CallbackData: "deadline_preset:30d"},
 			},
 			{
-				{Text: "3 месяца", CallbackData: "deadline_preset:90d"},
+				{Text: f.localizer.MustLocalize(locale.DeadlinePreset3Months), CallbackData: "deadline_preset:90d"},
 			},
 			{
-				{Text: "6 месяцев", CallbackData: "deadline_preset:180d"},
+				{Text: f.localizer.MustLocalize(locale.DeadlinePreset6Months), CallbackData: "deadline_preset:180d"},
 			},
 			{
-				{Text: "1 год", CallbackData: "deadline_preset:365d"},
+				{Text: f.localizer.MustLocalize(locale.DeadlinePreset1Year), CallbackData: "deadline_preset:365d"},
 			},
 		},
 	}
@@ -937,8 +955,8 @@ func (f *EventCreationFSM) handleDeadlinePresetCallback(ctx context.Context, use
 	kb := &models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{
 			{
-				{Text: "✅ Подтвердить", CallbackData: "confirm:yes"},
-				{Text: "❌ Отменить", CallbackData: "confirm:no"},
+				{Text: f.localizer.MustLocalize(locale.ConfirmButtonYes), CallbackData: "confirm:yes"},
+				{Text: f.localizer.MustLocalize(locale.ConfirmButtonNo), CallbackData: "confirm:no"},
 			},
 		},
 	}
@@ -966,32 +984,38 @@ func (f *EventCreationFSM) handleDeadlinePresetCallback(ctx context.Context, use
 // buildEventSummary creates a summary message with all event details (for confirmation)
 func (f *EventCreationFSM) buildEventSummary(context *domain.EventCreationContext) string {
 	var sb strings.Builder
-	sb.WriteString("📋 ПОДТВЕРЖДЕНИЕ СОБЫТИЯ\n\n")
+	sb.WriteString(f.localizer.MustLocalize(locale.EventSummaryTitle))
+	sb.WriteString("\n\n")
 
-	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", context.Question))
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventSummaryQuestion, context.Question))
+	sb.WriteString("\n\n")
 
 	// Event type
 	typeStr := ""
 	switch context.EventType {
 	case domain.EventTypeBinary:
-		typeStr = "Бинарное (Да/Нет)"
+		typeStr = f.localizer.MustLocalize(locale.EventTypeBinaryLabel)
 	case domain.EventTypeMultiOption:
-		typeStr = "Множественный выбор"
+		typeStr = f.localizer.MustLocalize(locale.EventTypeMultiOptionLabel)
 	case domain.EventTypeProbability:
-		typeStr = "Вероятностное"
+		typeStr = f.localizer.MustLocalize(locale.EventTypeProbabilityLabel)
 	}
-	sb.WriteString(fmt.Sprintf("🎯 Тип: %s\n\n", typeStr))
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventSummaryType, typeStr))
+	sb.WriteString("\n\n")
 
 	// Options
-	sb.WriteString("📊 Варианты:\n")
+	sb.WriteString(f.localizer.MustLocalize(locale.EventSummaryOptions))
+	sb.WriteString("\n")
 	for i, opt := range context.Options {
-		sb.WriteString(fmt.Sprintf("  %d) %s\n", i+1, opt))
+		sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.OptionListItem, fmt.Sprintf("%d", i+1), opt))
+		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
 
 	// Deadline
 	localDeadline := context.Deadline.In(f.config.Timezone)
-	sb.WriteString(fmt.Sprintf("⏰ Дедлайн: %s\n\n", localDeadline.Format("02.01.2006 15:04")))
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventSummaryDeadline, localDeadline.Format("02.01.2006 15:04")))
+	sb.WriteString("\n\n")
 
 	return sb.String()
 }
@@ -999,36 +1023,43 @@ func (f *EventCreationFSM) buildEventSummary(context *domain.EventCreationContex
 // buildFinalEventSummary creates a final summary message with event ID and poll reference
 func (f *EventCreationFSM) buildFinalEventSummary(event *domain.Event, pollReference string) string {
 	var sb strings.Builder
-	sb.WriteString("✅ СОБЫТИЕ СОЗДАНО!\n\n")
+	sb.WriteString(f.localizer.MustLocalize(locale.EventFinalSummaryTitle))
+	sb.WriteString("\n\n")
 
 	// Event ID
-	sb.WriteString(fmt.Sprintf("🆔 ID: %d\n\n", event.ID))
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventFinalSummaryID, fmt.Sprintf("%d", event.ID)))
+	sb.WriteString("\n\n")
 
 	// Question
-	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventSummaryQuestion, event.Question))
+	sb.WriteString("\n\n")
 
 	// Event type
 	typeStr := ""
 	switch event.EventType {
 	case domain.EventTypeBinary:
-		typeStr = "Бинарное (Да/Нет)"
+		typeStr = f.localizer.MustLocalize(locale.EventTypeBinaryLabel)
 	case domain.EventTypeMultiOption:
-		typeStr = "Множественный выбор"
+		typeStr = f.localizer.MustLocalize(locale.EventTypeMultiOptionLabel)
 	case domain.EventTypeProbability:
-		typeStr = "Вероятностное"
+		typeStr = f.localizer.MustLocalize(locale.EventTypeProbabilityLabel)
 	}
-	sb.WriteString(fmt.Sprintf("🎯 Тип: %s\n\n", typeStr))
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventSummaryType, typeStr))
+	sb.WriteString("\n\n")
 
 	// Options
-	sb.WriteString("📊 Варианты:\n")
+	sb.WriteString(f.localizer.MustLocalize(locale.EventSummaryOptions))
+	sb.WriteString("\n")
 	for i, opt := range event.Options {
-		sb.WriteString(fmt.Sprintf("  %d) %s\n", i+1, opt))
+		sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.OptionListItem, fmt.Sprintf("%d", i+1), opt))
+		sb.WriteString("\n")
 	}
 	sb.WriteString("\n")
 
 	// Deadline (formatted in configured timezone)
 	localDeadline := event.Deadline.In(f.config.Timezone)
-	sb.WriteString(fmt.Sprintf("⏰ Дедлайн: %s\n\n", localDeadline.Format("02.01.2006 15:04")))
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventSummaryDeadline, localDeadline.Format("02.01.2006 15:04")))
+	sb.WriteString("\n\n")
 
 	// Poll reference
 	if pollReference != "" {
@@ -1068,7 +1099,7 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 
 		if err := f.eventManager.CreateEvent(ctx, event); err != nil {
 			f.logger.Error("failed to create event", "user_id", userID, "error", err)
-			_, _ = f.sendMessage(ctx, chatID, "❌ Ошибка при создании события.", nil)
+			_, _ = f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.EventCreationErrorGeneric), nil)
 			// Delete session
 			_ = f.storage.Delete(ctx, userID)
 			return err
@@ -1078,7 +1109,7 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 		group, err := f.groupRepo.GetGroup(ctx, context.GroupID)
 		if err != nil {
 			f.logger.Error("failed to get group for poll", "group_id", context.GroupID, "error", err)
-			_, _ = f.sendMessage(ctx, chatID, "❌ Ошибка при получении информации о группе.", nil)
+			_, _ = f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.EventCreationErrorGroupInfo), nil)
 			// Delete session
 			_ = f.storage.Delete(ctx, userID)
 			return err
@@ -1138,7 +1169,7 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 		pollMsg, err := f.bot.SendPoll(ctx, pollParams)
 		if err != nil {
 			f.logger.Error("failed to send poll", "event_id", event.ID, "group_id", context.GroupID, "telegram_chat_id", group.TelegramChatID, "message_thread_id", messageThreadID, "error", err)
-			_, _ = f.sendMessage(ctx, chatID, "❌ Ошибка при публикации опроса.", nil)
+			_, _ = f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.EventCreationErrorPollPublish), nil)
 			// Delete session
 			_ = f.storage.Delete(ctx, userID)
 			return err
@@ -1152,15 +1183,15 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 		}
 
 		// Send final summary to admin with poll reference and action buttons
-		pollReference := "Опрос опубликован в группе"
+		pollReference := f.localizer.MustLocalize(locale.EventCreationPollReference)
 		summary := f.buildFinalEventSummary(event, pollReference)
 
 		// Add action buttons for editing and resolving
 		kb := &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					{Text: "✏️ Изменить", CallbackData: fmt.Sprintf("edit_event:%d", event.ID)},
-					{Text: "🏁 Завершить", CallbackData: fmt.Sprintf("resolve:%d", event.ID)},
+					{Text: f.localizer.MustLocalize(locale.ActionButtonEdit), CallbackData: fmt.Sprintf("edit_event:%d", event.ID)},
+					{Text: f.localizer.MustLocalize(locale.ActionButtonResolve), CallbackData: fmt.Sprintf("resolve:%d", event.ID)},
 				},
 			},
 		}
@@ -1195,7 +1226,7 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 
 	if action == "no" {
 		// Send cancellation message
-		_, _ = f.sendMessage(ctx, chatID, "❌ Создание события отменено.", nil)
+		_, _ = f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.EventCreationCancelled), nil)
 
 		f.logger.Info("event creation cancelled", "user_id", userID)
 
@@ -1215,14 +1246,14 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 // sendAchievementNotification sends achievement notification to user and group
 func (f *EventCreationFSM) sendAchievementNotification(ctx context.Context, userID int64, achievement *domain.Achievement) error {
 	achievementNames := map[domain.AchievementCode]string{
-		domain.AchievementSharpshooter:    "🎯 Меткий стрелок",
-		domain.AchievementProphet:         "🔮 Провидец",
-		domain.AchievementRiskTaker:       "🎲 Риск-мейкер",
-		domain.AchievementWeeklyAnalyst:   "📊 Аналитик недели",
-		domain.AchievementVeteran:         "🏆 Старожил",
-		domain.AchievementEventOrganizer:  "🎪 Организатор событий",
-		domain.AchievementActiveOrganizer: "🎭 Активный организатор",
-		domain.AchievementMasterOrganizer: "🎬 Мастер организатор",
+		domain.AchievementSharpshooter:    f.localizer.MustLocalize(locale.AchievementSharpshooterName),
+		domain.AchievementProphet:         f.localizer.MustLocalize(locale.AchievementProphetName),
+		domain.AchievementRiskTaker:       f.localizer.MustLocalize(locale.AchievementRiskTakerName),
+		domain.AchievementWeeklyAnalyst:   f.localizer.MustLocalize(locale.AchievementWeeklyAnalystName),
+		domain.AchievementVeteran:         f.localizer.MustLocalize(locale.AchievementVeteranName),
+		domain.AchievementEventOrganizer:  f.localizer.MustLocalize(locale.AchievementEventOrganizerName),
+		domain.AchievementActiveOrganizer: f.localizer.MustLocalize(locale.AchievementActiveOrganizerName),
+		domain.AchievementMasterOrganizer: f.localizer.MustLocalize(locale.AchievementMasterOrganizerName),
 	}
 
 	name := achievementNames[achievement.Code]
@@ -1237,15 +1268,15 @@ func (f *EventCreationFSM) sendAchievementNotification(ctx context.Context, user
 		// Continue with notification even if we can't get group name
 	}
 
-	groupName := "группе"
-	if group != nil && group.Name != "" {
-		groupName = fmt.Sprintf("группе \"%s\"", group.Name)
+	groupName := group.Name
+	if groupName == "" {
+		groupName = fmt.Sprintf("group %d", achievement.GroupID)
 	}
 
 	// Send to user with group context
 	_, err = f.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: userID,
-		Text:   fmt.Sprintf("🎉 Поздравляем! Вы получили ачивку в %s:\n\n%s", groupName, name),
+		Text:   f.localizer.MustLocalizeWithTemplate(locale.AchievementNotificationUser, groupName, name),
 	})
 	if err != nil {
 		f.logger.Error("failed to send achievement notification to user", "user_id", userID, "error", err)
@@ -1277,7 +1308,7 @@ func (f *EventCreationFSM) sendAchievementNotification(ctx context.Context, user
 	// not to specific forum topics, as they are not tied to a specific event
 	msgParams := &bot.SendMessageParams{
 		ChatID: telegramChatID,
-		Text:   fmt.Sprintf("🎉 %s получил ачивку: %s!", displayName, name),
+		Text:   f.localizer.MustLocalizeWithTemplate(locale.AchievementNotificationGroup, displayName, name),
 	}
 
 	_, err = f.bot.SendMessage(ctx, msgParams)

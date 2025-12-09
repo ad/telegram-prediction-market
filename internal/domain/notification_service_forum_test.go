@@ -50,6 +50,9 @@ func TestPublishEventResults_ForumGroup(t *testing.T) {
 		},
 	}
 
+	// Create mock localizer
+	mockLocalizer := &MockLocalizer{}
+
 	// Create notification service
 	ns := NewNotificationService(
 		mockBot,
@@ -58,6 +61,7 @@ func TestPublishEventResults_ForumGroup(t *testing.T) {
 		mockRatingRepo,
 		mockReminderRepo,
 		mockLogger,
+		mockLocalizer,
 	)
 
 	ctx := context.Background()

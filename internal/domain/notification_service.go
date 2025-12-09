@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ad/gitelegram-prediction-market/internal/locale"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -30,6 +31,7 @@ type NotificationService struct {
 	reminderRepo   ReminderRepository
 	groupID        int64
 	logger         Logger
+	localizer      locale.Localizer
 }
 
 // NewNotificationService creates a new NotificationService
@@ -40,6 +42,7 @@ func NewNotificationService(
 	ratingRepo RatingRepository,
 	reminderRepo ReminderRepository,
 	logger Logger,
+	localizer locale.Localizer,
 ) *NotificationService {
 	return &NotificationService{
 		bot:            b,
@@ -48,6 +51,7 @@ func NewNotificationService(
 		ratingRepo:     ratingRepo,
 		reminderRepo:   reminderRepo,
 		logger:         logger,
+		localizer:      localizer,
 	}
 }
 
@@ -62,29 +66,29 @@ func (ns *NotificationService) SendNewEventNotification(ctx context.Context, eve
 
 	// Build notification message
 	var sb strings.Builder
-	sb.WriteString("🆕 НОВОЕ СОБЫТИЕ ДЛЯ ПРОГНОЗА!\n\n")
-	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
+	sb.WriteString(ns.localizer.MustLocalize(locale.NotificationNewEventTitle) + "\n\n")
+	sb.WriteString(ns.localizer.MustLocalizeWithTemplate(locale.NotificationNewEventQuestion, event.Question) + "\n\n")
 
 	// Event type
 	typeStr := ""
 	typeIcon := ""
 	switch event.EventType {
 	case EventTypeBinary:
-		typeStr = "Бинарное"
-		typeIcon = "1️⃣"
+		typeStr = ns.localizer.MustLocalize(locale.EventTypeBinaryLabel)
+		typeIcon = ns.localizer.MustLocalize(locale.EventTypeBinaryIcon)
 	case EventTypeMultiOption:
-		typeStr = "Множественный выбор"
-		typeIcon = "2️⃣"
+		typeStr = ns.localizer.MustLocalize(locale.EventTypeMultiOptionLabel)
+		typeIcon = ns.localizer.MustLocalize(locale.EventTypeMultiOptionIcon)
 	case EventTypeProbability:
-		typeStr = "Вероятностное"
-		typeIcon = "3️⃣"
+		typeStr = ns.localizer.MustLocalize(locale.EventTypeProbabilityLabel)
+		typeIcon = ns.localizer.MustLocalize(locale.EventTypeProbabilityIcon)
 	}
-	sb.WriteString(fmt.Sprintf("%s Тип: %s\n\n", typeIcon, typeStr))
+	sb.WriteString(ns.localizer.MustLocalizeWithTemplate(locale.NotificationNewEventType, typeIcon, typeStr) + "\n\n")
 
 	// Options
-	sb.WriteString("📊 Варианты:\n")
+	sb.WriteString(ns.localizer.MustLocalize(locale.NotificationNewEventOptions) + "\n")
 	for i, opt := range event.Options {
-		sb.WriteString(fmt.Sprintf("  %d) %s\n", i+1, opt))
+		sb.WriteString(ns.localizer.MustLocalizeWithTemplate(locale.OptionListItem, fmt.Sprintf("%d", i+1), opt) + "\n")
 	}
 	sb.WriteString("\n")
 
@@ -95,15 +99,15 @@ func (ns *NotificationService) SendNewEventNotification(ctx context.Context, eve
 		hours := int(timeUntil.Hours())
 		if hours > 24 {
 			days := hours / 24
-			deadlineStr = fmt.Sprintf("⏰ Дедлайн: %d дн. %d ч.", days, hours%24)
+			deadlineStr = ns.localizer.MustLocalizeWithTemplate(locale.DeadlineDaysHours, fmt.Sprintf("%d", days), fmt.Sprintf("%d", hours%24))
 		} else {
-			deadlineStr = fmt.Sprintf("⏰ Дедлайн: %d ч.", hours)
+			deadlineStr = ns.localizer.MustLocalizeWithTemplate(locale.DeadlineHoursOnly, fmt.Sprintf("%d", hours))
 		}
 	} else {
-		deadlineStr = "⏰ Дедлайн: истёк"
+		deadlineStr = ns.localizer.MustLocalize(locale.DeadlineExpired)
 	}
 	sb.WriteString(deadlineStr + "\n\n")
-	sb.WriteString("Голосуйте в опросе выше! 🗳")
+	sb.WriteString(ns.localizer.MustLocalize(locale.NotificationNewEventCTA))
 
 	// Send notification to group
 	_, err = ns.bot.SendMessage(ctx, &bot.SendMessageParams{
@@ -122,13 +126,13 @@ func (ns *NotificationService) SendNewEventNotification(ctx context.Context, eve
 // SendAchievementNotification sends a notification to the user and publishes an announcement in the group
 // This method is deprecated - use SendAchievementNotificationWithGroup instead
 func (ns *NotificationService) SendAchievementNotification(ctx context.Context, userID int64, achievement *Achievement) error {
-	// Map achievement codes to display names
+	// Map achievement codes to localized display names
 	achievementNames := map[AchievementCode]string{
-		AchievementSharpshooter:  "🎯 Меткий стрелок",
-		AchievementProphet:       "🔮 Провидец",
-		AchievementRiskTaker:     "🎲 Риск-мейкер",
-		AchievementWeeklyAnalyst: "📊 Аналитик недели",
-		AchievementVeteran:       "🏆 Старожил",
+		AchievementSharpshooter:  ns.localizer.MustLocalize(locale.AchievementSharpshooterName),
+		AchievementProphet:       ns.localizer.MustLocalize(locale.AchievementProphetName),
+		AchievementRiskTaker:     ns.localizer.MustLocalize(locale.AchievementRiskTakerName),
+		AchievementWeeklyAnalyst: ns.localizer.MustLocalize(locale.AchievementWeeklyAnalystName),
+		AchievementVeteran:       ns.localizer.MustLocalize(locale.AchievementVeteranName),
 	}
 
 	name := achievementNames[achievement.Code]
@@ -139,7 +143,7 @@ func (ns *NotificationService) SendAchievementNotification(ctx context.Context, 
 	// Send notification to user
 	_, err := ns.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: userID,
-		Text:   fmt.Sprintf("🎉 Поздравляем! Вы получили ачивку:\n\n%s", name),
+		Text:   ns.localizer.MustLocalizeWithTemplate(locale.NotificationAchievementCongrats, name),
 	})
 	if err != nil {
 		ns.logger.Error("failed to send achievement notification to user", "user_id", userID, "achievement", achievement.Code, "error", err)
@@ -149,7 +153,7 @@ func (ns *NotificationService) SendAchievementNotification(ctx context.Context, 
 	// Publish announcement in group
 	_, err = ns.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: ns.groupID,
-		Text:   fmt.Sprintf("🎉 Участник получил ачивку: %s!", name),
+		Text:   ns.localizer.MustLocalizeWithTemplate(locale.NotificationAchievementAnnouncement, name),
 	})
 	if err != nil {
 		ns.logger.Error("failed to send achievement announcement to group", "user_id", userID, "achievement", achievement.Code, "error", err)
@@ -204,20 +208,20 @@ func (ns *NotificationService) PublishEventResults(ctx context.Context, eventID 
 
 	// Build results message
 	var sb strings.Builder
-	sb.WriteString("🏁 СОБЫТИЕ ЗАВЕРШЕНО!\n\n")
-	sb.WriteString(fmt.Sprintf("❓ Вопрос:\n%s\n\n", event.Question))
-	sb.WriteString(fmt.Sprintf("✅ Правильный ответ:\n%s\n\n", event.Options[correctOption]))
-	sb.WriteString(fmt.Sprintf("📊 Угадали: %d из %d участников\n", correctCount, len(predictions)))
+	sb.WriteString(ns.localizer.MustLocalize(locale.NotificationResultsTitle) + "\n\n")
+	sb.WriteString(ns.localizer.MustLocalizeWithTemplate(locale.NotificationResultsQuestion, event.Question) + "\n\n")
+	sb.WriteString(ns.localizer.MustLocalizeWithTemplate(locale.NotificationResultsCorrectAnswer, event.Options[correctOption]) + "\n\n")
+	sb.WriteString(ns.localizer.MustLocalizeWithTemplate(locale.NotificationResultsStats, fmt.Sprintf("%d", correctCount), fmt.Sprintf("%d", len(predictions))) + "\n")
 
 	if len(topRatings) > 0 {
-		sb.WriteString("\n🏆 ТОП УЧАСТНИКОВ\n")
+		sb.WriteString("\n" + ns.localizer.MustLocalize(locale.NotificationResultsTopTitle) + "\n")
 		medals := []string{"🥇", "🥈", "🥉", "4.", "5."}
 		for i, rating := range topRatings {
 			displayName := rating.Username
 			if displayName == "" {
-				displayName = fmt.Sprintf("User id%d", rating.UserID)
+				displayName = ns.localizer.MustLocalizeWithTemplate(locale.UserIDFormat, fmt.Sprintf("%d", rating.UserID))
 			}
-			sb.WriteString(fmt.Sprintf("%s %s - %d очков\n", medals[i], displayName, rating.Score))
+			sb.WriteString(ns.localizer.MustLocalizeWithTemplate(locale.RatingTopEntry, medals[i], displayName, fmt.Sprintf("%d", rating.Score)) + "\n")
 		}
 	}
 
@@ -283,10 +287,12 @@ func (ns *NotificationService) SendDeadlineReminder(ctx context.Context, eventID
 	timeUntil := time.Until(event.Deadline)
 	hours := int(timeUntil.Hours())
 
-	reminderText := fmt.Sprintf("⏰ НАПОМИНАНИЕ!\n\n"+
-		"До дедлайна события осталось ~%d часов\n\n"+
-		"❓ %s\n\n"+
-		"Не забудьте проголосовать! 🗳", hours, event.Question)
+	var sb strings.Builder
+	sb.WriteString(ns.localizer.MustLocalize(locale.NotificationReminderTitle) + "\n\n")
+	sb.WriteString(ns.localizer.MustLocalizeWithTemplate(locale.NotificationReminderTime, fmt.Sprintf("%d", hours)) + "\n\n")
+	sb.WriteString(ns.localizer.MustLocalizeWithTemplate(locale.NotificationReminderQuestion, event.Question) + "\n\n")
+	sb.WriteString(ns.localizer.MustLocalize(locale.NotificationReminderCTA))
+	reminderText := sb.String()
 
 	// Send reminders to users who haven't voted
 	sentCount := 0
