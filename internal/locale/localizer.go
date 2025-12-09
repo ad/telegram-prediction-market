@@ -49,19 +49,11 @@ type Localizer interface {
 }
 
 func NewLocalizer(ctx context.Context, locale Locale) (Localizer, error) {
-	// Perform validation of translation files
-	_, err := ValidateTranslations()
-	if err != nil {
-		return nil, fmt.Errorf("failed to validate translations: %w", err)
-	}
-
-	// Log validation errors but don't fail initialization
-	// This allows the application to start even with validation issues
-	// if validationResult.HasErrors() {
-	// 	// In production, you might want to log these errors
-	// 	// For now, we'll just note that there are validation issues
-	// 	// You can uncomment the following line to see validation errors:
-	// 	// fmt.Fprintf(os.Stderr, "Translation validation warnings:\n%s\n", validationResult.String())
+	// Skip validation in production - it requires source files which aren't available in compiled binaries
+	// Validation should be run during development/testing via tests
+	// _, err := ValidateTranslations()
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to validate translations: %w", err)
 	// }
 
 	bundle := i18n.NewBundle(language.English)
