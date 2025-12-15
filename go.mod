@@ -7,7 +7,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/leanovate/gopter v0.2.11
 	github.com/nicksnyder/go-i18n/v2 v2.6.0
-	golang.org/x/text v0.23.0
+	golang.org/x/text v0.32.0
 	modernc.org/sqlite v1.40.1
 )
 
