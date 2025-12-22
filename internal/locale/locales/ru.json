@@ -42,6 +42,12 @@
     "NotificationReminderQuestion": "❓ {{ .f1 }}",
     "NotificationReminderCTA": "Не забудьте проголосовать! 🗳",
 
+    "NotificationEventExpiredTitle": "⏰ СОБЫТИЕ ИСТЕКЛО!",
+    "NotificationEventExpiredQuestion": "❓ {{ .f1 }}",
+    "NotificationEventExpiredStats": "📊 Статистика: {{ .f1 }} участников проголосовали",
+    "NotificationEventExpiredCTA": "Пора завершить событие и подвести итоги! 🏁",
+    "NotificationEventExpiredButtonText": "Завершить событие",
+
     "_comment_formatting": "=== FORMATTING ===",
 
     "UserIDFormat": "User id{{ .f1 }}",

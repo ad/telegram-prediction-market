@@ -108,6 +108,12 @@ CREATE TABLE IF NOT EXISTS reminder_log (
     FOREIGN KEY (event_id) REFERENCES events(id)
 );
 
+CREATE TABLE IF NOT EXISTS organizer_notifications (
+    event_id INTEGER PRIMARY KEY,
+    sent_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (event_id) REFERENCES events(id)
+);
+
 CREATE TABLE IF NOT EXISTS fsm_sessions (
     user_id INTEGER PRIMARY KEY,
     state TEXT NOT NULL,

@@ -367,6 +367,13 @@ const (
 	NotificationReminderQuestion = "NotificationReminderQuestion"
 	NotificationReminderCTA      = "NotificationReminderCTA"
 
+	// Event expired notification to organizer
+	NotificationEventExpiredTitle      = "NotificationEventExpiredTitle"
+	NotificationEventExpiredQuestion   = "NotificationEventExpiredQuestion"
+	NotificationEventExpiredStats      = "NotificationEventExpiredStats"
+	NotificationEventExpiredCTA        = "NotificationEventExpiredCTA"
+	NotificationEventExpiredButtonText = "NotificationEventExpiredButtonText"
+
 	// Deadline formatting
 	DeadlineExpired     = "DeadlineExpired"
 	DeadlineDaysHours   = "DeadlineDaysHours"

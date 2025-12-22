@@ -620,6 +620,14 @@ func (m *MockReminderRepo) MarkReminderSent(ctx context.Context, eventID int64) 
 	return nil
 }
 
+func (m *MockReminderRepo) WasOrganizerNotificationSent(ctx context.Context, eventID int64) (bool, error) {
+	return false, nil
+}
+
+func (m *MockReminderRepo) MarkOrganizerNotificationSent(ctx context.Context, eventID int64) error {
+	return nil
+}
+
 func TestNotificationServiceUsesLocalizer(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 

@@ -20,6 +20,8 @@ type BotInterface interface {
 type ReminderRepository interface {
 	WasReminderSent(ctx context.Context, eventID int64) (bool, error)
 	MarkReminderSent(ctx context.Context, eventID int64) error
+	WasOrganizerNotificationSent(ctx context.Context, eventID int64) (bool, error)
+	MarkOrganizerNotificationSent(ctx context.Context, eventID int64) error
 }
 
 // NotificationService handles sending notifications to users and groups
@@ -381,6 +383,47 @@ func (ns *NotificationService) checkAndSendReminders(ctx context.Context) {
 			ns.logger.Error("failed to mark reminder as sent", "event_id", event.ID, "error", err)
 		}
 	}
+
+	// Check for expired events and send notifications to organizers
+	ns.checkAndSendExpiredNotifications(ctx)
+}
+
+// checkAndSendExpiredNotifications checks for expired events and sends notifications to organizers
+func (ns *NotificationService) checkAndSendExpiredNotifications(ctx context.Context) {
+	now := time.Now()
+	// Look for events that expired in the last hour to avoid missing any due to timing
+	start := now.Add(-1 * time.Hour)
+	end := now
+
+	// Get events with deadline in the past hour
+	events, err := ns.getEventsByDeadlineRange(ctx, start, end)
+	if err != nil {
+		ns.logger.Error("failed to get expired events for organizer notifications", "error", err)
+		return
+	}
+
+	for _, event := range events {
+		// Skip if event is no longer active
+		if event.Status != EventStatusActive {
+			continue
+		}
+
+		// Check if organizer notification was already sent
+		if ns.wasOrganizerNotificationSent(ctx, event.ID) {
+			continue
+		}
+
+		// Send notification to organizer
+		if err := ns.SendEventExpiredNotification(ctx, event.ID); err != nil {
+			ns.logger.Error("failed to send expired notification to organizer", "event_id", event.ID, "error", err)
+			continue
+		}
+
+		// Mark organizer notification as sent
+		if err := ns.markOrganizerNotificationSent(ctx, event.ID); err != nil {
+			ns.logger.Error("failed to mark organizer notification as sent", "event_id", event.ID, "error", err)
+		}
+	}
 }
 
 // performStartupRecovery checks for missed reminders during downtime
@@ -426,7 +469,55 @@ func (ns *NotificationService) performStartupRecovery(ctx context.Context) error
 		ns.logger.Info("startup recovery completed", "recovered_reminders", recoveredCount)
 	}
 
+	// Also check for expired events that might have been missed
+	ns.performExpiredEventsRecovery(ctx)
+
 	return nil
+}
+
+// performExpiredEventsRecovery checks for expired events that might have missed organizer notifications
+func (ns *NotificationService) performExpiredEventsRecovery(ctx context.Context) {
+	now := time.Now()
+	// Look for events that expired in the last 24 hours
+	start := now.Add(-24 * time.Hour)
+	end := now
+
+	// Get events with deadline in the past 24 hours
+	events, err := ns.getEventsByDeadlineRange(ctx, start, end)
+	if err != nil {
+		ns.logger.Error("failed to get expired events for recovery", "error", err)
+		return
+	}
+
+	recoveredCount := 0
+	for _, event := range events {
+		// Skip if event is no longer active
+		if event.Status != EventStatusActive {
+			continue
+		}
+
+		// Check if organizer notification was already sent
+		if ns.wasOrganizerNotificationSent(ctx, event.ID) {
+			continue
+		}
+
+		// Send notification to organizer
+		if err := ns.SendEventExpiredNotification(ctx, event.ID); err != nil {
+			ns.logger.Error("failed to send recovery expired notification", "event_id", event.ID, "error", err)
+			continue
+		}
+
+		// Mark organizer notification as sent
+		if err := ns.markOrganizerNotificationSent(ctx, event.ID); err != nil {
+			ns.logger.Error("failed to mark recovery organizer notification as sent", "event_id", event.ID, "error", err)
+		}
+
+		recoveredCount++
+	}
+
+	if recoveredCount > 0 {
+		ns.logger.Info("expired events recovery completed", "recovered_organizer_notifications", recoveredCount)
+	}
 }
 
 // getEventsByDeadlineRange retrieves events with deadline in the specified range
@@ -461,4 +552,77 @@ func (ns *NotificationService) wasReminderSent(ctx context.Context, eventID int6
 // markReminderSent marks a reminder as sent for an event
 func (ns *NotificationService) markReminderSent(ctx context.Context, eventID int64) error {
 	return ns.reminderRepo.MarkReminderSent(ctx, eventID)
+}
+
+// SendEventExpiredNotification sends a notification to the event organizer when the event has expired
+func (ns *NotificationService) SendEventExpiredNotification(ctx context.Context, eventID int64) error {
+	// Get the event
+	event, err := ns.eventRepo.GetEvent(ctx, eventID)
+	if err != nil {
+		ns.logger.Error("failed to get event for expired notification", "event_id", eventID, "error", err)
+		return err
+	}
+
+	// Check if event is still active
+	if event.Status != EventStatusActive {
+		ns.logger.Debug("skipping expired notification for non-active event", "event_id", eventID, "status", event.Status)
+		return nil
+	}
+
+	// Get prediction count for statistics
+	predictions, err := ns.predictionRepo.GetPredictionsByEvent(ctx, eventID)
+	if err != nil {
+		ns.logger.Error("failed to get predictions for expired notification", "event_id", eventID, "error", err)
+		return err
+	}
+
+	// Build notification message
+	var sb strings.Builder
+	sb.WriteString(ns.localizer.MustLocalize(locale.NotificationEventExpiredTitle) + "\n\n")
+	sb.WriteString(ns.localizer.MustLocalizeWithTemplate(locale.NotificationEventExpiredQuestion, event.Question) + "\n\n")
+	sb.WriteString(ns.localizer.MustLocalizeWithTemplate(locale.NotificationEventExpiredStats, fmt.Sprintf("%d", len(predictions))) + "\n\n")
+	sb.WriteString(ns.localizer.MustLocalize(locale.NotificationEventExpiredCTA))
+	notificationText := sb.String()
+
+	// Create inline keyboard with resolve button
+	keyboard := &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{
+					Text:         ns.localizer.MustLocalize(locale.NotificationEventExpiredButtonText),
+					CallbackData: fmt.Sprintf("resolve:%d", eventID),
+				},
+			},
+		},
+	}
+
+	// Send notification to event organizer
+	_, err = ns.bot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      event.CreatedBy,
+		Text:        notificationText,
+		ReplyMarkup: keyboard,
+	})
+
+	if err != nil {
+		ns.logger.Error("failed to send expired notification to organizer", "event_id", eventID, "organizer_id", event.CreatedBy, "error", err)
+		return err
+	}
+
+	ns.logger.Info("expired event notification sent to organizer", "event_id", eventID, "organizer_id", event.CreatedBy, "participants", len(predictions))
+	return nil
+}
+
+// wasOrganizerNotificationSent checks if an organizer notification was already sent for an event
+func (ns *NotificationService) wasOrganizerNotificationSent(ctx context.Context, eventID int64) bool {
+	sent, err := ns.reminderRepo.WasOrganizerNotificationSent(ctx, eventID)
+	if err != nil {
+		ns.logger.Error("failed to check if organizer notification was sent", "event_id", eventID, "error", err)
+		return false // Assume not sent on error
+	}
+	return sent
+}
+
+// markOrganizerNotificationSent marks an organizer notification as sent for an event
+func (ns *NotificationService) markOrganizerNotificationSent(ctx context.Context, eventID int64) error {
+	return ns.reminderRepo.MarkOrganizerNotificationSent(ctx, eventID)
 }
