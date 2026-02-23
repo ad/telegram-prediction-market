@@ -3,7 +3,7 @@ module github.com/ad/gitelegram-prediction-market
 go 1.25.5
 
 require (
-	github.com/go-telegram/bot v1.17.0
+	github.com/go-telegram/bot v1.19.0
 	github.com/joho/godotenv v1.5.1
 	github.com/leanovate/gopter v0.2.11
 	github.com/nicksnyder/go-i18n/v2 v2.6.0
