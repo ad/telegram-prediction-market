@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS events (
     poll_message_id INTEGER,
     group_id INTEGER NOT NULL,
     message_thread_id INTEGER,
+    allows_revoting INTEGER NOT NULL DEFAULT 1,
+    shuffle_options INTEGER NOT NULL DEFAULT 0,
+    hide_results_until_close INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (group_id) REFERENCES groups(id)
 );
 

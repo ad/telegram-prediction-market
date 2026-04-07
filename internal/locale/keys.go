@@ -147,6 +147,18 @@ const (
 	EventSummaryOptions  = "EventSummaryOptions"
 	EventSummaryDeadline = "EventSummaryDeadline"
 
+	// Poll settings
+	PollSettingsTitle          = "PollSettingsTitle"
+	PollSettingAllowsRevoting  = "PollSettingAllowsRevoting"
+	PollSettingShuffleOptions  = "PollSettingShuffleOptions"
+	PollSettingHideResults     = "PollSettingHideResults"
+	PollSettingDone            = "PollSettingDone"
+	EventSummaryPollSettings   = "EventSummaryPollSettings"
+	EventSummaryAllowsRevoting = "EventSummaryAllowsRevoting"
+	EventSummaryShuffleOptions = "EventSummaryShuffleOptions"
+	EventSummaryHideResults    = "EventSummaryHideResults"
+	EventSummaryAutoClose      = "EventSummaryAutoClose"
+
 	// Final event summary
 	EventFinalSummaryTitle = "EventFinalSummaryTitle"
 	EventFinalSummaryID    = "EventFinalSummaryID"

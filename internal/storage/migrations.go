@@ -226,6 +226,15 @@ ALTER TABLE groups ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
 CREATE INDEX IF NOT EXISTS idx_groups_status ON groups(status);
 `,
 	},
+	{
+		Version:     10,
+		Description: "Add poll settings columns to events table",
+		SQL: `
+ALTER TABLE events ADD COLUMN allows_revoting INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE events ADD COLUMN shuffle_options INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE events ADD COLUMN hide_results_until_close INTEGER NOT NULL DEFAULT 0;
+`,
+	},
 }
 
 // columnExists checks if a column exists in a table

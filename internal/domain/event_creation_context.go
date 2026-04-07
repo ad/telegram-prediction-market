@@ -26,6 +26,9 @@ type EventCreationContext struct {
 	ConfirmationMessageID int       `json:"confirmation_message_id"`
 	ChatID                int64     `json:"chat_id"`
 	MessageThreadID       *int      `json:"message_thread_id,omitempty"` // Telegram forum topic thread ID
+	AllowsRevoting        bool      `json:"allows_revoting"`
+	ShuffleOptions        bool      `json:"shuffle_options"`
+	HideResultsUntilClose bool      `json:"hide_results_until_close"`
 }
 
 // ToMap converts EventCreationContext to a map for JSON serialization
@@ -45,6 +48,9 @@ func (c *EventCreationContext) ToMap() map[string]interface{} {
 	if c.MessageThreadID != nil {
 		m["message_thread_id"] = *c.MessageThreadID
 	}
+	m["allows_revoting"] = c.AllowsRevoting
+	m["shuffle_options"] = c.ShuffleOptions
+	m["hide_results_until_close"] = c.HideResultsUntilClose
 	return m
 }
 
@@ -127,6 +133,17 @@ func (c *EventCreationContext) FromMap(data map[string]interface{}) error {
 		c.MessageThreadID = &tid
 	} else if threadID, ok := data["message_thread_id"].(int); ok {
 		c.MessageThreadID = &threadID
+	}
+
+	// Parse poll settings
+	if v, ok := data["allows_revoting"].(bool); ok {
+		c.AllowsRevoting = v
+	}
+	if v, ok := data["shuffle_options"].(bool); ok {
+		c.ShuffleOptions = v
+	}
+	if v, ok := data["hide_results_until_close"].(bool); ok {
+		c.HideResultsUntilClose = v
 	}
 
 	return nil

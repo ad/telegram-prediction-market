@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" go build ./...)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" go test ./...)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" go test ./internal/locale/ -v)",
+      "Bash(PATH=\"/opt/homebrew/bin:$PATH\" go test ./internal/bot/ -run TestSendPollExtended -v)"
+    ]
+  }
+}

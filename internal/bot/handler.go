@@ -961,6 +961,11 @@ func (h *BotHandler) HandlePollAnswer(ctx context.Context, b *bot.Bot, update *m
 	}
 
 	if existingPrediction != nil {
+		if !event.AllowsRevoting {
+			h.logger.Info("revote rejected: revoting disabled", "user_id", userID, "event_id", event.ID)
+			return
+		}
+
 		// Update existing prediction
 		existingPrediction.Option = selectedOption
 		existingPrediction.Timestamp = time.Now()

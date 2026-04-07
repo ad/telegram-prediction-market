@@ -23,6 +23,7 @@ const (
 	StateAskEventType = "ask_event_type"
 	StateAskOptions   = "ask_options"
 	StateAskDeadline  = "ask_deadline"
+	StatePollSettings = "poll_settings"
 	StateConfirm      = "confirm"
 	StateComplete     = "complete"
 )
@@ -125,7 +126,7 @@ func (f *EventCreationFSM) HasSession(ctx context.Context, userID int64) (bool, 
 
 	// Only return true if the state is an event creation state
 	switch state {
-	case StateSelectGroup, StateAskQuestion, StateAskEventType, StateAskOptions, StateAskDeadline, StateConfirm, StateComplete:
+	case StateSelectGroup, StateAskQuestion, StateAskEventType, StateAskOptions, StateAskDeadline, StatePollSettings, StateConfirm, StateComplete:
 		return true, nil
 	default:
 		return false, nil
@@ -235,6 +236,10 @@ func (f *EventCreationFSM) HandleCallback(ctx context.Context, callback *models.
 
 	if strings.HasPrefix(data, "deadline_preset:") && state == StateAskDeadline {
 		return f.handleDeadlinePresetCallback(ctx, userID, callback, context)
+	}
+
+	if strings.HasPrefix(data, "poll_setting:") && state == StatePollSettings {
+		return f.handlePollSettingsCallback(ctx, userID, callback, context)
 	}
 
 	if strings.HasPrefix(data, "confirm:") && state == StateConfirm {
@@ -824,37 +829,8 @@ func (f *EventCreationFSM) handleDeadlineInput(ctx context.Context, userID int64
 	}
 	f.deleteMessages(ctx, chatID, messagesToDelete...)
 
-	// Build summary message with all event details
-	summary := f.buildEventSummary(context)
-
-	// Send summary with confirmation keyboard
-	kb := &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: f.localizer.MustLocalize(locale.ConfirmButtonYes), CallbackData: "confirm:yes"},
-				{Text: f.localizer.MustLocalize(locale.ConfirmButtonNo), CallbackData: "confirm:no"},
-			},
-		},
-	}
-
-	messageID, err := f.sendMessage(ctx, chatID, summary, kb)
-	if err != nil {
-		return err
-	}
-
-	// Update context with confirmation message ID
-	context.ConfirmationMessageID = messageID
-	context.LastBotMessageID = messageID
-
-	// Transition to confirm state
-	f.logger.Info("state transition", "user_id", userID, "old_state", StateAskDeadline, "new_state", StateConfirm)
-	if err := f.storage.Set(ctx, userID, StateConfirm, context.ToMap()); err != nil {
-		f.logger.Error("failed to transition to confirm", "user_id", userID, "error", err)
-		return err
-	}
-
-	f.logger.Debug("deadline stored", "user_id", userID, "deadline", deadline)
-	return nil
+	// Transition to poll settings
+	return f.showPollSettings(ctx, userID, chatID, context)
 }
 
 // getDeadlinePromptMessage returns the deadline prompt message with a dynamic example
@@ -948,36 +924,140 @@ func (f *EventCreationFSM) handleDeadlinePresetCallback(ctx context.Context, use
 
 	chatID := callback.Message.Message.Chat.ID
 
-	// Build summary message with all event details
-	summary := f.buildEventSummary(context)
+	// Transition to poll settings
+	return f.showPollSettings(ctx, userID, chatID, context)
+}
 
-	// Send summary with confirmation keyboard
-	kb := &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: f.localizer.MustLocalize(locale.ConfirmButtonYes), CallbackData: "confirm:yes"},
-				{Text: f.localizer.MustLocalize(locale.ConfirmButtonNo), CallbackData: "confirm:no"},
-			},
-		},
-	}
+// showPollSettings sends the poll settings toggle keyboard and transitions to StatePollSettings
+func (f *EventCreationFSM) showPollSettings(ctx context.Context, userID int64, chatID int64, context *domain.EventCreationContext) error {
+	// Set defaults for new events
+	context.AllowsRevoting = true
+	context.ShuffleOptions = false
+	context.HideResultsUntilClose = false
 
-	messageID, err := f.sendMessage(ctx, chatID, summary, kb)
+	kb := f.buildPollSettingsKeyboard(context)
+
+	messageID, err := f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.PollSettingsTitle), kb)
 	if err != nil {
 		return err
 	}
 
-	// Update context with confirmation message ID
-	context.ConfirmationMessageID = messageID
 	context.LastBotMessageID = messageID
 
-	// Transition to confirm state
-	f.logger.Info("state transition", "user_id", userID, "old_state", StateAskDeadline, "new_state", StateConfirm)
-	if err := f.storage.Set(ctx, userID, StateConfirm, context.ToMap()); err != nil {
-		f.logger.Error("failed to transition to confirm", "user_id", userID, "error", err)
+	f.logger.Info("state transition", "user_id", userID, "old_state", StateAskDeadline, "new_state", StatePollSettings)
+	if err := f.storage.Set(ctx, userID, StatePollSettings, context.ToMap()); err != nil {
+		f.logger.Error("failed to transition to poll settings", "user_id", userID, "error", err)
 		return err
 	}
 
-	f.logger.Debug("deadline preset selected", "user_id", userID, "preset", preset, "deadline", deadline)
+	return nil
+}
+
+func (f *EventCreationFSM) buildPollSettingsKeyboard(context *domain.EventCreationContext) *models.InlineKeyboardMarkup {
+	toggleIcon := func(enabled bool) string {
+		if enabled {
+			return " ✅"
+		}
+		return " ❌"
+	}
+
+	return &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{
+					Text:         f.localizer.MustLocalize(locale.PollSettingAllowsRevoting) + toggleIcon(context.AllowsRevoting),
+					CallbackData: "poll_setting:allows_revoting",
+				},
+			},
+			{
+				{
+					Text:         f.localizer.MustLocalize(locale.PollSettingShuffleOptions) + toggleIcon(context.ShuffleOptions),
+					CallbackData: "poll_setting:shuffle_options",
+				},
+			},
+			{
+				{
+					Text:         f.localizer.MustLocalize(locale.PollSettingHideResults) + toggleIcon(context.HideResultsUntilClose),
+					CallbackData: "poll_setting:hide_results",
+				},
+			},
+			{
+				{
+					Text:         f.localizer.MustLocalize(locale.PollSettingDone),
+					CallbackData: "poll_setting:done",
+				},
+			},
+		},
+	}
+}
+
+func (f *EventCreationFSM) handlePollSettingsCallback(ctx context.Context, userID int64, callback *models.CallbackQuery, context *domain.EventCreationContext) error {
+	_, _ = f.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: callback.ID,
+	})
+
+	setting := strings.TrimPrefix(callback.Data, "poll_setting:")
+
+	switch setting {
+	case "allows_revoting":
+		context.AllowsRevoting = !context.AllowsRevoting
+	case "shuffle_options":
+		context.ShuffleOptions = !context.ShuffleOptions
+	case "hide_results":
+		context.HideResultsUntilClose = !context.HideResultsUntilClose
+	case "done":
+		// Transition to confirm
+		chatID := callback.Message.Message.Chat.ID
+
+		// Delete poll settings message
+		f.deleteMessages(ctx, chatID, callback.Message.Message.ID)
+
+		summary := f.buildEventSummary(context)
+
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{Text: f.localizer.MustLocalize(locale.ConfirmButtonYes), CallbackData: "confirm:yes"},
+					{Text: f.localizer.MustLocalize(locale.ConfirmButtonNo), CallbackData: "confirm:no"},
+				},
+			},
+		}
+
+		messageID, err := f.sendMessage(ctx, chatID, summary, kb)
+		if err != nil {
+			return err
+		}
+
+		context.ConfirmationMessageID = messageID
+		context.LastBotMessageID = messageID
+
+		f.logger.Info("state transition", "user_id", userID, "old_state", StatePollSettings, "new_state", StateConfirm)
+		if err := f.storage.Set(ctx, userID, StateConfirm, context.ToMap()); err != nil {
+			f.logger.Error("failed to transition to confirm", "user_id", userID, "error", err)
+			return err
+		}
+		return nil
+	default:
+		f.logger.Error("unknown poll setting", "user_id", userID, "setting", setting)
+		return nil
+	}
+
+	// Update keyboard with new toggle states
+	kb := f.buildPollSettingsKeyboard(context)
+	if callback.Message.Message != nil {
+		_, _ = f.bot.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
+			ChatID:      callback.Message.Message.Chat.ID,
+			MessageID:   callback.Message.Message.ID,
+			ReplyMarkup: kb,
+		})
+	}
+
+	// Save updated context
+	if err := f.storage.Set(ctx, userID, StatePollSettings, context.ToMap()); err != nil {
+		f.logger.Error("failed to save poll settings", "user_id", userID, "error", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -1015,6 +1095,24 @@ func (f *EventCreationFSM) buildEventSummary(context *domain.EventCreationContex
 	// Deadline
 	localDeadline := context.Deadline.In(f.config.Timezone)
 	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventSummaryDeadline, localDeadline.Format("02.01.2006 15:04")))
+	sb.WriteString("\n\n")
+
+	// Poll settings
+	yesNo := func(b bool) string {
+		if b {
+			return "✅"
+		}
+		return "❌"
+	}
+	sb.WriteString(f.localizer.MustLocalize(locale.EventSummaryPollSettings))
+	sb.WriteString("\n")
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventSummaryAllowsRevoting, yesNo(context.AllowsRevoting)))
+	sb.WriteString("\n")
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventSummaryShuffleOptions, yesNo(context.ShuffleOptions)))
+	sb.WriteString("\n")
+	sb.WriteString(f.localizer.MustLocalizeWithTemplate(locale.EventSummaryHideResults, yesNo(context.HideResultsUntilClose)))
+	sb.WriteString("\n")
+	sb.WriteString(f.localizer.MustLocalize(locale.EventSummaryAutoClose))
 	sb.WriteString("\n\n")
 
 	return sb.String()
@@ -1087,14 +1185,17 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 	if action == "yes" {
 		// Create the event
 		event := &domain.Event{
-			GroupID:   context.GroupID,
-			Question:  context.Question,
-			EventType: context.EventType,
-			Options:   context.Options,
-			Deadline:  context.Deadline,
-			CreatedAt: time.Now(),
-			Status:    domain.EventStatusActive,
-			CreatedBy: userID,
+			GroupID:               context.GroupID,
+			Question:              context.Question,
+			EventType:             context.EventType,
+			Options:               context.Options,
+			Deadline:              context.Deadline,
+			CreatedAt:             time.Now(),
+			Status:                domain.EventStatusActive,
+			CreatedBy:             userID,
+			AllowsRevoting:        context.AllowsRevoting,
+			ShuffleOptions:        context.ShuffleOptions,
+			HideResultsUntilClose: context.HideResultsUntilClose,
 		}
 
 		if err := f.eventManager.CreateEvent(ctx, event); err != nil {
@@ -1152,13 +1253,17 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 		}
 
 		isAnonymous := false
-		pollParams := &bot.SendPollParams{
-			ChatID:                group.TelegramChatID,
-			Question:              event.Question,
-			Options:               pollOptions,
-			IsAnonymous:           &isAnonymous,
-			AllowsMultipleAnswers: false,
-			ProtectContent:        true,
+		allowsRevoting := event.AllowsRevoting
+		pollParams := &ExtendedSendPollParams{
+			ChatID:                 group.TelegramChatID,
+			Question:               event.Question,
+			Options:                pollOptions,
+			IsAnonymous:            &isAnonymous,
+			ProtectContent:         true,
+			AllowsRevoting:         &allowsRevoting,
+			ShuffleOptions:         event.ShuffleOptions,
+			CloseDate:              event.Deadline.Unix(),
+			HideResultsUntilCloses: event.HideResultsUntilClose,
 		}
 
 		// Add MessageThreadID if this is a forum group
@@ -1166,7 +1271,7 @@ func (f *EventCreationFSM) handleConfirmCallback(ctx context.Context, userID int
 			pollParams.MessageThreadID = *messageThreadID
 		}
 
-		pollMsg, err := f.bot.SendPoll(ctx, pollParams)
+		pollMsg, err := sendPollExtended(ctx, f.bot, pollParams)
 		if err != nil {
 			f.logger.Error("failed to send poll", "event_id", event.ID, "group_id", context.GroupID, "telegram_chat_id", group.TelegramChatID, "message_thread_id", messageThreadID, "error", err)
 			_, _ = f.sendMessage(ctx, chatID, f.localizer.MustLocalize(locale.EventCreationErrorPollPublish), nil)
