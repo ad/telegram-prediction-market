@@ -93,6 +93,17 @@
     "EventSummaryOptions": "📊 Варианты:",
     "EventSummaryDeadline": "⏰ Дедлайн: {{ .f1 }}",
 
+    "PollSettingsTitle": "⚙️ НАСТРОЙКИ ОПРОСА\n\nНастройте поведение опроса:",
+    "PollSettingAllowsRevoting": "Разрешить переголосование",
+    "PollSettingShuffleOptions": "Перемешать варианты",
+    "PollSettingHideResults": "Скрыть результаты до закрытия",
+    "PollSettingDone": "Продолжить ➡️",
+    "EventSummaryPollSettings": "⚙️ Настройки опроса:",
+    "EventSummaryAllowsRevoting": "  Переголосование: {{ .f1 }}",
+    "EventSummaryShuffleOptions": "  Перемешивание: {{ .f1 }}",
+    "EventSummaryHideResults": "  Скрыть результаты до закрытия: {{ .f1 }}",
+    "EventSummaryAutoClose": "  Автозакрытие по дедлайну: да",
+
     "ConfirmButtonYes": "✅ Подтвердить",
     "ConfirmButtonNo": "❌ Отменить",
 

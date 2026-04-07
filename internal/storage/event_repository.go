@@ -19,6 +19,13 @@ func NewEventRepository(queue *DBQueue) *EventRepository {
 	return &EventRepository{queue: queue}
 }
 
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // scanEvent is a helper function to scan an event from a row
 func scanEvent(scanner interface {
 	Scan(dest ...interface{}) error
@@ -29,10 +36,14 @@ func scanEvent(scanner interface {
 	var pollID sql.NullString
 	var pollMessageID sql.NullInt64
 	var forumTopicID sql.NullInt64
+	var allowsRevoting int
+	var shuffleOptions int
+	var hideResultsUntilClose int
 
 	err := scanner.Scan(
 		&event.ID, &event.GroupID, &forumTopicID, &event.Question, &optionsJSON, &event.CreatedAt,
 		&event.Deadline, &event.Status, &event.EventType, &correctOption, &event.CreatedBy, &pollID, &pollMessageID,
+		&allowsRevoting, &shuffleOptions, &hideResultsUntilClose,
 	)
 	if err != nil {
 		return nil, err
@@ -60,11 +71,15 @@ func scanEvent(scanner interface {
 		event.ForumTopicID = &val
 	}
 
+	event.AllowsRevoting = allowsRevoting != 0
+	event.ShuffleOptions = shuffleOptions != 0
+	event.HideResultsUntilClose = hideResultsUntilClose != 0
+
 	return &event, nil
 }
 
 // eventSelectColumns returns the standard SELECT columns for events
-const eventSelectColumns = `id, group_id, forum_topic_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id, poll_message_id`
+const eventSelectColumns = `id, group_id, forum_topic_id, question, options_json, created_at, deadline, status, event_type, correct_option, created_by, poll_id, poll_message_id, allows_revoting, shuffle_options, hide_results_until_close`
 
 // CreateEvent creates a new event in the database
 func (r *EventRepository) CreateEvent(ctx context.Context, event *domain.Event) error {
@@ -75,10 +90,11 @@ func (r *EventRepository) CreateEvent(ctx context.Context, event *domain.Event) 
 		}
 
 		result, err := db.ExecContext(ctx,
-			`INSERT INTO events (group_id, forum_topic_id, question, options_json, created_at, deadline, status, event_type, created_by, poll_id, poll_message_id)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO events (group_id, forum_topic_id, question, options_json, created_at, deadline, status, event_type, created_by, poll_id, poll_message_id, allows_revoting, shuffle_options, hide_results_until_close)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			event.GroupID, event.ForumTopicID, event.Question, optionsJSON, event.CreatedAt, event.Deadline,
 			event.Status, event.EventType, event.CreatedBy, event.PollID, event.PollMessageID,
+			boolToInt(event.AllowsRevoting), boolToInt(event.ShuffleOptions), boolToInt(event.HideResultsUntilClose),
 		)
 		if err != nil {
 			return err
@@ -160,9 +176,11 @@ func (r *EventRepository) UpdateEvent(ctx context.Context, event *domain.Event) 
 		}
 
 		_, err = db.ExecContext(ctx,
-			`UPDATE events SET group_id = ?, forum_topic_id = ?, question = ?, options_json = ?, deadline = ?, status = ?, correct_option = ?, poll_id = ?, poll_message_id = ?
+			`UPDATE events SET group_id = ?, forum_topic_id = ?, question = ?, options_json = ?, deadline = ?, status = ?, correct_option = ?, poll_id = ?, poll_message_id = ?, allows_revoting = ?, shuffle_options = ?, hide_results_until_close = ?
 			 WHERE id = ?`,
-			event.GroupID, event.ForumTopicID, event.Question, optionsJSON, event.Deadline, event.Status, correctOption, event.PollID, event.PollMessageID, event.ID,
+			event.GroupID, event.ForumTopicID, event.Question, optionsJSON, event.Deadline, event.Status, correctOption, event.PollID, event.PollMessageID,
+			boolToInt(event.AllowsRevoting), boolToInt(event.ShuffleOptions), boolToInt(event.HideResultsUntilClose),
+			event.ID,
 		)
 		return err
 	})

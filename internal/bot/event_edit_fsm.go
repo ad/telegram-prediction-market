@@ -701,15 +701,18 @@ func (f *EventEditFSM) updatePollInGroup(ctx context.Context, event *domain.Even
 	}
 
 	isAnonymous := false
-	disableNotification := true
-	pollParams := &bot.SendPollParams{
-		ChatID:                group.TelegramChatID,
-		Question:              event.Question,
-		Options:               pollOptions,
-		IsAnonymous:           &isAnonymous,
-		AllowsMultipleAnswers: false,
-		DisableNotification:   disableNotification,
-		ProtectContent:        true,
+	allowsRevoting := event.AllowsRevoting
+	pollParams := &ExtendedSendPollParams{
+		ChatID:                 group.TelegramChatID,
+		Question:               event.Question,
+		Options:                pollOptions,
+		IsAnonymous:            &isAnonymous,
+		DisableNotification:    true,
+		ProtectContent:         true,
+		AllowsRevoting:         &allowsRevoting,
+		ShuffleOptions:         event.ShuffleOptions,
+		CloseDate:              event.Deadline.Unix(),
+		HideResultsUntilCloses: event.HideResultsUntilClose,
 	}
 
 	// Add MessageThreadID for forum groups
@@ -718,7 +721,7 @@ func (f *EventEditFSM) updatePollInGroup(ctx context.Context, event *domain.Even
 		f.logger.Debug("sending updated poll to forum topic", "event_id", event.ID, "message_thread_id", *messageThreadID)
 	}
 
-	pollMsg, err := f.bot.SendPoll(ctx, pollParams)
+	pollMsg, err := sendPollExtended(ctx, f.bot, pollParams)
 	if err != nil {
 		return err
 	}

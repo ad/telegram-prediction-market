@@ -61,8 +61,11 @@ type Event struct {
 	EventType     EventType
 	CorrectOption *int
 	CreatedBy     int64
-	PollID        string // Telegram poll ID for tracking votes
-	PollMessageID int    // Telegram message ID of the poll message
+	PollID               string // Telegram poll ID for tracking votes
+	PollMessageID        int    // Telegram message ID of the poll message
+	AllowsRevoting       bool   // Whether users can change their vote
+	ShuffleOptions       bool   // Whether to randomize option order per user
+	HideResultsUntilClose bool  // Whether to hide results until poll closes
 }
 
 // Prediction represents a user's prediction

@@ -93,6 +93,17 @@
     "EventSummaryOptions": "📊 Options:",
     "EventSummaryDeadline": "⏰ Deadline: {{ .f1 }}",
 
+    "PollSettingsTitle": "⚙️ POLL SETTINGS\n\nConfigure poll behavior:",
+    "PollSettingAllowsRevoting": "Allow Revoting",
+    "PollSettingShuffleOptions": "Shuffle Options",
+    "PollSettingHideResults": "Hide Results Until Close",
+    "PollSettingDone": "Continue ➡️",
+    "EventSummaryPollSettings": "⚙️ Poll settings:",
+    "EventSummaryAllowsRevoting": "  Allow revoting: {{ .f1 }}",
+    "EventSummaryShuffleOptions": "  Shuffle options: {{ .f1 }}",
+    "EventSummaryHideResults": "  Hide results until close: {{ .f1 }}",
+    "EventSummaryAutoClose": "  Auto-close at deadline: yes",
+
     "ConfirmButtonYes": "✅ Confirm",
     "ConfirmButtonNo": "❌ Cancel",
 
