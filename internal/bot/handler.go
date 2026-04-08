@@ -1274,8 +1274,8 @@ func (h *BotHandler) HandleCallback(ctx context.Context, b *bot.Bot, update *mod
 		return
 	}
 
-	// Check if this is an event creation FSM callback (group selection, event_type selection, deadline preset or confirmation)
-	if strings.HasPrefix(data, "select_group:") || strings.HasPrefix(data, "event_type:") || strings.HasPrefix(data, "deadline_preset:") || strings.HasPrefix(data, "confirm:") {
+	// Check if this is an event creation FSM callback (group selection, event_type selection, deadline preset, poll settings or confirmation)
+	if strings.HasPrefix(data, "select_group:") || strings.HasPrefix(data, "event_type:") || strings.HasPrefix(data, "deadline_preset:") || strings.HasPrefix(data, "poll_setting:") || strings.HasPrefix(data, "confirm:") {
 		// Check if user has active FSM session
 		hasSession, err := h.eventCreationFSM.HasSession(ctx, userID)
 		if err != nil {
